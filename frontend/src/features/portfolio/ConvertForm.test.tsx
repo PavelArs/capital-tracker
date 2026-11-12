@@ -407,4 +407,103 @@ describe('CASH-CONVERT the Convert type of the Add transaction window', () => {
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[1][1].requestId).toBe(create.mock.calls[0][1].requestId);
   });
+
+  // Characterization of paths no other test reached before the form was split up.
+  const openConvert = async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog onClose={vi.fn()} onSaved={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await user.click(view.getByRole('button', { name: 'More' }));
+    await user.click(view.getByRole('radio', { name: 'Convert' }));
+    return view;
+  };
+
+  it('CONVERT-LOAD says when the assets and accounts cannot be read', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockRejectedValue(new Error('offline'));
+    const view = await openConvert();
+    expect(
+      await view.findByText(
+        'Could not load your assets and accounts. Close this window and try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('CONVERT-LOAD asks for an account with cash first when there is none', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    const view = await openConvert();
+    await waitFor(() =>
+      expect(view.getByRole('status')).toHaveTextContent(
+        'Add an account with some cash first: on the Portfolio page choose Add, then Cash.',
+      ),
+    );
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('CONVERT-FIELDS marks the amounts a refused save needs', async () => {
+    const { user, view } = await open();
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(view.getByText('Enter what you received')).toBeInTheDocument();
+    expect(view.getByLabelText('Amount received')).toHaveAttribute('aria-invalid', 'true');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('CONVERT-FIELDS picks each currency, turning the other around only on a clash', async () => {
+    const { user, view } = await open();
+    await user.click(currency(view, 'From', 'EUR'));
+    expect(currency(view, 'From', 'EUR')).toBeChecked();
+    expect(currency(view, 'To', 'USD')).toBeChecked();
+    await user.click(currency(view, 'From', 'USD'));
+    expect(currency(view, 'From', 'USD')).toBeChecked();
+    expect(currency(view, 'To', 'EUR')).toBeChecked();
+    await user.click(currency(view, 'To', 'RUB'));
+    expect(currency(view, 'To', 'RUB')).toBeChecked();
+    expect(currency(view, 'From', 'USD')).toBeChecked();
+  });
+
+  it('CONVERT-FIELDS values euros for rubles in USD at the Bank of Russia rate', async () => {
+    const { user, view } = await open();
+    await user.click(currency(view, 'From', 'EUR'));
+    await user.click(currency(view, 'To', 'RUB'));
+    await user.type(view.getByLabelText('Amount given'), '500');
+    await user.type(view.getByLabelText('Amount received'), '50000');
+    expect(
+      view.getByText('1 EUR = 100 RUB · valued in USD at the Bank of Russia rate of the day'),
+    ).toBeInTheDocument();
+  });
+
+  it('CONVERT-FIELDS saves in the account chosen, at the time and with the comment typed', async () => {
+    const { user, view, onSaved } = await open();
+    await user.click(currency(view, 'From', 'RUB'));
+    await user.click(currency(view, 'To', 'USD'));
+    await user.type(view.getByLabelText('Amount given'), '9000');
+    await user.type(view.getByLabelText('Amount received'), '100');
+    await user.selectOptions(view.getByLabelText('Wallet or account'), 'Exchange');
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2026-03-02');
+    await user.click(view.getByText('More options: time, comment'));
+    await user.type(view.getByLabelText('Time, UTC (optional)'), '09:30');
+    await user.type(view.getByLabelText('Comment'), 'Bureau');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toBe(id(13));
+    expect(create.mock.calls[0][1]).toMatchObject({
+      occurredAt: '2026-03-02T09:30:00.000Z',
+      comment: 'Bureau',
+      expectedJournalRevision: 7,
+    });
+  });
+
+  it('CONVERT-FIELDS shows no balance that cannot be read', async () => {
+    available.mockRejectedValue(new Error('offline'));
+    const { user, view } = await open();
+    await user.click(currency(view, 'From', 'RUB'));
+    await waitFor(() => expect(available).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(view.queryByText(/Available in/)).not.toBeInTheDocument();
+  });
 });

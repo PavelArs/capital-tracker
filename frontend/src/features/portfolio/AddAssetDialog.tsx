@@ -98,6 +98,48 @@ const blankEntry = (): AssetEntry => ({
   notes: '',
 });
 
+/** Why a new account for the balance was not made, and whether a retry may make it twice. */
+function accountFailure(error: unknown): string {
+  const code = status(error);
+  if (code === undefined)
+    return 'Could not reach the server. Try again; the same request will not make the account twice.';
+  return answered(code)
+    ? 'Could not make the account. Nothing was saved; try again.'
+    : 'Could not make the account. Try again; the same request will not make it twice.';
+}
+
+/** What the currency choice is called, and what it means, for each kind. */
+const currencyWords: Record<AssetKind, { label: string; hint: string }> = {
+  cash: { label: 'Currency', hint: 'The amount is in this currency; it is also the ticker.' },
+  crypto: {
+    label: 'Paid in',
+    hint: 'RUB and EUR are converted at the Bank of Russia rate of today.',
+  },
+  deposit: {
+    label: 'Value currency',
+    hint: 'For cash in the same currency, the amount and the value are the same number.',
+  },
+  other: {
+    label: 'Value currency',
+    hint: 'For cash in the same currency, the amount and the value are the same number.',
+  },
+};
+
+/** The problems the form shows, or the fields the owner has left. */
+type Found = ReadonlySet<AssetProblem>;
+
+/** The text a Field shows under its control once the problem is found (ids `${id}-<problem>`). */
+const problemOf = (found: Found, name: AssetProblem, text = problemText[name]) =>
+  found.has(name) ? text : null;
+const fieldError = (id: string, found: Found, problem: AssetProblem, text = problemText[problem]) =>
+  found.has(problem) && (
+    <span className="ui-field__error" id={`${id}-${problem}-error`}>
+      {text}
+    </span>
+  );
+const invalid = (id: string, found: Found, problem: AssetProblem) =>
+  found.has(problem) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` } : {};
+
 interface Props {
   onClose: () => void;
   onAdded: (asset: PortfolioAsset) => void;
@@ -160,23 +202,11 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const update = (changes: Partial<AssetEntry>) =>
     setEntry((current) => ({ ...current, ...changes }));
   // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
-  const [left, setLeft] = useState<ReadonlySet<AssetProblem>>(new Set());
+  const [left, setLeft] = useState<Found>(new Set());
   const leave = (problem: AssetProblem) => () =>
     setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
   const all = assetProblems(entry, accounts?.length ?? 0);
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
-  // The text a Field shows under its control once the problem is found (ids `${id}-<problem>`).
-  const problem = (name: AssetProblem, text = problemText[name]) => (found.has(name) ? text : null);
-  const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
-    found.has(problem) && (
-      <span className="ui-field__error" id={`${id}-${problem}-error`}>
-        {text}
-      </span>
-    );
-  const invalid = (problem: AssetProblem) =>
-    found.has(problem)
-      ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` }
-      : {};
 
   // The account the balance goes to; a new one is made first, so nothing else is saved without it.
   const accountFor = async (): Promise<Account | null> => {
@@ -192,13 +222,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         // A new account has no journal yet, so its first trade starts it at revision 0.
         attempt.account = { id: saved.id, name: saved.name, journalRevision: 0 };
       } catch (caught) {
-        setError(
-          status(caught) === undefined
-            ? 'Could not reach the server. Try again; the same request will not make the account twice.'
-            : answered(status(caught))
-              ? 'Could not make the account. Nothing was saved; try again.'
-              : 'Could not make the account. Try again; the same request will not make it twice.',
-        );
+        setError(accountFailure(caught));
         return null;
       }
     }
@@ -210,6 +234,132 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     return account;
   };
 
+  // A RUB or EUR balance needs today's Bank of Russia rate. Without one the asset would be
+  // saved and its balance refused, so check first and save nothing.
+  const rateStored = async (): Promise<boolean> => {
+    const { currency } = entry;
+    if (created || !entry.amount.trim() || (currency !== 'RUB' && currency !== 'EUR')) return true;
+    const rate = await cachedReads.rates.load().then(
+      (report) => bankRate(currency, report),
+      () => undefined, // Unknown: the balance itself reports a missing rate.
+    );
+    if (rate !== null) return true;
+    setError(
+      `No Bank of Russia rate is stored for today yet, so the ${currency} balance cannot be converted. Nothing was saved; try again later.`,
+    );
+    setSaving(false);
+    return false;
+  };
+
+  const saveAsset = async (): Promise<PortfolioAsset | null> => {
+    const body = assetBody(entry);
+    const key = JSON.stringify(body);
+    if (assetAttempt.current?.body !== key)
+      assetAttempt.current = { body: key, requestId: newRequestId() };
+    try {
+      const asset = await portfolioAssetsApi.create({
+        requestId: assetAttempt.current.requestId,
+        ...body,
+      });
+      setCreated(asset);
+      return asset;
+    } catch (caught) {
+      setError(assetFailure(caught));
+      setSaving(false);
+      return null;
+    }
+  };
+
+  /** The balance, as a buy at its value; null when it was not saved. */
+  const saveBalance = async (
+    account: Account,
+    asset: PortfolioAsset,
+  ): Promise<TradeReceipt | null> => {
+    if (receipt.current) return receipt.current;
+    const key = JSON.stringify({
+      ...entry,
+      accountId: account.id,
+      accountName: undefined,
+      kind: undefined,
+      name: undefined,
+    });
+    if (tradeAttempt.current?.body !== key)
+      tradeAttempt.current = {
+        body: key,
+        requestId: newRequestId(),
+        at: balanceInstant(new Date()),
+      };
+    try {
+      receipt.current = await tradesApi.create(
+        account.id,
+        balanceTrade(entry, asset.id, tradeAttempt.current.at, {
+          requestId: tradeAttempt.current.requestId,
+          expectedJournalRevision: account.journalRevision,
+        }),
+      );
+      setBalanceUnsure(false);
+      return receipt.current;
+    } catch (caught) {
+      const code = status(caught);
+      setError(balanceFailure(caught));
+      setSaving(false);
+      setBalanceUnsure(!answered(code));
+      // Nothing was saved under a refused request: the retry gets a new id and, when the
+      // journal changed elsewhere, its new revision.
+      if (code === 409) {
+        tradeAttempt.current = null;
+        await loadAccounts();
+      }
+      return null;
+    }
+  };
+
+  /** The price of a hand-valued asset; false when it was not saved. */
+  const savePrice = async (asset: PortfolioAsset, trade: TradeReceipt['trade']) => {
+    priceRequest.current ??= newRequestId();
+    try {
+      await manualPricesApi.set(asset.id, {
+        requestId: priceRequest.current,
+        expectedRevision: 0,
+        observedAt: trade.occurredAt,
+        ...purchasePrice(trade, asset.valuationCurrency),
+        assertReviewed: true,
+      });
+      return true;
+    } catch (caught) {
+      setError(
+        answered(status(caught))
+          ? 'The asset and its balance were saved, but its price was not. Try again.'
+          : 'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
+      );
+      setSaving(false);
+      return false;
+    }
+  };
+
+  /** The balance and, for a hand-valued asset, its price; false when a step was not saved. */
+  const saveHolding = async (account: Account, asset: PortfolioAsset) => {
+    const saved = await saveBalance(account, asset);
+    if (!saved) return false;
+    // A hand-valued asset starts at the price its value implies.
+    return asset.priceSource !== 'manual' || (await savePrice(asset, saved.trade));
+  };
+
+  /** Each step that fails says why and stops; what was saved before it stays for the retry. */
+  const save = async (): Promise<PortfolioAsset | null> => {
+    if (!(await rateStored())) return null;
+    const balance = entry.amount.trim() !== '';
+    const account = balance ? await accountFor() : null;
+    if (balance && !account) {
+      setSaving(false);
+      return null;
+    }
+    const asset = created ?? (await saveAsset());
+    if (!asset) return null;
+    if (account && !(await saveHolding(account, asset))) return null;
+    return asset;
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
@@ -219,116 +369,13 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     }
     setSaving(true);
     setError(null);
-    let asset = created;
-    // A RUB or EUR balance needs today's Bank of Russia rate. Without one the asset would be
-    // saved and its balance refused, so check first and save nothing.
-    const { currency } = entry;
-    if (!asset && entry.amount.trim() && (currency === 'RUB' || currency === 'EUR')) {
-      const rate = await cachedReads.rates.load().then(
-        (report) => bankRate(currency, report),
-        () => undefined, // Unknown: the balance itself reports a missing rate.
-      );
-      if (rate === null) {
-        setError(
-          `No Bank of Russia rate is stored for today yet, so the ${currency} balance cannot be converted. Nothing was saved; try again later.`,
-        );
-        setSaving(false);
-        return;
-      }
-    }
-    let account: Account | null = null;
-    if (entry.amount.trim()) {
-      account = await accountFor();
-      if (!account) {
-        setSaving(false);
-        return;
-      }
-    }
-    if (!asset) {
-      const body = assetBody(entry);
-      const key = JSON.stringify(body);
-      if (assetAttempt.current?.body !== key)
-        assetAttempt.current = { body: key, requestId: newRequestId() };
-      try {
-        asset = await portfolioAssetsApi.create({
-          requestId: assetAttempt.current.requestId,
-          ...body,
-        });
-        setCreated(asset);
-      } catch (caught) {
-        setError(assetFailure(caught));
-        setSaving(false);
-        return;
-      }
-    }
-    if (entry.amount.trim() && account) {
-      if (!receipt.current) {
-        const key = JSON.stringify({
-          ...entry,
-          accountId: account.id,
-          accountName: undefined,
-          kind: undefined,
-          name: undefined,
-        });
-        if (tradeAttempt.current?.body !== key)
-          tradeAttempt.current = {
-            body: key,
-            requestId: newRequestId(),
-            at: balanceInstant(new Date()),
-          };
-        try {
-          receipt.current = await tradesApi.create(
-            account.id,
-            balanceTrade(entry, asset.id, tradeAttempt.current.at, {
-              requestId: tradeAttempt.current.requestId,
-              expectedJournalRevision: account.journalRevision,
-            }),
-          );
-          setBalanceUnsure(false);
-        } catch (caught) {
-          const code = status(caught);
-          setError(balanceFailure(caught));
-          setSaving(false);
-          setBalanceUnsure(!answered(code));
-          // Nothing was saved under a refused request: the retry gets a new id and, when the
-          // journal changed elsewhere, its new revision.
-          if (code === 409) {
-            tradeAttempt.current = null;
-            await loadAccounts();
-          }
-          return;
-        }
-      }
-      // A hand-valued asset starts at the price its value implies.
-      if (asset.priceSource === 'manual') {
-        const trade = receipt.current.trade;
-        priceRequest.current ??= newRequestId();
-        try {
-          await manualPricesApi.set(asset.id, {
-            requestId: priceRequest.current,
-            expectedRevision: 0,
-            observedAt: trade.occurredAt,
-            ...purchasePrice(trade, asset.valuationCurrency),
-            assertReviewed: true,
-          });
-        } catch (caught) {
-          setError(
-            answered(status(caught))
-              ? 'The asset and its balance were saved, but its price was not. Try again.'
-              : 'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
-          );
-          setSaving(false);
-          return;
-        }
-      }
-    }
-    onAdded(asset);
+    const asset = await save();
+    if (asset) onAdded(asset);
   };
 
   const { kind } = entry;
   const crypto = kind === 'crypto';
   const locked = created !== null;
-  const noAccounts = accounts !== null && accounts.length === 0;
   return (
     <Modal
       titleId={`${id}-title`}
@@ -360,7 +407,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             <span className="ui-field__hint">{kindHints[kind]}</span>
           </div>
           <div className="ui-field-row">
-            <Field id={`${id}-name`} label="Name" error={problem('name')}>
+            <Field id={`${id}-name`} label="Name" error={problemOf(found, 'name')}>
               {(control) => (
                 <Input
                   {...control}
@@ -374,31 +421,21 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 />
               )}
             </Field>
-            {kind !== 'cash' && (
-              <Field
-                id={`${id}-ticker`}
-                label={crypto ? 'Ticker' : 'Ticker (optional)'}
-                error={problem('ticker')}
-              >
-                {(control) => (
-                  <Input
-                    {...control}
-                    maxLength={32}
-                    placeholder={crypto ? 'e.g. BTC' : ''}
-                    value={entry.ticker}
-                    disabled={locked}
-                    onChange={(event) => update({ ticker: event.target.value })}
-                    onBlur={leave('ticker')}
-                  />
-                )}
-              </Field>
-            )}
+            <TickerField
+              id={id}
+              kind={kind}
+              value={entry.ticker}
+              locked={locked}
+              found={found}
+              onChange={(ticker) => update({ ticker })}
+              onLeave={leave('ticker')}
+            />
           </div>
           <div className="ui-field-row">
             <Field
               id={`${id}-amount`}
               label={amountRequired(kind) ? 'Amount' : 'Amount (optional)'}
-              error={problem('amount')}
+              error={problemOf(found, 'amount')}
             >
               {(control) => (
                 <Input
@@ -412,31 +449,20 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 />
               )}
             </Field>
-            {kind !== 'cash' && (
-              <Field
-                id={`${id}-value`}
-                label={crypto ? 'Total cost' : 'Current value'}
-                error={problem('value', crypto ? 'Enter what it cost' : problemText.value)}
-              >
-                {(control) => (
-                  <Affix suffix={entry.currency}>
-                    <Input
-                      {...control}
-                      numeric
-                      placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
-                      value={entry.value}
-                      disabled={balanceUnsure}
-                      onChange={(event) => update({ value: event.target.value })}
-                      onBlur={leave('value')}
-                    />
-                  </Affix>
-                )}
-              </Field>
-            )}
+            <ValueField
+              id={id}
+              kind={kind}
+              value={entry.value}
+              currency={entry.currency}
+              unsure={balanceUnsure}
+              found={found}
+              onChange={(value) => update({ value })}
+              onLeave={leave('value')}
+            />
           </div>
           <div className="ui-field">
             <span id={`${id}-currency`} className="ui-field__label">
-              {kind === 'cash' ? 'Currency' : crypto ? 'Paid in' : 'Value currency'}
+              {currencyWords[kind].label}
             </span>
             <SegmentedControl
               name={`${id}-currency`}
@@ -446,72 +472,20 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               disabled={(locked && !crypto) || balanceUnsure}
               onChange={(code) => update({ currency: code })}
             />
-            <span className="ui-field__hint">
-              {kind === 'cash'
-                ? 'The amount is in this currency; it is also the ticker.'
-                : crypto
-                  ? 'RUB and EUR are converted at the Bank of Russia rate of today.'
-                  : 'For cash in the same currency, the amount and the value are the same number.'}
-            </span>
+            <span className="ui-field__hint">{currencyWords[kind].hint}</span>
           </div>
-          <div className="ui-field">
-            <label
-              className="ui-field__label"
-              htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
-            >
-              Wallet or account
-            </label>
-            {accounts === null ? (
-              <span className="ui-field__hint" role="status">
-                Loading your accounts…
-              </span>
-            ) : loadFailed ? (
-              <p className="ui-field__error" id={`${id}-no-accounts-error`}>
-                Could not load your accounts, so a balance cannot be added. Close this window and
-                try again.
-              </p>
-            ) : noAccounts ? null : (
-              <Select
-                id={`${id}-account`}
-                value={entry.accountId}
-                disabled={balanceUnsure}
-                onChange={(event) => update({ accountId: event.target.value })}
-                onBlur={leave('account')}
-                {...invalid('account')}
-              >
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-                <option value={NEW_ACCOUNT}>New account…</option>
-              </Select>
-            )}
-            {entry.accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
-              <>
-                <Input
-                  id={`${id}-account-name`}
-                  aria-label={noAccounts ? undefined : 'Name of the new account'}
-                  placeholder="e.g. Home safe, Bank"
-                  maxLength={MAX_ACCOUNT_NAME}
-                  autoComplete="off"
-                  value={entry.accountName}
-                  disabled={balanceUnsure}
-                  onChange={(event) => update({ accountName: event.target.value })}
-                  onBlur={leave('account-name')}
-                  {...invalid('account-name')}
-                />
-                <span className="ui-field__hint">
-                  {noAccounts
-                    ? 'You have no account yet. The balance is kept in this one.'
-                    : 'The balance is kept in a new account you can use for more assets later.'}
-                </span>
-                {fieldError('account-name')}
-              </>
-            )}
-            {fieldError('account')}
-          </div>
-          <Field id={`${id}-notes`} label="Notes (optional)" error={problem('notes')}>
+          <AccountField
+            id={id}
+            accounts={accounts}
+            loadFailed={loadFailed}
+            accountId={entry.accountId}
+            accountName={entry.accountName}
+            unsure={balanceUnsure}
+            found={found}
+            onChange={update}
+            onLeave={leave}
+          />
+          <Field id={`${id}-notes`} label="Notes (optional)" error={problemOf(found, 'notes')}>
             {(control) => (
               <Textarea
                 {...control}
@@ -539,5 +513,173 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         </ModalFooter>
       </form>
     </Modal>
+  );
+}
+
+interface TickerFieldProps {
+  id: string;
+  kind: AssetKind;
+  value: string;
+  locked: boolean;
+  found: Found;
+  onChange: (ticker: string) => void;
+  onLeave: () => void;
+}
+
+/** The ticker: needed for a coin, optional for a deposit or anything else, none for cash. */
+function TickerField({ id, kind, value, locked, found, onChange, onLeave }: TickerFieldProps) {
+  if (kind === 'cash') return null;
+  const crypto = kind === 'crypto';
+  return (
+    <Field
+      id={`${id}-ticker`}
+      label={crypto ? 'Ticker' : 'Ticker (optional)'}
+      error={problemOf(found, 'ticker')}
+    >
+      {(control) => (
+        <Input
+          {...control}
+          maxLength={32}
+          placeholder={crypto ? 'e.g. BTC' : ''}
+          value={value}
+          disabled={locked}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onLeave}
+        />
+      )}
+    </Field>
+  );
+}
+
+interface ValueFieldProps {
+  id: string;
+  kind: AssetKind;
+  value: string;
+  currency: ValuationCurrency;
+  unsure: boolean;
+  found: Found;
+  onChange: (value: string) => void;
+  onLeave: () => void;
+}
+
+/** What the coins cost, or what anything else is worth now; cash is worth its amount. */
+function ValueField({
+  id,
+  kind,
+  value,
+  currency,
+  unsure,
+  found,
+  onChange,
+  onLeave,
+}: ValueFieldProps) {
+  if (kind === 'cash') return null;
+  const crypto = kind === 'crypto';
+  return (
+    <Field
+      id={`${id}-value`}
+      label={crypto ? 'Total cost' : 'Current value'}
+      error={problemOf(found, 'value', crypto ? 'Enter what it cost' : problemText.value)}
+    >
+      {(control) => (
+        <Affix suffix={currency}>
+          <Input
+            {...control}
+            numeric
+            placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
+            value={value}
+            disabled={unsure}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onLeave}
+          />
+        </Affix>
+      )}
+    </Field>
+  );
+}
+
+interface AccountFieldProps {
+  id: string;
+  accounts: readonly Account[] | null;
+  loadFailed: boolean;
+  accountId: string;
+  accountName: string;
+  unsure: boolean;
+  found: Found;
+  onChange: (changes: Partial<AssetEntry>) => void;
+  onLeave: (problem: AssetProblem) => () => void;
+}
+
+/** The account the balance is kept in: one of the owner's, or a new one named here. */
+function AccountField({
+  id,
+  accounts,
+  loadFailed,
+  accountId,
+  accountName,
+  unsure,
+  found,
+  onChange,
+  onLeave,
+}: AccountFieldProps) {
+  const noAccounts = accounts !== null && accounts.length === 0;
+  return (
+    <div className="ui-field">
+      <label
+        className="ui-field__label"
+        htmlFor={noAccounts ? `${id}-account-name` : `${id}-account`}
+      >
+        Wallet or account
+      </label>
+      {accounts === null ? (
+        <span className="ui-field__hint" role="status">
+          Loading your accounts…
+        </span>
+      ) : loadFailed ? (
+        <p className="ui-field__error" id={`${id}-no-accounts-error`}>
+          Could not load your accounts, so a balance cannot be added. Close this window and try
+          again.
+        </p>
+      ) : noAccounts ? null : (
+        <Select
+          id={`${id}-account`}
+          value={accountId}
+          disabled={unsure}
+          onChange={(event) => onChange({ accountId: event.target.value })}
+          onBlur={onLeave('account')}
+          {...invalid(id, found, 'account')}
+        >
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name}
+            </option>
+          ))}
+          <option value={NEW_ACCOUNT}>New account…</option>
+        </Select>
+      )}
+      {accountId === NEW_ACCOUNT && !loadFailed && accounts !== null && (
+        <>
+          <Input
+            id={`${id}-account-name`}
+            aria-label={noAccounts ? undefined : 'Name of the new account'}
+            placeholder="e.g. Home safe, Bank"
+            maxLength={MAX_ACCOUNT_NAME}
+            autoComplete="off"
+            value={accountName}
+            disabled={unsure}
+            onChange={(event) => onChange({ accountName: event.target.value })}
+            onBlur={onLeave('account-name')}
+            {...invalid(id, found, 'account-name')}
+          />
+          <span className="ui-field__hint">
+            {noAccounts
+              ? 'You have no account yet. The balance is kept in this one.'
+              : 'The balance is kept in a new account you can use for more assets later.'}
+          </span>
+          {fieldError(id, found, 'account-name')}
+        </>
+      )}
+      {fieldError(id, found, 'account')}
+    </div>
   );
 }

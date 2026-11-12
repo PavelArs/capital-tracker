@@ -9,7 +9,16 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
 import { sumDecimals } from '@utils/decimal';
-import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  type Dispatch,
+  Fragment,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
@@ -28,7 +37,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
 import { useCachedRead } from '../shell/useCachedRead';
-import { useValueView } from '../shell/value-view';
+import { useValueView, type ValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import { shareText } from './Allocation';
@@ -242,7 +251,7 @@ function BankAsset({
 function BankInterest({ deposit }: { deposit: Deposit }) {
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  const shown = shownInterest(deposit, view === 'real' ? basis : null);
+  const shown = shownInterest(deposit, viewBasis(view, basis));
   if (shown.amount === null) return <>{DASH}</>;
   return (
     <>
@@ -374,6 +383,10 @@ export function realProfit(
   return { pnl: real?.unrealizedPnl ?? null, ratio: real?.unrealizedReturnPercent ?? null };
 }
 
+/** The profit a row shows: after inflation on the basis under Real, else the nominal one. */
+const assetProfit = (asset: AssetValuation, real: InflationBasis | null) =>
+  real === null ? shownProfit(asset) : realProfit(asset, real);
+
 /** Bank products use the same known-first ordering; columns they do not have tie by name. */
 function sortBankProducts(
   rows: Deposit[],
@@ -441,7 +454,7 @@ export function sortAssets(
       case 'avgBuy':
         return asset.averageBuyPrice;
       case 'pnl':
-        return real === null ? shownProfit(asset).pnl : realProfit(asset, real).pnl;
+        return assetProfit(asset, real).pnl;
       default:
         // A hand price shows "Manual", not a change, so it ranks with the unknown ones.
         return asset.priceSource === 'manual' && !quoted(asset)
@@ -452,13 +465,14 @@ export function sortAssets(
   const held = (asset: AssetValuation) => Number(asset.quantity) !== 0;
   return [...assets].sort((a, b) => {
     if (held(a) !== held(b)) return held(a) ? -1 : 1;
-    const left = field(a);
-    const right = field(b);
-    if (left === null || right === null) {
-      return left === right ? byName(a, b) : left === null ? 1 : -1;
-    }
-    return sign * compareDecimals(left, right) || byName(a, b);
+    return byFigure(field(a), field(b), sign, () => byName(a, b));
   });
+}
+
+/** Known figures in the chosen direction, unknown ones last in either; a tie goes to `tie`. */
+function byFigure(left: string | null, right: string | null, sign: number, tie: () => number) {
+  if (left === null || right === null) return left === right ? tie() : left === null ? 1 : -1;
+  return sign * compareDecimals(left, right) || tie();
 }
 
 /** Whether the asset's name or ticker contains the search text, ignoring case. */
@@ -489,89 +503,53 @@ const NO_REAL_ACCOUNT = 'an account history starts later';
 const NO_DEPOSITS = 'excluding bank deposits';
 const NO_REAL_COST = 'a purchase price, exchange rate or inflation figure is missing for some lots';
 
-function Summary({
-  portfolio,
-  asked,
-  real: showReal,
-  basis,
-}: {
-  portfolio: PortfolioValuation;
-  asked: AccountingCurrency | undefined;
-  /** Under Real the cost and the profit are the ones after inflation, and no nominal figure. */
-  real: boolean;
-  basis: InflationBasis;
-}) {
-  const summaryTitle = useId();
-  const classes = useAccountClasses();
-  const reading: RealReading | null = portfolio.real?.[basis] ?? null;
-  // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
-  const estimatedCost = (portfolio.estimatedCostCount ?? 0) > 0 ? '≈' : '';
-  // No held lots need inflation data, unless a later account history may hide some.
-  const nothingHeld =
-    portfolio.unavailableAccountCount === 0 &&
-    portfolio.assets.every((asset) => Number(asset.quantity) === 0);
+/**
+ * Coins without a price or a purchase price stay out of the figures instead of emptying them;
+ * one tooltip says so (PV-KNOWN-PART).
+ */
+function partialParts(portfolio: PortfolioValuation) {
+  return {
+    value: portfolio.totalValue === null,
+    cost:
+      portfolio.costBasis === null &&
+      (portfolio.unknownCostCount > 0 || portfolio.missingRateCount > 0) &&
+      Number(portfolio.knownCostSubtotal) > 0,
+    // The coins left out, for a missing price or a missing purchase price, are named in the note.
+    profit: portfolio.unrealizedPnl === null && portfolio.knownUnrealizedPnl !== null,
+    realized: portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0,
+  };
+}
+type PartialParts = ReturnType<typeof partialParts>;
+
+/** The summary's tooltip, or null when no figure it shows leaves anything out. */
+function partialNote(
+  partial: PartialParts,
+  showReal: boolean,
+  reading: RealReading | null,
+): string | null {
+  if (!showReal)
+    return partial.value || partial.cost || partial.profit || partial.realized
+      ? PARTIAL_NOTE
+      : null;
+  // Realized P&L is shown in both readings, so its note stays under Real.
+  if (!partial.value && !partial.realized) return null;
+  return [
+    partial.value && PARTIAL_NOTE_REAL,
+    partial.value &&
+      reading !== null &&
+      reading.unrealizedPnl === null &&
+      'Real P&L is unavailable because some held assets have no price or exchange rate.',
+    partial.realized && PARTIAL_REALIZED,
+  ]
+    .filter((text) => text !== false)
+    .join(' ');
+}
+
+/** What the current value leaves out: "2 assets without a price, 1 deposit without a rate". */
+function missingText(portfolio: PortfolioValuation): string {
   const unpriced = portfolio.missingPriceCount;
   const unrated = portfolio.unratedDepositCount;
-  const currency = portfolio.currency;
-  const amount = (value: string | null) => money(value, currency);
-  // Coins without a price or a purchase price stay out of the figures instead of emptying
-  // them; one tooltip says so (PV-KNOWN-PART).
-  const partialValue = portfolio.totalValue === null;
-  const partialCost =
-    portfolio.costBasis === null &&
-    (portfolio.unknownCostCount > 0 || portfolio.missingRateCount > 0) &&
-    Number(portfolio.knownCostSubtotal) > 0;
-  // The coins left out, for a missing price or a missing purchase price, are named in the note.
-  const partialProfit = portfolio.unrealizedPnl === null && portfolio.knownUnrealizedPnl !== null;
-  const partialRealized =
-    portfolio.realizedPnl === null && Number(portfolio.knownRealizedSubtotal) !== 0;
-  const partial = partialValue || partialCost || partialProfit || partialRealized;
-  // Realized P&L is shown in both readings, so its note stays under Real.
-  const partialShown = showReal ? partialValue || partialRealized : partial;
-  const partialText = !showReal
-    ? PARTIAL_NOTE
-    : [
-        partialValue && PARTIAL_NOTE_REAL,
-        partialValue &&
-          reading !== null &&
-          reading.unrealizedPnl === null &&
-          'Real P&L is unavailable because some held assets have no price or exchange rate.',
-        partialRealized && PARTIAL_REALIZED,
-      ]
-        .filter((text) => text !== false)
-        .join(' ');
-  const withDeposits = Number(portfolio.depositsValue) > 0;
-  const properties = propertiesOf(portfolio, classes);
-  const propertyValue = propertyTotal(properties);
-  const unpricedProperties = properties.filter(({ value }) => value === null).length;
-  const oldEstimates = properties.filter(
-    ({ value, asset }) =>
-      value !== null &&
-      asset.price?.observedAt &&
-      estimateOverdue(asset.price.observedAt, new Date()),
-  ).length;
-  const unavailablePropertyAccounts = portfolio.accounts.filter(
-    (account) =>
-      classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
-  ).length;
-  const withProperty =
-    unavailablePropertyAccounts > 0 ||
-    portfolio.assets.some((asset) =>
-      asset.holdings.some(
-        (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
-      ),
-    );
-  // Account classes are a separate read; an unknown class must not hide the P&L's scope.
-  const unknownClasses = portfolio.accounts.some(
-    (account) => classes[account.accountId] === undefined,
-  );
-  const profitExclusions =
-    withProperty || unknownClasses
-      ? 'excluding bank deposits and real estate'
-      : withDeposits
-        ? NO_DEPOSITS
-        : null;
-  const missing = [
+  return [
     unpriced > 0 && `${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`,
     portfolio.unavailableAccountCount > 0 &&
       `${portfolio.unavailableAccountCount} account history starts later`,
@@ -579,137 +557,215 @@ function Summary({
   ]
     .filter((reason) => reason !== false)
     .join(', ');
+}
+
+/** The real estate in the current value, what its figure leaves out, and whether any is held. */
+function propertyFacts(portfolio: PortfolioValuation, classes: AccountClasses) {
+  const properties = propertiesOf(portfolio, classes);
+  const unavailable = portfolio.accounts.filter(
+    (account) =>
+      classes[account.accountId] === 'property' && account.coverage === 'before-coverage',
+  ).length;
+  return {
+    value: propertyTotal(properties),
+    unpriced: properties.filter(({ value }) => value === null).length,
+    oldEstimates: properties.filter(
+      ({ value, asset }) =>
+        value !== null &&
+        asset.price?.observedAt &&
+        estimateOverdue(asset.price.observedAt, new Date()),
+    ).length,
+    unavailable,
+    held:
+      unavailable > 0 ||
+      portfolio.assets.some((asset) =>
+        asset.holdings.some(
+          (holding) => classes[holding.accountId] === 'property' && Number(holding.quantity) > 0,
+        ),
+      ),
+  };
+}
+type PropertyFacts = ReturnType<typeof propertyFacts>;
+
+/** What the P&L leaves out; an account of unknown class may be real estate. */
+function profitExclusionsOf(withProperty: boolean, unknownClasses: boolean, withDeposits: boolean) {
+  if (withProperty || unknownClasses) return 'excluding bank deposits and real estate';
+  return withDeposits ? NO_DEPOSITS : null;
+}
+
+/** Why the real cost is unknown: nothing is held, an account history starts later, or a gap. */
+function noRealCostText(nothingHeld: boolean, portfolio: PortfolioValuation): string {
+  if (nothingHeld) return 'Nothing held, so there is no real cost or profit';
+  return portfolio.unavailableAccountCount > 0 ? NO_REAL_ACCOUNT : NO_REAL_COST;
+}
+
+/** Why only part of the cost basis is known. */
+function unknownCostText(portfolio: PortfolioValuation): string {
+  if (portfolio.unknownCostCount > 0) return 'part has no purchase price';
+  return portfolio.missingRateCount > 0 ? 'part predates the stored rates' : NO_REAL_ACCOUNT;
+}
+
+/** The unrealized P&L the summary shows: real under Real, else of the known part when partial. */
+function summaryProfit(
+  portfolio: PortfolioValuation,
+  reading: RealReading | null,
+  showReal: boolean,
+  nothingHeld: boolean,
+  partialProfit: boolean,
+): { value: string | null; ratio: string | null } {
+  if (showReal)
+    return {
+      value: nothingHeld ? '0' : (reading?.unrealizedPnl ?? null),
+      ratio: reading?.unrealizedReturnPercent ?? null,
+    };
+  if (partialProfit)
+    return { value: portfolio.knownUnrealizedPnl, ratio: portfolio.knownUnrealizedReturnPercent };
+  return { value: portfolio.unrealizedPnl, ratio: portfolio.unrealizedReturnPercent };
+}
+
+/** Real estate in the current value, at least its known part, and what is left out of it. */
+function PropertyNote({
+  property,
+  currency,
+  asked,
+}: {
+  property: PropertyFacts;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+}) {
+  const { value, unpriced, unavailable, oldEstimates } = property;
   return (
-    <Card className="portfolio-summary" labelledBy={summaryTitle}>
-      <h2 id={summaryTitle} className="ui-sr">
-        Portfolio summary
-      </h2>
-      {partialShown && (
-        <span
-          className="portfolio-info"
-          role="img"
-          tabIndex={0}
-          aria-label={partialText}
-          data-tip={partialText}
-        >
-          <Icon name="info" className="shell-icon shell-icon--sm" />
+    <span className="ui-sub">
+      Includes {(unpriced > 0 || unavailable > 0) && 'at least '}
+      {money(value, currency)} in{' '}
+      <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
+        real estate
+      </Link>{' '}
+      (estimated)
+      {unpriced > 0 && ` · ${unpriced} without a price or rate left out.`}
+      {unavailable > 0 &&
+        ` · ${unavailable} property ${unavailable === 1 ? 'account has' : 'accounts have'} unavailable history.`}
+      {oldEstimates > 0 &&
+        ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
+    </span>
+  );
+}
+
+function CurrentValue({
+  portfolio,
+  partialValue,
+  withDeposits,
+  property,
+  unknownClasses,
+  asked,
+}: {
+  portfolio: PortfolioValuation;
+  partialValue: boolean;
+  withDeposits: boolean;
+  property: PropertyFacts;
+  unknownClasses: boolean;
+  asked: AccountingCurrency | undefined;
+}) {
+  const { currency } = portfolio;
+  const missing = missingText(portfolio);
+  return (
+    <>
+      {money(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue, currency)}
+      {partialValue && missing !== '' && <span className="ui-sub">{missing}</span>}
+      {withDeposits && (
+        <span className="ui-sub">
+          {money(portfolio.depositsValue, currency)} in{' '}
+          <Link className="ui-link" to={withCurrency('/deposits', asked)}>
+            bank deposits
+          </Link>
         </span>
       )}
-      <Stats size="lg">
-        <Stat
-          lead
-          label="Current value"
-          value={
-            <>
-              {amount(partialValue ? portfolio.pricedSubtotal : portfolio.totalValue)}
-              {partialValue && missing !== '' && <span className="ui-sub">{missing}</span>}
-              {withDeposits && (
-                <span className="ui-sub">
-                  {amount(portfolio.depositsValue)} in{' '}
-                  <Link className="ui-link" to={withCurrency('/deposits', asked)}>
-                    bank deposits
-                  </Link>
-                </span>
-              )}
-              {!unknownClasses && Number(propertyValue) > 0 && (
-                <span className="ui-sub">
-                  Includes{' '}
-                  {(unpricedProperties > 0 || unavailablePropertyAccounts > 0) && 'at least '}
-                  {amount(propertyValue)} in{' '}
-                  <Link className="ui-link" to={withCurrency('/real-estate', asked)}>
-                    real estate
-                  </Link>{' '}
-                  (estimated)
-                  {unpricedProperties > 0 &&
-                    ` · ${unpricedProperties} without a price or rate left out.`}
-                  {unavailablePropertyAccounts > 0 &&
-                    ` · ${unavailablePropertyAccounts} property ${unavailablePropertyAccounts === 1 ? 'account has' : 'accounts have'} unavailable history.`}
-                  {oldEstimates > 0 &&
-                    ` · ${oldEstimates} ${oldEstimates === 1 ? 'estimate' : 'estimates'} over 60 days old.`}
-                </span>
-              )}
-            </>
-          }
+      {!unknownClasses && Number(property.value) > 0 && (
+        <PropertyNote property={property} currency={currency} asked={asked} />
+      )}
+    </>
+  );
+}
+
+/** The real cost, or a dash (zero when nothing is held) and why it is unknown. */
+function RealCost({
+  portfolio,
+  reading,
+  nothingHeld,
+  estimatedCost,
+}: {
+  portfolio: PortfolioValuation;
+  reading: RealReading | null;
+  nothingHeld: boolean;
+  estimatedCost: string;
+}) {
+  const amount = (value: string | null) => money(value, portfolio.currency);
+  if (reading !== null && reading.costBasis !== null)
+    return `${estimatedCost}${amount(reading.costBasis)}`;
+  return (
+    <>
+      {nothingHeld ? amount('0') : DASH}
+      <span className="ui-sub">{noRealCostText(nothingHeld, portfolio)}</span>
+    </>
+  );
+}
+
+function CostValue({
+  portfolio,
+  reading,
+  showReal,
+  nothingHeld,
+  partialCost,
+  estimatedCost,
+  withDeposits,
+}: {
+  portfolio: PortfolioValuation;
+  reading: RealReading | null;
+  showReal: boolean;
+  nothingHeld: boolean;
+  partialCost: boolean;
+  estimatedCost: string;
+  withDeposits: boolean;
+}) {
+  const amount = (value: string | null) => money(value, portfolio.currency);
+  return (
+    <>
+      {showReal ? (
+        <RealCost
+          portfolio={portfolio}
+          reading={reading}
+          nothingHeld={nothingHeld}
+          estimatedCost={estimatedCost}
         />
-        <Stat
-          label={showReal ? "Cost in today's money" : 'Cost basis'}
-          value={
-            <>
-              {showReal ? (
-                reading === null || reading.costBasis === null ? (
-                  <>
-                    {nothingHeld ? amount('0') : DASH}
-                    <span className="ui-sub">
-                      {nothingHeld
-                        ? 'Nothing held, so there is no real cost or profit'
-                        : portfolio.unavailableAccountCount > 0
-                          ? NO_REAL_ACCOUNT
-                          : NO_REAL_COST}
-                    </span>
-                  </>
-                ) : (
-                  `${estimatedCost}${amount(reading.costBasis)}`
-                )
-              ) : partialCost ? (
-                `${estimatedCost}${amount(portfolio.knownCostSubtotal)}`
-              ) : (
-                `${estimatedCost}${amount(portfolio.costBasis)}`
-              )}
-              {!showReal && portfolio.costBasis === null && !partialCost && (
-                <span className="ui-sub">
-                  {amount(portfolio.knownCostSubtotal)} known,{' '}
-                  {portfolio.unknownCostCount > 0
-                    ? 'part has no purchase price'
-                    : portfolio.missingRateCount > 0
-                      ? 'part predates the stored rates'
-                      : NO_REAL_ACCOUNT}
-                </span>
-              )}
-              {estimatedCost && <span className="ui-sub">includes estimated purchase prices</span>}
-              {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
-            </>
-          }
-        />
-        <Stat
-          label={showReal ? 'Real P&L' : 'Unrealized P&L'}
-          value={
-            <>
-              {showReal ? (
-                <Signed
-                  value={nothingHeld ? '0' : (reading?.unrealizedPnl ?? null)}
-                  currency={currency}
-                  ratio={reading?.unrealizedReturnPercent ?? null}
-                  estimated={estimatedCost !== ''}
-                />
-              ) : partialProfit ? (
-                <Signed
-                  value={portfolio.knownUnrealizedPnl}
-                  currency={currency}
-                  ratio={portfolio.knownUnrealizedReturnPercent}
-                  estimated={estimatedCost !== ''}
-                />
-              ) : (
-                <Signed
-                  value={portfolio.unrealizedPnl}
-                  currency={currency}
-                  ratio={portfolio.unrealizedReturnPercent}
-                  estimated={estimatedCost !== ''}
-                />
-              )}
-              {profitExclusions && <span className="ui-sub">{profitExclusions}</span>}
-            </>
-          }
-        />
-        <Stat
-          label="Realized P&L"
-          value={
-            <Signed
-              value={partialRealized ? portfolio.knownRealizedSubtotal : portfolio.realizedPnl}
-              currency={currency}
-            />
-          }
-        />
-      </Stats>
+      ) : (
+        `${estimatedCost}${amount(partialCost ? portfolio.knownCostSubtotal : portfolio.costBasis)}`
+      )}
+      {!showReal && portfolio.costBasis === null && !partialCost && (
+        <span className="ui-sub">
+          {amount(portfolio.knownCostSubtotal)} known, {unknownCostText(portfolio)}
+        </span>
+      )}
+      {estimatedCost && <span className="ui-sub">includes estimated purchase prices</span>}
+      {withDeposits && <span className="ui-sub">{NO_DEPOSITS}</span>}
+    </>
+  );
+}
+
+/** The summary's notes: the inflation basis under Real, and what the figures are missing. */
+function SummaryNotes({
+  portfolio,
+  reading,
+  showReal,
+  basis,
+}: {
+  portfolio: PortfolioValuation;
+  reading: RealReading | null;
+  showReal: boolean;
+  basis: InflationBasis;
+}) {
+  const { currency } = portfolio;
+  return (
+    <>
       {showReal && reading !== null && (
         <p className="ui-sub portfolio-card-note">
           In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
@@ -737,6 +793,106 @@ function Summary({
           {currency} is not shown.
         </Banner>
       )}
+    </>
+  );
+}
+
+function Summary({
+  portfolio,
+  asked,
+  real: showReal,
+  basis,
+}: {
+  portfolio: PortfolioValuation;
+  asked: AccountingCurrency | undefined;
+  /** Under Real the cost and the profit are the ones after inflation, and no nominal figure. */
+  real: boolean;
+  basis: InflationBasis;
+}) {
+  const summaryTitle = useId();
+  const classes = useAccountClasses();
+  const reading: RealReading | null = portfolio.real?.[basis] ?? null;
+  // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
+  const estimatedCost = (portfolio.estimatedCostCount ?? 0) > 0 ? '≈' : '';
+  // No held lots need inflation data, unless a later account history may hide some.
+  const nothingHeld =
+    portfolio.unavailableAccountCount === 0 &&
+    portfolio.assets.every((asset) => Number(asset.quantity) === 0);
+  const currency = portfolio.currency;
+  const partial = partialParts(portfolio);
+  const note = partialNote(partial, showReal, reading);
+  const withDeposits = Number(portfolio.depositsValue) > 0;
+  const property = propertyFacts(portfolio, classes);
+  // Account classes are a separate read; an unknown class must not hide the P&L's scope.
+  const unknownClasses = portfolio.accounts.some(
+    (account) => classes[account.accountId] === undefined,
+  );
+  const profitExclusions = profitExclusionsOf(property.held, unknownClasses, withDeposits);
+  const profit = summaryProfit(portfolio, reading, showReal, nothingHeld, partial.profit);
+  return (
+    <Card className="portfolio-summary" labelledBy={summaryTitle}>
+      <h2 id={summaryTitle} className="ui-sr">
+        Portfolio summary
+      </h2>
+      {note !== null && (
+        <span className="portfolio-info" role="img" tabIndex={0} aria-label={note} data-tip={note}>
+          <Icon name="info" className="shell-icon shell-icon--sm" />
+        </span>
+      )}
+      <Stats size="lg">
+        <Stat
+          lead
+          label="Current value"
+          value={
+            <CurrentValue
+              portfolio={portfolio}
+              partialValue={partial.value}
+              withDeposits={withDeposits}
+              property={property}
+              unknownClasses={unknownClasses}
+              asked={asked}
+            />
+          }
+        />
+        <Stat
+          label={showReal ? "Cost in today's money" : 'Cost basis'}
+          value={
+            <CostValue
+              portfolio={portfolio}
+              reading={reading}
+              showReal={showReal}
+              nothingHeld={nothingHeld}
+              partialCost={partial.cost}
+              estimatedCost={estimatedCost}
+              withDeposits={withDeposits}
+            />
+          }
+        />
+        <Stat
+          label={showReal ? 'Real P&L' : 'Unrealized P&L'}
+          value={
+            <>
+              <Signed
+                value={profit.value}
+                currency={currency}
+                ratio={profit.ratio}
+                estimated={estimatedCost !== ''}
+              />
+              {profitExclusions && <span className="ui-sub">{profitExclusions}</span>}
+            </>
+          }
+        />
+        <Stat
+          label="Realized P&L"
+          value={
+            <Signed
+              value={partial.realized ? portfolio.knownRealizedSubtotal : portfolio.realizedPnl}
+              currency={currency}
+            />
+          }
+        />
+      </Stats>
+      <SummaryNotes portfolio={portfolio} reading={reading} showReal={showReal} basis={basis} />
     </Card>
   );
 }
@@ -848,9 +1004,9 @@ function AssetsTable({
                   </td>
                   <td className="ui-num">
                     <Signed
-                      value={(real === null ? shownProfit(asset) : realProfit(asset, real)).pnl}
+                      value={assetProfit(asset, real).pnl}
                       currency={currency}
-                      ratio={(real === null ? shownProfit(asset) : realProfit(asset, real)).ratio}
+                      ratio={assetProfit(asset, real).ratio}
                       inline
                       estimated={costMark(asset) !== ''}
                     />
@@ -901,7 +1057,7 @@ function Profit({
   currency: AccountingCurrency;
   real: InflationBasis | null;
 }) {
-  const { pnl, ratio } = real === null ? shownProfit(asset) : realProfit(asset, real);
+  const { pnl, ratio } = assetProfit(asset, real);
   if (pnl === null) return DASH;
   return (
     <span className={toneClass(pnl)}>
@@ -987,6 +1143,171 @@ function AssetsList({
   });
 }
 
+/** What Add opens: the kind picker, then the kind's own form. */
+type Adding = 'pick' | Exclude<AddChoice, 'crypto'>;
+
+/** The inflation basis the page reads under Real, or null under Nominal. */
+const viewBasis = (view: ValueView, basis: InflationBasis) => (view === 'real' ? basis : null);
+
+/**
+ * Under Real the profit column is the profit after inflation on the chosen basis. An answer saved
+ * before real figures existed has none to show, so it stays nominal until a fresh one.
+ */
+const realBasis = (view: ValueView, portfolio: PortfolioValuation | null, basis: InflationBasis) =>
+  view === 'real' && portfolio?.real !== undefined ? basis : null;
+
+/** A class with no assets gets no chip; a chosen class that no longer has any shows them all. */
+const activeFilter = (filter: Filter, count: (value: Filter) => number): Filter =>
+  filter !== 'all' && count(filter) === 0 ? 'all' : filter;
+
+/** No asset, bank product or deposit value to list, and the bank products were read. */
+const nothingToList = (
+  assets: readonly AssetValuation[],
+  deposits: readonly Deposit[],
+  portfolio: PortfolioValuation,
+  bankError: unknown,
+  banksStale: boolean,
+) =>
+  assets.length === 0 &&
+  deposits.length === 0 &&
+  !hasDeposits(portfolio) &&
+  !bankError &&
+  !banksStale;
+
+/** The assets as phone rows with their own Sort by, or as the table sorted by its headers. */
+function AssetsView({
+  phone,
+  groups,
+  onToggle,
+  currency,
+  asked,
+  now,
+  chains,
+  sort,
+  shown,
+  onSort,
+  real,
+}: {
+  phone: boolean;
+  groups: AssetGroup[];
+  onToggle: (key: AssetClassFilter) => void;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  now: Date;
+  chains: TokenChains;
+  /** The order chosen; a phone shows `shown`, the orders its Sort by can name. */
+  sort: AssetSort;
+  shown: AssetSort;
+  onSort: Dispatch<SetStateAction<AssetSort>>;
+  real: InflationBasis | null;
+}) {
+  if (!phone)
+    return (
+      <AssetsTable
+        groups={groups}
+        onToggle={onToggle}
+        currency={currency}
+        asked={asked}
+        now={now}
+        chains={chains}
+        sort={sort}
+        onSort={(key) => onSort((current) => nextSort(current, key))}
+        real={real}
+      />
+    );
+  return (
+    <>
+      <label className="portfolio-sort">
+        Sort by
+        <Select
+          size="sm"
+          value={shown.key}
+          onChange={(event) => {
+            const key = event.target.value as SortKey;
+            onSort({ key, direction: firstDirection(key) });
+          }}
+        >
+          {phoneSorts(real !== null).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <AssetsList
+        groups={groups}
+        onToggle={onToggle}
+        currency={currency}
+        asked={asked}
+        chains={chains}
+        real={real}
+      />
+    </>
+  );
+}
+
+/** Shows or hides the assets no longer held; a search lists them anyway. */
+function SoldToggle({
+  count,
+  search,
+  shown,
+  onToggle,
+}: {
+  count: number;
+  search: string;
+  shown: boolean;
+  onToggle: () => void;
+}) {
+  if (count === 0 || search.trim()) return null;
+  return (
+    <Button size="sm" variant="ghost" onClick={onToggle}>
+      {shown
+        ? 'Hide assets no longer held'
+        : `Show ${count} ${count === 1 ? 'asset' : 'assets'} no longer held`}
+    </Button>
+  );
+}
+
+/** The bank products could not be read: the last rows stay, or their value in the summary. */
+function BanksBanner({
+  error,
+  stale,
+  kept,
+  onRetry,
+}: {
+  error: unknown;
+  stale: boolean;
+  kept: boolean;
+  onRetry: () => void;
+}) {
+  if (!error && !stale) return null;
+  return (
+    <Banner
+      tone="warn"
+      role="alert"
+      action={
+        <Button size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    >
+      {kept
+        ? 'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.'
+        : 'Could not load bank products. Their value remains in the portfolio summary.'}
+    </Banner>
+  );
+}
+
+/** Why the list is empty: nothing matches the search, or the class holds nothing. */
+function NoneMatch({ rows, search }: { rows: number; search: string }) {
+  if (rows > 0) return null;
+  return (
+    <p className="ui-none">
+      {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this class.'}
+    </p>
+  );
+}
+
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
 export default function PortfolioPage() {
   const [asked] = useAskedCurrency();
@@ -1016,11 +1337,9 @@ export default function PortfolioPage() {
   const phone = useRowsLayout();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  // Under Real the profit column is the profit after inflation on the chosen basis. An answer
-  // saved before real figures existed has none to show, so it stays nominal until a fresh one.
-  const real = view === 'real' && portfolio?.real !== undefined ? basis : null;
+  const real = realBasis(view, portfolio, basis);
   // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
-  const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
   const navigate = useNavigate();
   const [refreshFailed, setRefreshFailed] = useState(false);
   const chains = useTokenChains();
@@ -1064,8 +1383,7 @@ export default function PortfolioPage() {
   const count = (value: Filter) =>
     assets.filter((asset) => inFilter(asset, value)).length +
     (value === 'bank' || value === 'all' ? deposits.length : 0);
-  // A class with no assets gets no chip; a chosen class that no longer has any shows them all.
-  const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
+  const active = activeFilter(filter, count);
   const visible = assets.filter((asset) => inFilter(asset, active) && matchesSearch(asset, search));
   // PAGES: each class starts with five assets; its disclosure keeps the chosen sorted order.
   // The table and the phone list share one order, Value largest first until another is chosen;
@@ -1082,7 +1400,7 @@ export default function PortfolioPage() {
     ),
     shown,
     portfolio?.currency ?? 'USD',
-    view === 'real' ? basis : null,
+    viewBasis(view, basis),
   );
   // What every share is of: the net worth, or its known part as an estimate.
   const base = portfolio && shareBase(portfolio);
@@ -1108,6 +1426,46 @@ export default function PortfolioPage() {
       Add
     </Button>
   );
+  const addDialog = (choice: Adding) => {
+    switch (choice) {
+      case 'pick':
+        return (
+          <AddToPortfolioDialog
+            onClose={() => setAdding(null)}
+            onChoose={(choice) =>
+              choice === 'crypto'
+                ? navigate(withCurrency('/wallets', asked), { state: { addWallet: true } })
+                : setAdding(choice)
+            }
+          />
+        );
+      case 'other':
+        return <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />;
+      case 'broker':
+        return (
+          <AddBrokerAccountDialog
+            onClose={() => setAdding(null)}
+            onAdded={(account) =>
+              navigate(withCurrency('/brokers', asked), { state: { focusAccount: account } })
+            }
+          />
+        );
+      case 'property':
+        return (
+          <AddPropertyDialog
+            onClose={() => setAdding(null)}
+            onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
+          />
+        );
+      case 'bank':
+        return (
+          <AddDepositDialog
+            onClose={() => setAdding(null)}
+            onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
+          />
+        );
+    }
+  };
   const now = new Date();
   const groups = classOrder.flatMap((key): AssetGroup[] => {
     const rows = sorted.filter((asset) => classOf(asset) === key);
@@ -1156,11 +1514,7 @@ export default function PortfolioPage() {
         <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
-      ) : assets.length === 0 &&
-        deposits.length === 0 &&
-        !hasDeposits(portfolio) &&
-        !bankError &&
-        !banksStale ? (
+      ) : nothingToList(assets, deposits, portfolio, bankError, banksStale) ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
           Add a wallet, a bank deposit, a coin or anything else you want to track.
         </EmptyState>
@@ -1180,160 +1534,76 @@ export default function PortfolioPage() {
             </Banner>
           )}
           <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
-          {assets.length === 0 &&
-          deposits.length === 0 &&
-          !hasDeposits(portfolio) &&
-          !bankError &&
-          !banksStale ? (
-            <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
-              Add a wallet, a bank deposit, a coin or anything else you want to track.
-            </EmptyState>
-          ) : (
-            <Card labelledBy="portfolio-assets">
-              <div className="ui-toolbar">
-                <h2 id="portfolio-assets" className="ui-sr">
-                  Assets
-                </h2>
-                <ChipGroup label="Filter assets">
-                  {filters
-                    .filter(([value]) => value === 'all' || count(value) > 0)
-                    .map(([value, label]) => (
-                      <Chip
-                        key={value}
-                        pressed={active === value}
-                        count={count(value)}
-                        countTone="muted"
-                        onClick={() => setFilter(value)}
-                      >
-                        {label}
-                      </Chip>
-                    ))}
-                </ChipGroup>
-                <div className="portfolio-tools">
-                  <Input
-                    type="search"
-                    size="sm"
-                    className="ui-search"
-                    placeholder="Search assets"
-                    aria-label="Search assets"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                  {addButton(false)}
-                </div>
-              </div>
-              {phone ? (
-                <>
-                  <label className="portfolio-sort">
-                    Sort by
-                    <Select
-                      size="sm"
-                      value={shown.key}
-                      onChange={(event) => {
-                        const key = event.target.value as SortKey;
-                        setSort({ key, direction: firstDirection(key) });
-                      }}
+          <Card labelledBy="portfolio-assets">
+            <div className="ui-toolbar">
+              <h2 id="portfolio-assets" className="ui-sr">
+                Assets
+              </h2>
+              <ChipGroup label="Filter assets">
+                {filters
+                  .filter(([value]) => value === 'all' || count(value) > 0)
+                  .map(([value, label]) => (
+                    <Chip
+                      key={value}
+                      pressed={active === value}
+                      count={count(value)}
+                      countTone="muted"
+                      onClick={() => setFilter(value)}
                     >
-                      {phoneSorts(real !== null).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <AssetsList
-                    groups={groups}
-                    onToggle={toggle}
-                    currency={portfolio.currency}
-                    asked={asked}
-                    chains={chains}
-                    real={real}
-                  />
-                </>
-              ) : (
-                <AssetsTable
-                  groups={groups}
-                  onToggle={toggle}
-                  currency={portfolio.currency}
-                  asked={asked}
-                  now={now}
-                  chains={chains}
-                  sort={sort}
-                  onSort={(key) => setSort((current) => nextSort(current, key))}
-                  real={real}
+                      {label}
+                    </Chip>
+                  ))}
+              </ChipGroup>
+              <div className="portfolio-tools">
+                <Input
+                  type="search"
+                  size="sm"
+                  className="ui-search"
+                  placeholder="Search assets"
+                  aria-label="Search assets"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
                 />
-              )}
-              {soldCount > 0 && !search.trim() && (
-                <Button size="sm" variant="ghost" onClick={() => setShowSold((shown) => !shown)}>
-                  {showSold
-                    ? 'Hide assets no longer held'
-                    : `Show ${soldCount} ${soldCount === 1 ? 'asset' : 'assets'} no longer held`}
-                </Button>
-              )}
-              {(!!bankError || banksStale) && (
-                <Banner
-                  tone="warn"
-                  role="alert"
-                  action={
-                    <Button size="sm" onClick={() => reloadBanks()}>
-                      Retry
-                    </Button>
-                  }
-                >
-                  {bankList
-                    ? 'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.'
-                    : 'Could not load bank products. Their value remains in the portfolio summary.'}
-                </Banner>
-              )}
-              {visible.length === 0 && bankRows.length === 0 && (
-                <p className="ui-none">
-                  {search.trim()
-                    ? `No assets match "${search.trim()}".`
-                    : 'No assets of this class.'}
-                </p>
-              )}
-              <p className="ui-sub portfolio-card-note">
-                {ratesNote(portfolio)} Holdings come from your{' '}
-                <Link className="ui-link" to="/wallets">
-                  wallets
-                </Link>{' '}
-                and the transactions you add.
-              </p>
-            </Card>
-          )}
+                {addButton(false)}
+              </div>
+            </div>
+            <AssetsView
+              phone={phone}
+              groups={groups}
+              onToggle={toggle}
+              currency={portfolio.currency}
+              asked={asked}
+              now={now}
+              chains={chains}
+              sort={sort}
+              shown={shown}
+              onSort={setSort}
+              real={real}
+            />
+            <SoldToggle
+              count={soldCount}
+              search={search}
+              shown={showSold}
+              onToggle={() => setShowSold((shown) => !shown)}
+            />
+            <BanksBanner
+              error={bankError}
+              stale={banksStale}
+              kept={Boolean(bankList)}
+              onRetry={() => reloadBanks()}
+            />
+            <NoneMatch rows={visible.length + bankRows.length} search={search} />
+            <p className="ui-sub portfolio-card-note">
+              {ratesNote(portfolio)} Holdings come from your{' '}
+              <Link className="ui-link" to="/wallets">
+                wallets
+              </Link>{' '}
+              and the transactions you add.
+            </p>
+          </Card>
         </>
       )}
-      {adding === 'pick' && (
-        <AddToPortfolioDialog
-          onClose={() => setAdding(null)}
-          onChoose={(choice) =>
-            choice === 'crypto'
-              ? navigate(withCurrency('/wallets', asked), { state: { addWallet: true } })
-              : setAdding(choice)
-          }
-        />
-      )}
-      {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
-      {adding === 'broker' && (
-        <AddBrokerAccountDialog
-          onClose={() => setAdding(null)}
-          onAdded={(account) =>
-            navigate(withCurrency('/brokers', asked), { state: { focusAccount: account } })
-          }
-        />
-      )}
-      {adding === 'property' && (
-        <AddPropertyDialog
-          onClose={() => setAdding(null)}
-          onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
-        />
-      )}
-      {adding === 'bank' && (
-        <AddDepositDialog
-          onClose={() => setAdding(null)}
-          onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
-        />
-      )}
+      {adding && addDialog(adding)}
     </div>
   );
 }

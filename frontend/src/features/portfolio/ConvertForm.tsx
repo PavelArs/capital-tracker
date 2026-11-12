@@ -80,6 +80,39 @@ interface Props {
   onSaving: (saving: boolean) => void;
 }
 
+/** The problems the form shows, or the fields the owner has left. */
+type Found = ReadonlySet<ConvertProblem>;
+
+/** The text a Field shows under its control once the problem is found (ids `${id}-<problem>`). */
+const problemOf = (found: Found, name: ConvertProblem, text = problemText[name]) =>
+  found.has(name) ? text : null;
+const fieldError = (id: string, found: Found, name: ConvertProblem, text = problemText[name]) =>
+  found.has(name) && (
+    <span className="ui-field__error" id={`${id}-${name}-error`}>
+      {text}
+    </span>
+  );
+const invalid = (id: string, found: Found, name: ConvertProblem) =>
+  found.has(name) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${name}-error` } : {};
+
+/** `account|asset|instant` for the balance of the cash given up; null while a part is missing. */
+function balanceKey(
+  accountId: string,
+  fromAsset: PortfolioAsset | undefined,
+  entry: ConvertEntry,
+  moment: string,
+): string | null {
+  // A half-typed date or time asks nothing: the server would refuse the instant.
+  const validMoment = /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && /^(\d{2}:\d{2})?$/.test(entry.time);
+  return fromAsset && accountId && validMoment ? `${accountId}|${fromAsset.id}|${moment}` : null;
+}
+
+/** "72,000 RUB → 800 USD" once both amounts are numbers. */
+function convertSummary(entry: ConvertEntry): string | null {
+  if (positive(entry.amount) === null || positive(entry.received) === null) return null;
+  return `${quantity(decimal(entry.amount)!)} ${entry.from} → ${quantity(decimal(entry.received)!)} ${entry.to}`;
+}
+
 /**
  * "Convert" (CASH-CONVERT): cash in one currency becomes cash in another in the same account.
  * One sale of the cash given up, settled in the cash received, so the balance of each currency
@@ -115,7 +148,7 @@ export default function ConvertForm({
     null,
   );
   const [tried, setTried] = useState(false);
-  const [left, setLeft] = useState<ReadonlySet<ConvertProblem>>(new Set());
+  const [left, setLeft] = useState<Found>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => onSaving(saving), [saving, onSaving]);
@@ -157,10 +190,7 @@ export default function ConvertForm({
   }, [accounts, fromAsset, holderOf]);
 
   const moment = occurredAt(withDefaultTime(entry, new Date()));
-  // A half-typed date or time asks nothing: the server would refuse the instant.
-  const validMoment = /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && /^(\d{2}:\d{2})?$/.test(entry.time);
-  const availableKey =
-    fromAsset && accountId && validMoment ? `${accountId}|${fromAsset.id}|${moment}` : null;
+  const availableKey = balanceKey(accountId, fromAsset, entry, moment);
   useEffect(() => {
     if (!availableKey || !fromAsset) return;
     let live = true;
@@ -179,16 +209,6 @@ export default function ConvertForm({
   const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const typed = positive(entry.amount);
   const over = available !== null && typed !== null && compareDecimal(typed, available) > 0;
-  const problem = (name: ConvertProblem, text = problemText[name]) =>
-    found.has(name) ? text : null;
-  const fieldError = (name: ConvertProblem, text = problemText[name]) =>
-    found.has(name) && (
-      <span className="ui-field__error" id={`${id}-${name}-error`}>
-        {text}
-      </span>
-    );
-  const invalid = (name: ConvertProblem) =>
-    found.has(name) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${name}-error` } : {};
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -229,7 +249,6 @@ export default function ConvertForm({
   };
 
   const fillAll = () => available && update({ amount: available });
-  const rate = rateText(entry);
 
   return (
     <form ref={form} onSubmit={submit} noValidate>
@@ -241,18 +260,8 @@ export default function ConvertForm({
       />
       <ModalBody>
         {typeField}
-        {loadFailed ? (
-          <Banner tone="neg">
-            Could not load your assets and accounts. Close this window and try again.
-          </Banner>
-        ) : !ready ? (
-          <p className="ui-field__hint" role="status">
-            Loading your assets and accounts…
-          </p>
-        ) : accounts.length === 0 ? (
-          <Banner tone="info" role="status">
-            Add an account with some cash first: on the Portfolio page choose Add, then Cash.
-          </Banner>
+        {loadFailed || !ready || accounts.length === 0 ? (
+          <ConvertNotice loadFailed={loadFailed} ready={ready} />
         ) : (
           <>
             <div className="ui-field-row">
@@ -279,7 +288,7 @@ export default function ConvertForm({
                   value={entry.to}
                   onChange={chooseTo}
                 />
-                {fieldError('currency')}
+                {fieldError(id, found, 'currency')}
               </div>
             </div>
             <div className="ui-field-row">
@@ -297,33 +306,26 @@ export default function ConvertForm({
                     onBlur={leave('amount')}
                     {...(over
                       ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
-                      : invalid('amount'))}
+                      : invalid(id, found, 'amount'))}
                   />
                 </Affix>
-                {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
-                  (!fromAsset ? (
-                    <span className="ui-field__hint">
-                      You hold no {entry.from} cash yet. Add it first on the Portfolio page: Add,
-                      then Cash.
-                    </span>
-                  ) : available !== null && account ? (
-                    over ? (
-                      <span className="ui-field__error" id={`${id}-available`} role="alert">
-                        Only {quantity(available)} {entry.from} is available in {account.name} on{' '}
-                        {dayText(moment.slice(0, 10))} ·{' '}
-                        <button type="button" className="ui-link" onClick={fillAll}>
-                          Use all
-                        </button>
-                      </span>
-                    ) : (
-                      <span className="ui-field__hint" id={`${id}-available`}>
-                        Available in {account.name}: {quantity(available)} {entry.from} ·{' '}
-                        <button type="button" className="ui-link" onClick={fillAll}>
-                          Use all
-                        </button>
-                      </span>
-                    )
-                  ) : null)}
+                {fieldError(
+                  id,
+                  found,
+                  'amount',
+                  numberProblem(entry.amount, problemText.amount),
+                ) || (
+                  <AvailableNote
+                    id={id}
+                    from={entry.from}
+                    hasCash={fromAsset !== undefined}
+                    available={available}
+                    account={account}
+                    over={over}
+                    moment={moment}
+                    onUseAll={fillAll}
+                  />
+                )}
               </div>
               <div className="ui-field">
                 <label className="ui-field__label" htmlFor={`${id}-received`}>
@@ -337,18 +339,16 @@ export default function ConvertForm({
                     value={entry.received}
                     onChange={(event) => update({ received: event.target.value })}
                     onBlur={leave('received')}
-                    {...invalid('received')}
+                    {...invalid(id, found, 'received')}
                   />
                 </Affix>
-                {fieldError('received', numberProblem(entry.received, problemText.received))}
-                {rate && (
-                  <span className="ui-field__hint">
-                    {rate}
-                    {entry.from !== 'USD' && entry.to !== 'USD' && (
-                      <> · valued in USD at the Bank of Russia rate of the day</>
-                    )}
-                  </span>
+                {fieldError(
+                  id,
+                  found,
+                  'received',
+                  numberProblem(entry.received, problemText.received),
                 )}
+                <RateHint entry={entry} />
               </div>
             </div>
             <div className="ui-field-row">
@@ -371,7 +371,7 @@ export default function ConvertForm({
                   ))}
                 </Select>
               </div>
-              <Field id={`${id}-date`} label="Date" error={problem('date')}>
+              <Field id={`${id}-date`} label="Date" error={problemOf(found, 'date')}>
                 {(control) => (
                   <Input
                     {...control}
@@ -390,49 +390,12 @@ export default function ConvertForm({
               cost of the cash you give up and the value of what you receive, in USD, shows as
               profit or loss.
             </p>
-            <details
-              className="ui-more"
-              open={
-                Boolean(entry.time || entry.comment) || found.has('time') || found.has('comment')
-              }
-            >
-              <summary>More options: time, comment</summary>
-              <div className="ui-field-row">
-                <Field id={`${id}-time`} label="Time, UTC (optional)" error={problem('time')}>
-                  {(control) => (
-                    <Input
-                      {...control}
-                      type="time"
-                      value={entry.time}
-                      onChange={(event) => update({ time: event.target.value })}
-                      onBlur={leave('time')}
-                    />
-                  )}
-                </Field>
-              </div>
-              <Field id={`${id}-comment`} label="Comment" error={problem('comment')}>
-                {(control) => (
-                  <Textarea
-                    {...control}
-                    placeholder="Optional"
-                    value={entry.comment}
-                    onChange={(event) => update({ comment: event.target.value })}
-                    onBlur={leave('comment')}
-                  />
-                )}
-              </Field>
-            </details>
+            <MoreOptions id={id} entry={entry} found={found} onUpdate={update} onLeave={leave} />
           </>
         )}
         {error && <Banner tone="neg">{error}</Banner>}
       </ModalBody>
-      <ModalFooter
-        summary={
-          positive(entry.amount) !== null && positive(entry.received) !== null
-            ? `${quantity(decimal(entry.amount)!)} ${entry.from} → ${quantity(decimal(entry.received)!)} ${entry.to}`
-            : null
-        }
-      >
+      <ModalFooter summary={convertSummary(entry)}>
         <Button variant="ghost" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
@@ -445,5 +408,133 @@ export default function ConvertForm({
         </Button>
       </ModalFooter>
     </form>
+  );
+}
+
+/** Why there are no fields: the load failed or is running, or there is no account yet. */
+function ConvertNotice({ loadFailed, ready }: { loadFailed: boolean; ready: boolean }) {
+  if (loadFailed)
+    return (
+      <Banner tone="neg">
+        Could not load your assets and accounts. Close this window and try again.
+      </Banner>
+    );
+  if (!ready)
+    return (
+      <p className="ui-field__hint" role="status">
+        Loading your assets and accounts…
+      </p>
+    );
+  return (
+    <Banner tone="info" role="status">
+      Add an account with some cash first: on the Portfolio page choose Add, then Cash.
+    </Banner>
+  );
+}
+
+interface AvailableNoteProps {
+  id: string;
+  from: CashCurrency;
+  hasCash: boolean;
+  available: string | null;
+  account: Account | undefined;
+  over: boolean;
+  moment: string;
+  onUseAll: () => void;
+}
+
+/** What the account holds of the cash given up, or that there is none of it yet. */
+function AvailableNote({
+  id,
+  from,
+  hasCash,
+  available,
+  account,
+  over,
+  moment,
+  onUseAll,
+}: AvailableNoteProps) {
+  if (!hasCash)
+    return (
+      <span className="ui-field__hint">
+        You hold no {from} cash yet. Add it first on the Portfolio page: Add, then Cash.
+      </span>
+    );
+  if (available === null || !account) return null;
+  if (over)
+    return (
+      <span className="ui-field__error" id={`${id}-available`} role="alert">
+        Only {quantity(available)} {from} is available in {account.name} on{' '}
+        {dayText(moment.slice(0, 10))} ·{' '}
+        <button type="button" className="ui-link" onClick={onUseAll}>
+          Use all
+        </button>
+      </span>
+    );
+  return (
+    <span className="ui-field__hint" id={`${id}-available`}>
+      Available in {account.name}: {quantity(available)} {from} ·{' '}
+      <button type="button" className="ui-link" onClick={onUseAll}>
+        Use all
+      </button>
+    </span>
+  );
+}
+
+/** The owner's own rate from the two amounts; between euros and rubles the day's rate values it. */
+function RateHint({ entry }: { entry: ConvertEntry }) {
+  const rate = rateText(entry);
+  if (!rate) return null;
+  return (
+    <span className="ui-field__hint">
+      {rate}
+      {entry.from !== 'USD' && entry.to !== 'USD' && (
+        <> · valued in USD at the Bank of Russia rate of the day</>
+      )}
+    </span>
+  );
+}
+
+interface MoreOptionsProps {
+  id: string;
+  entry: ConvertEntry;
+  found: Found;
+  onUpdate: (changes: Partial<ConvertEntry>) => void;
+  onLeave: (problem: ConvertProblem) => () => void;
+}
+
+/** The time and a comment, open while either has a value or a problem. */
+function MoreOptions({ id, entry, found, onUpdate, onLeave }: MoreOptionsProps) {
+  return (
+    <details
+      className="ui-more"
+      open={Boolean(entry.time || entry.comment) || found.has('time') || found.has('comment')}
+    >
+      <summary>More options: time, comment</summary>
+      <div className="ui-field-row">
+        <Field id={`${id}-time`} label="Time, UTC (optional)" error={problemOf(found, 'time')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="time"
+              value={entry.time}
+              onChange={(event) => onUpdate({ time: event.target.value })}
+              onBlur={onLeave('time')}
+            />
+          )}
+        </Field>
+      </div>
+      <Field id={`${id}-comment`} label="Comment" error={problemOf(found, 'comment')}>
+        {(control) => (
+          <Textarea
+            {...control}
+            placeholder="Optional"
+            value={entry.comment}
+            onChange={(event) => onUpdate({ comment: event.target.value })}
+            onBlur={onLeave('comment')}
+          />
+        )}
+      </Field>
+    </details>
   );
 }

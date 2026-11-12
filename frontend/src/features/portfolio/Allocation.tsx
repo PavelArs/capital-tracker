@@ -1,5 +1,9 @@
 import type { AssetType } from '@api/portfolio-assets.api';
-import type { AllocationSlice, PortfolioValuation } from '@api/portfolio-valuation.api';
+import type {
+  AllocationSlice,
+  AssetValuation,
+  PortfolioValuation,
+} from '@api/portfolio-valuation.api';
 import { useId, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Card, CardHeader } from '@/ui/Card';
@@ -126,6 +130,24 @@ function folded(slices: AllocationSlice[], limit: number | undefined) {
   };
 }
 
+/** What the slices folded into "Other" are counted as. */
+const restNouns: Record<Grouping, string> = {
+  byAsset: 'assets',
+  byType: 'types',
+  byAccount: 'accounts',
+};
+
+/** "3 accounts" beside Other; an asset is shown as "Bitcoin BTC" when its ticker differs. */
+function sliceTicker(
+  slice: AllocationSlice,
+  asset: AssetValuation | undefined,
+  rest: number,
+  grouping: Grouping,
+): string | undefined {
+  if (slice.key === OTHER) return `${rest} ${restNouns[grouping]}`;
+  return asset?.symbol && asset.symbol !== slice.label ? asset.symbol : undefined;
+}
+
 /**
  * Allocation by asset, type or account (PR-VAL-3, ALLOC): a bar and one row per slice. The
  * Dashboard passes a limit and the smallest slices become one "Other" row.
@@ -154,12 +176,7 @@ export default function Allocation({
       grouping === 'byAsset'
         ? portfolio.assets.find((item) => item.instrumentId === slice.key)
         : undefined;
-    // An asset is shown as "Bitcoin BTC" when its ticker differs from its name.
-    const ticker = other
-      ? `${rest} ${grouping === 'byAccount' ? 'accounts' : grouping === 'byType' ? 'types' : 'assets'}`
-      : asset?.symbol && asset.symbol !== slice.label
-        ? asset.symbol
-        : undefined;
+    const ticker = sliceTicker(slice, asset, rest, grouping);
     return { ...slice, ticker, color, tone: color ? undefined : index % 6 };
   });
   return (

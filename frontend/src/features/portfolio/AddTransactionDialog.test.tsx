@@ -1383,6 +1383,181 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       expect(view.getByLabelText('Comment')).toBeVisible();
     },
   );
+
+  // Characterization of branches no other test reached before the window was split up.
+  const openLoading = () => {
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog onClose={vi.fn()} onSaved={vi.fn()} />
+      </MemoryRouter>,
+    );
+    return screen.getByRole('dialog', { name: 'Add transaction' });
+  };
+
+  it('ADD-TX-LOAD says while it loads and when the assets and accounts cannot be read', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockRejectedValue(new Error('offline'));
+    const view = within(openLoading());
+    expect(view.getByRole('status')).toHaveTextContent('Loading your assets and accounts…');
+    expect(
+      await view.findByText(
+        'Could not load your assets and accounts. Close this window and try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('ADD-TX-LOAD asks for a wallet first when no account keeps a journal', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    const view = within(openLoading());
+    await waitFor(() =>
+      expect(view.getByRole('status')).toHaveTextContent(
+        'Add a wallet first on the Wallets page, or an asset with a balance on the Portfolio page.',
+      ),
+    );
+    expect(view.getByRole('link', { name: 'Wallets' })).toHaveAttribute('href', '/wallets');
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('ADD-TX-LOAD asks for an asset first when there is none to trade', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([dollars]);
+    const view = within(openLoading());
+    await waitFor(() =>
+      expect(view.getByRole('status')).toHaveTextContent(
+        'Add an asset first on the Portfolio page, then record its trades.',
+      ),
+    );
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('ADD-TX-LOAD Convert waits for the assets and accounts as well', async () => {
+    const user = userEvent.setup();
+    vi.mocked(portfolioAssetsApi.listAll).mockReturnValue(new Promise(() => undefined));
+    const view = within(openLoading());
+    await user.click(view.getByRole('button', { name: 'More' }));
+    await user.click(view.getByRole('radio', { name: 'Convert' }));
+    expect(view.getByRole('status')).toHaveTextContent('Loading your assets and accounts…');
+  });
+
+  it('ADD-TX-RATE asks for the rate paid when the Bank of Russia rate cannot be read', async () => {
+    const user = userEvent.setup();
+    rates.mockRejectedValue(new Error('offline'));
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'RUB' }));
+    expect(
+      await view.findByText(
+        /No Bank of Russia rate is stored for this date; enter the rate you paid/,
+      ),
+    ).toBeInTheDocument();
+    expect(view.getByLabelText('Exchange rate')).toHaveValue('');
+  });
+
+  it("ADD-TX-RATE swaps the owner's rate back for the Bank of Russia rate", async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'RUB' }));
+    const rate = view.getByLabelText('Exchange rate');
+    expect(await view.findByDisplayValue('78.5')).toBe(rate);
+    // The market price of today in the currency paid, at the rate shown.
+    expect(view.getByText(/^Market today .+ RUB/)).toBeInTheDocument();
+    await user.clear(rate);
+    await user.type(rate, '80');
+    expect(view.getByText(/Your rate is used for this transaction/)).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: 'Use Bank of Russia rate 78.5' }));
+    expect(rate).toHaveValue('78.5');
+    expect(view.getByText(/filled in automatically/)).toBeInTheDocument();
+  });
+
+  it('ADD-TX-BALANCE shows no balance or cash that cannot be read', async () => {
+    const user = userEvent.setup();
+    available.mockRejectedValue(new Error('offline'));
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '0.01');
+    await user.type(view.getByLabelText('Total paid'), '1000');
+    await waitFor(() =>
+      expect(available).toHaveBeenCalledWith(
+        id(11),
+        expect.objectContaining({ instrumentId: id(3) }),
+      ),
+    );
+    expect(view.queryByText(/cash in Hardware wallet/)).not.toBeInTheDocument();
+    const asked = available.mock.calls.length;
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    await waitFor(() => expect(available.mock.calls.length).toBeGreaterThan(asked));
+    await waitFor(() =>
+      expect(view.queryByText(/Checking what Hardware wallet holds/)).not.toBeInTheDocument(),
+    );
+    expect(view.queryByText(/Available in/)).not.toBeInTheDocument();
+  });
+
+  it('ADD-TX-MORE an asset chosen under More assets becomes a chip', async () => {
+    const user = userEvent.setup();
+    const coins = [3, 4, 5, 6, 7, 8, 9].map((n) => asset(20 + n, `Coin ${n}`, `C${n}`, 'crypto'));
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, ...coins]);
+    const { dialog } = await open();
+    const view = within(dialog);
+    expect(view.queryByRole('button', { name: 'C9' })).not.toBeInTheDocument();
+    await user.selectOptions(view.getByRole('combobox', { name: 'More assets' }), 'C9 · Coin 9');
+    expect(view.getByRole('button', { name: 'C9' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('ADD-TX-TRANSFER moves coins from the account chosen as From', async () => {
+    const user = userEvent.setup();
+    const move = vi.spyOn(ownedTransfersApi, 'create').mockResolvedValue({} as TransferReceipt);
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    await user.selectOptions(view.getByLabelText('From'), 'Exchange');
+    expect(view.getByLabelText('From')).toHaveValue(id(13));
+    await user.selectOptions(view.getByLabelText('To'), 'Hardware wallet');
+    await user.type(view.getByLabelText('Amount'), '0.5');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(move).toHaveBeenCalledWith(
+      expect.objectContaining({ fromAccountId: id(13), toAccountId: id(11) }),
+    );
+  });
+
+  it('ADD-TX-TRANSFER needs a second account', async () => {
+    const user = userEvent.setup();
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: id(11),
+          name: 'Hardware wallet',
+          kind: null,
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    expect(
+      view.getByText('Add a second wallet or account to move coins between them.'),
+    ).toBeInTheDocument();
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('ADD-TX-TIME a typed time becomes the instant of the trade', async () => {
+    const user = userEvent.setup();
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '0.01');
+    await user.type(view.getByLabelText('Total paid'), '1000');
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2025-06-08');
+    await user.click(view.getByText('More options: time, fee, comment'));
+    await user.type(view.getByLabelText('Time, UTC (optional)'), '14:30');
+    await user.tab();
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create.mock.calls[0][1]).toMatchObject({ occurredAt: '2025-06-08T14:30:00.000Z' });
+  });
 });
 
 describe('ASSET-CHIPS which assets become chips', () => {

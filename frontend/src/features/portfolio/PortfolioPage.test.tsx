@@ -4674,3 +4674,346 @@ describe('COST-ESTIMATE portfolio', () => {
     );
   });
 });
+
+// Characterization of wordings and states no other test reached before the page was split up.
+describe('PV-WORDS the portfolio page says each gap in its own words', () => {
+  const summary = () => screen.getByRole('region', { name: 'Portfolio summary' });
+
+  it('PV-WORDS names a single deposit without a rate', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { totalValue: null, unratedDepositCount: 1 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent('1 deposit without a rate');
+  });
+
+  it('PV-WORDS counts stale prices and assets before the stored rates in the plural', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { stalePriceCount: 2, missingRateCount: 2 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const notes = within(summary())
+      .getAllByRole('note')
+      .map((note) => note.textContent);
+    expect(notes).toEqual([
+      '2 prices are older than 2 hours; the last stored prices are used.',
+      '2 assets have operations dated before the stored Bank of Russia rates, so their cost or P&L in USD is not shown.',
+    ]);
+  });
+
+  it('PV-WORDS says a cost basis is unknown because part has no purchase price', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin], { costBasis: null, knownCostSubtotal: '0', unknownCostCount: 1 }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(summary()).toHaveTextContent('Cost basis—$0.00 known, part has no purchase price');
+  });
+
+  it('PV-WORDS counts real estate estimates over 60 days old in the plural', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: id(202),
+          name: 'Studio account',
+          kind: null,
+          assetClass: 'property',
+          currentRevision: 1,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const flat = (n: number, name: string) =>
+      valued(
+        n,
+        name,
+        null,
+        { assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' },
+        {
+          quantity: '1',
+          value: '50000',
+          missingPrice: null,
+          price: {
+            value: '50000',
+            source: 'manual',
+            status: 'manual',
+            observedAt: new Date(Date.now() - 61 * 86_400_000).toISOString(),
+          },
+          holdings: [
+            { accountId: id(202), accountName: 'Studio account', quantity: '1', value: '50000' },
+          ],
+        },
+      );
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([flat(90, 'Studio'), flat(91, 'Garage')], {
+        totalValue: '100000',
+        pricedSubtotal: '100000',
+      }),
+    );
+    renderAt('/portfolio');
+    const link = await within(
+      await screen.findByRole('region', { name: 'Portfolio summary' }),
+    ).findByRole('link', { name: 'real estate' });
+    expect(link.parentElement).toHaveTextContent(
+      'Includes $100,000.00 in real estate (estimated) · 2 estimates over 60 days old.',
+    );
+  });
+
+  it('PV-WORDS shows every class again when the chosen one has no asset left', async () => {
+    const sold = (n: number, name: string) =>
+      valued(n, name, null, {
+        assetType: 'manual',
+        valuationCurrency: 'USD',
+        priceSource: 'manual',
+      });
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([bitcoin, sold(10, 'Old car'), sold(11, 'Old boat')]),
+    );
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('button', { name: 'Show 2 assets no longer held' }));
+    const chips = screen.getByRole('group', { name: 'Filter assets' });
+    await user.click(within(chips).getByRole('button', { name: /^Other/ }));
+    expect(assetRows()).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Hide assets no longer held' }));
+    expect(within(chips).getByRole('button', { name: /^All/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(rowOf('Bitcoin')).toBeInTheDocument();
+  });
+
+  it('PV-WORDS keeps the last bank products when their refresh fails, and retries', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const products = {
+      asOf: '2026-10-18',
+      totals: { USD: '0', EUR: '0', RUB: '0' },
+      interestMissingCount: 0,
+      items: [
+        {
+          id: id(998),
+          kind: 'account',
+          name: 'Kept savings',
+          bank: 'Synthetic Bank',
+          currency: 'USD',
+          startDate: '2026-07-01',
+          endDate: null,
+          payout: 'monthly',
+          capitalized: false,
+          dayBasis: 'actual-365',
+          earlyClose: 'keeps-interest',
+          ratePercent: '0',
+          status: 'active',
+          closedOn: null,
+          principal: '0',
+          accrued: '0',
+          due: '0',
+          balance: '0',
+          values: { USD: '0', EUR: '0', RUB: '0' },
+          nextPayout: null,
+          atMaturity: null,
+          lastCheck: null,
+        },
+      ],
+    } satisfies Awaited<ReturnType<typeof depositsApi.list>>;
+    vi.mocked(depositsApi.list).mockResolvedValue(products);
+    renderAt('/portfolio');
+    expect(await screen.findByRole('link', { name: 'Kept savings' })).toBeInTheDocument();
+    cleanup();
+    vi.mocked(depositsApi.list).mockRejectedValueOnce(new Error('synthetic unavailable'));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.',
+    );
+    expect(screen.getByRole('link', { name: 'Kept savings' })).toBeInTheDocument();
+    const asked = vi.mocked(depositsApi.list).mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(vi.mocked(depositsApi.list).mock.calls.length).toBeGreaterThan(asked);
+  });
+});
+
+// Characterization of Add asset paths no other test reached before the dialog was split up.
+describe('AST-WORDS Add asset says what was and was not saved', () => {
+  const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    renderAt('/portfolio');
+    await openAddAsset(user);
+    return screen.getByRole('dialog', { name: 'Add asset' });
+  };
+  const deposit100 = async (user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) => {
+    await within(dialog).findByLabelText('Wallet or account');
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+  };
+
+  it('AST-WORDS says when the accounts cannot be read', async () => {
+    vi.mocked(accountingApi.listAccounts).mockRejectedValue(httpError(500));
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    expect(
+      await within(dialog).findByText(
+        'Could not load your accounts, so a balance cannot be added. Close this window and try again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'unreachable',
+      new AxiosError('Network Error'),
+      'Could not reach the server. Try again; the same request will not make the account twice.',
+    ],
+    ['refused', httpError(400), 'Could not make the account. Nothing was saved; try again.'],
+  ])('AST-WORDS says a new account that is %s was not made', async (_case, error, text) => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    vi.spyOn(accountingApi, 'createAccount').mockRejectedValueOnce(error);
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await deposit100(user, dialog);
+    await user.type(within(dialog).getByLabelText('Wallet or account'), 'Home safe');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(text);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('AST-WORDS saves a ruble balance when the rates cannot be read, and the server converts it', async () => {
+    vi.mocked(fxRatesApi.get).mockRejectedValue(httpError(500));
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await within(dialog).findByLabelText('Wallet or account');
+    await user.type(within(dialog).getByLabelText('Name'), 'Cash at home');
+    await user.type(within(dialog).getByLabelText('Amount'), '90120');
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createTrade.mock.calls[0][1]).toMatchObject({
+      paid: { currency: 'RUB', gross: '90120' },
+    });
+  });
+
+  it.each([
+    [400, 'The asset and its balance were saved, but its price was not. Try again.'],
+    [
+      500,
+      'The asset and its balance were saved; its price may have been saved too. Try again; the same request will not save it twice.',
+    ],
+  ])('AST-WORDS says a hand price refused with %i was not saved', async (status, text) => {
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    setPrice.mockRejectedValueOnce(httpError(status));
+    const user = userEvent.setup();
+    const dialog = await openDialog(user);
+    await deposit100(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(text);
+    expect(createTrade).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Characterization of asset page notes no other test reached before the page was split up.
+describe('ASSET-WORDS the asset page says which figures are partial', () => {
+  const position = () => screen.getByRole('region', { name: 'Position' });
+  afterEach(() => setValueView('nominal'));
+  const beforeRates = {
+    ...bitcoin,
+    costBasis: null,
+    knownCostSubtotal: '50000',
+    knownCostQuantity: '1',
+    missingRateQuantity: '0.2',
+    unrealizedPnl: null,
+    unrealizedReturnPercent: null,
+    knownUnrealizedPnl: '30000',
+    knownUnrealizedReturnPercent: '60.00',
+    real: {
+      official: {
+        costBasis: '75000',
+        unrealizedPnl: '21000',
+        unrealizedReturnPercent: '28.00',
+        estimated: false,
+      },
+      personal: null,
+    },
+  };
+
+  it('ASSET-WORDS covers only the coins bought after the stored rates, and says so', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([beforeRates]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Cost basis$50,000.00');
+    expect(position()).toHaveTextContent('Unrealized P&L+$30,000.00+60.00%');
+    expect(position()).toHaveTextContent(
+      '0.2 BTC was bought before the stored Bank of Russia rates, so its cost in USD is unknown. Known cost: $50,000.00.',
+    );
+  });
+
+  it('ASSET-WORDS leaves the known nominal cost out of the rates note under Real', async () => {
+    setValueView('real');
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([beforeRates]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    const note = within(position())
+      .getAllByRole('note')
+      .find((banner) => banner.textContent?.includes('stored Bank of Russia rates'));
+    expect(note).toHaveTextContent(
+      /^0\.2 BTC was bought before the stored Bank of Russia rates, so its cost in USD is unknown\.$/,
+    );
+  });
+
+  it('ASSET-WORDS shows the realized P&L of the sales with a known cost, and why', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([
+        { ...bitcoin, realizedPnl: null, knownRealizedSubtotal: '-250.5', unknownRealizedCount: 1 },
+      ]),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    await screen.findByRole('region', { name: 'Position' });
+    expect(position()).toHaveTextContent('Realized P&L-$250.50');
+    expect(position()).toHaveTextContent(
+      'A sale used coins without a purchase price or a stored rate, so realized P&L is unknown. Known part: -$250.50.',
+    );
+  });
+});
+
+// Characterization of the folded Other row before the allocation was split up.
+it('ALLOC-OTHER counts the folded slices as assets, types or accounts', async () => {
+  const slices = (keys: string[]) =>
+    keys.map((key, index) => ({
+      key,
+      label: key,
+      value: String(300 - index * 100),
+      percent: ((300 - index * 100) / 6).toFixed(2),
+    }));
+  const data = portfolio([], {
+    allocation: {
+      complete: true,
+      byAsset: slices(['First coin', 'Second coin', 'Third coin']),
+      byType: slices(['crypto', 'fiat', 'manual']),
+      byAccount: slices(['First wallet', 'Second wallet', 'Third wallet']),
+    },
+  });
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter>
+      <Allocation portfolio={data} limit={2} />
+    </MemoryRouter>,
+  );
+  const region = screen.getByRole('region', { name: 'Allocation' });
+  const other = () =>
+    within(region)
+      .getAllByRole('listitem')
+      .find((row) => row.textContent?.startsWith('Other '))?.textContent;
+  expect(other()).toMatch(/^Other 2 assets/);
+  await user.click(within(region).getByRole('radio', { name: 'Classes' }));
+  expect(other()).toMatch(/^Other 2 types/);
+  await user.click(within(region).getByRole('radio', { name: 'Accounts' }));
+  expect(other()).toMatch(/^Other 2 accounts/);
+});

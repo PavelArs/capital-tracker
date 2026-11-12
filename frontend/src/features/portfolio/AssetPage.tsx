@@ -7,6 +7,7 @@ import type {
   AccountingCurrency,
   AssetValuation,
   PortfolioValuation,
+  RealReading,
 } from '@api/portfolio-valuation.api';
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
@@ -16,7 +17,7 @@ import AboutChart from '../shell/AboutChart';
 import AssetIcon from '../shell/AssetIcon';
 import { heldClass } from '../shell/asset-identity';
 import { basisText } from '../shell/basis-text';
-import { useInflationBasis } from '../shell/inflation-basis';
+import { type InflationBasis, useInflationBasis } from '../shell/inflation-basis';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
@@ -341,6 +342,246 @@ function AssetTransactions({
   );
 }
 
+/** What the asset's cost figures can tell. */
+function costFacts(asset: AssetValuation, portfolio: PortfolioValuation) {
+  const unknown = Number(asset.unknownCostQuantity) > 0;
+  const missingRate = Number(asset.missingRateQuantity) > 0;
+  // A fully sold asset has no lots left, so no real reading: that is not missing data.
+  const empty = Number(asset.quantity) === 0;
+  // With an account whose history starts later, nothing held may only mean nothing known.
+  const sold = empty && portfolio.unavailableAccountCount === 0;
+  return {
+    unknown,
+    missingRate,
+    // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
+    estimatedCost: Number(asset.estimatedCostQuantity ?? 0) > 0 ? '≈' : '',
+    // Part of the coins has no cost: show the rest on its own, marked as the known part.
+    partial:
+      asset.costBasis === null && Number(asset.knownCostQuantity) > 0 && (unknown || missingRate),
+    sold,
+    emptyUnknown: empty && !sold,
+  };
+}
+type CostFacts = ReturnType<typeof costFacts>;
+
+/** The cost in today's money, or zero or a dash and why it is unknown. */
+function realCostValue(
+  reading: RealReading | null,
+  facts: CostFacts,
+  amount: (value: string | null) => string,
+): ReactNode {
+  if (reading !== null) return `${facts.estimatedCost}${amount(reading.costBasis)}`;
+  if (facts.sold)
+    return (
+      <>
+        {amount('0')}
+        <span className="ui-sub">Nothing held, so there is no real cost or profit</span>
+      </>
+    );
+  if (facts.emptyUnknown)
+    return (
+      <>
+        {DASH}
+        <span className="ui-sub">an account history starts later</span>
+      </>
+    );
+  return (
+    <>
+      {DASH}
+      <span className="ui-sub">
+        a purchase price, exchange rate or inflation figure is missing for some lots
+      </span>
+    </>
+  );
+}
+
+/** The price beside the name: its move today, where it came from, and Update price by hand. */
+function PriceAside({
+  asset,
+  currency,
+  now,
+  onUpdatePrice,
+}: {
+  asset: AssetValuation;
+  currency: AccountingCurrency;
+  now: Date;
+  onUpdatePrice: () => void;
+}) {
+  return (
+    <>
+      <b className="ui-num portfolio-head__price">
+        {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
+      </b>
+      {/* A hand price has no market move to show: the page offers Update price instead. */}
+      {asset.priceChange24hPercent !== null &&
+        (asset.priceSource !== 'manual' || quoted(asset)) && (
+          <span className="portfolio-head__change">
+            <Change value={asset.priceChange24hPercent} /> today
+          </span>
+        )}
+      <span className={asset.price?.status === 'stale' ? 'ui-sub portfolio-head__stale' : 'ui-sub'}>
+        {priceDetail(asset, currency, now)}
+      </span>
+      {asset.priceSource === 'manual' && (
+        <Button size="sm" icon="edit" onClick={onUpdatePrice}>
+          Update price
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** Cost and unrealized P&L: after inflation under Real, else nominal, of the known part if partial. */
+function CostStats({
+  asset,
+  currency,
+  showReal,
+  reading,
+  facts,
+}: {
+  asset: AssetValuation;
+  currency: AccountingCurrency;
+  showReal: boolean;
+  reading: RealReading | null;
+  facts: CostFacts;
+}) {
+  const amount = (value: string | null) => money(value, currency);
+  const estimated = facts.estimatedCost !== '';
+  if (showReal)
+    return (
+      <>
+        <Stat label="Cost in today's money" value={realCostValue(reading, facts, amount)} />
+        <Stat
+          label="Real P&L"
+          value={
+            <Signed
+              value={facts.sold ? '0' : (reading?.unrealizedPnl ?? null)}
+              currency={currency}
+              ratio={reading?.unrealizedReturnPercent ?? null}
+              estimated={estimated}
+            />
+          }
+        />
+      </>
+    );
+  const { partial } = facts;
+  return (
+    <>
+      <Stat
+        label="Cost basis"
+        value={`${facts.estimatedCost}${amount(partial ? asset.knownCostSubtotal : asset.costBasis)}`}
+      />
+      <Stat
+        label="Unrealized P&L"
+        value={
+          <Signed
+            value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
+            currency={currency}
+            ratio={partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent}
+            estimated={estimated}
+          />
+        }
+      />
+    </>
+  );
+}
+
+/** The position's notes: the inflation basis under Real, and what its figures leave out. */
+function PositionNotes({
+  asset,
+  portfolio,
+  showReal,
+  reading,
+  basis,
+  facts,
+}: {
+  asset: AssetValuation;
+  portfolio: PortfolioValuation;
+  showReal: boolean;
+  reading: RealReading | null;
+  basis: InflationBasis;
+  facts: CostFacts;
+}) {
+  const currency = portfolio.currency;
+  const unit = asset.symbol ?? '';
+  const amount = (value: string | null, signed = false) => money(value, currency, signed);
+  return (
+    <>
+      {showReal && reading !== null && (
+        <p className="ui-sub portfolio-card-note">
+          In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
+          <Link className="ui-link" to="/settings">
+            Settings
+          </Link>
+        </p>
+      )}
+      {portfolio.unavailableAccountCount > 0 && (
+        <Banner tone="warn">
+          {portfolio.unavailableAccountCount === 1
+            ? '1 account whose history starts later is'
+            : `${portfolio.unavailableAccountCount} accounts whose history starts later are`}{' '}
+          left out of these figures.
+        </Banner>
+      )}
+      {facts.unknown && (
+        <Banner
+          tone="warn"
+          action={
+            <ButtonLink
+              size="sm"
+              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
+            >
+              Review transactions
+            </ButtonLink>
+          }
+        >
+          {showReal ? (
+            <>
+              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so the real cost
+              and profit cannot be worked out.
+            </>
+          ) : (
+            <>
+              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
+              unrealized P&amp;L {facts.partial ? 'cover only the rest' : 'are unknown'}. Known
+              cost: {amount(asset.knownCostSubtotal)}.
+            </>
+          )}
+        </Banner>
+      )}
+      {facts.estimatedCost !== '' && (
+        <Banner
+          tone="info"
+          action={
+            <ButtonLink
+              size="sm"
+              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
+            >
+              Review transactions
+            </ButtonLink>
+          }
+        >
+          {quantity(asset.estimatedCostQuantity ?? '0')} {unit} has no purchase price, so its price
+          when it came in is used: cost basis and unrealized P&amp;L are estimated.
+        </Banner>
+      )}
+      {facts.missingRate && (
+        <Banner tone="warn">
+          {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
+          rates, so its cost in {currency} is unknown.
+          {!showReal && <> Known cost: {amount(asset.knownCostSubtotal)}.</>}
+        </Banner>
+      )}
+      {asset.unknownRealizedCount > 0 && (
+        <Banner tone="warn">
+          A sale used coins without a purchase price or a stored rate, so realized P&amp;L is
+          unknown. Known part: {amount(asset.knownRealizedSubtotal, true)}.
+        </Banner>
+      )}
+    </>
+  );
+}
+
 function AssetDetails({
   asset,
   portfolio,
@@ -374,24 +615,13 @@ function AssetDetails({
   const chains = useTokenChains();
   const classes = useAccountClasses();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
-  const unknown = Number(asset.unknownCostQuantity) > 0;
-  // COST-ESTIMATE: "≈" before cost and profit while part of the cost is a price on arrival.
-  const estimatedCost = Number(asset.estimatedCostQuantity ?? 0) > 0 ? '≈' : '';
-  const missingRate = Number(asset.missingRateQuantity) > 0;
-  // Part of the coins has no cost: show the rest on its own, marked as the known part.
-  const partial =
-    asset.costBasis === null && Number(asset.knownCostQuantity) > 0 && (unknown || missingRate);
+  const facts = costFacts(asset, portfolio);
   // INFL-REAL-PF: the cost grown by the inflation since each purchase, and the profit over it.
   // An answer saved before real figures existed has none, so it stays nominal.
   const [view] = useValueView();
   const [basis] = useInflationBasis();
   const reading = asset.real?.[basis] ?? null;
   const showReal = view === 'real' && asset.real !== undefined;
-  // A fully sold asset has no lots left, so no real reading: that is not missing data.
-  const empty = Number(asset.quantity) === 0;
-  // With an account whose history starts later, nothing held may only mean nothing known.
-  const sold = empty && portfolio.unavailableAccountCount === 0;
-  const emptyUnknown = empty && !sold;
   return (
     <>
       <PageHead
@@ -408,30 +638,12 @@ function AssetDetails({
         title={asset.name}
         subtitle={assetCaption(asset, chains)}
         aside={
-          <>
-            <b className="ui-num portfolio-head__price">
-              {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
-            </b>
-            {/* A hand price has no market move to show: the page offers Update price instead. */}
-            {asset.priceChange24hPercent !== null &&
-              (asset.priceSource !== 'manual' || quoted(asset)) && (
-                <span className="portfolio-head__change">
-                  <Change value={asset.priceChange24hPercent} /> today
-                </span>
-              )}
-            <span
-              className={
-                asset.price?.status === 'stale' ? 'ui-sub portfolio-head__stale' : 'ui-sub'
-              }
-            >
-              {priceDetail(asset, currency, now)}
-            </span>
-            {asset.priceSource === 'manual' && (
-              <Button size="sm" icon="edit" onClick={() => setPricing(true)}>
-                Update price
-              </Button>
-            )}
-          </>
+          <PriceAside
+            asset={asset}
+            currency={currency}
+            now={now}
+            onUpdatePrice={() => setPricing(true)}
+          />
         }
         actions={hide}
       />
@@ -466,74 +678,16 @@ function AssetDetails({
             value={
               asset.averageBuyPrice === null
                 ? '—'
-                : `${estimatedCost}${price(asset.averageBuyPrice, currency)}`
+                : `${facts.estimatedCost}${price(asset.averageBuyPrice, currency)}`
             }
           />
-          {showReal ? (
-            <>
-              <Stat
-                label="Cost in today's money"
-                value={
-                  reading === null ? (
-                    sold ? (
-                      <>
-                        {amount('0')}
-                        <span className="ui-sub">
-                          Nothing held, so there is no real cost or profit
-                        </span>
-                      </>
-                    ) : emptyUnknown ? (
-                      <>
-                        {DASH}
-                        <span className="ui-sub">an account history starts later</span>
-                      </>
-                    ) : (
-                      <>
-                        {DASH}
-                        <span className="ui-sub">
-                          a purchase price, exchange rate or inflation figure is missing for some
-                          lots
-                        </span>
-                      </>
-                    )
-                  ) : (
-                    `${estimatedCost}${amount(reading.costBasis)}`
-                  )
-                }
-              />
-              <Stat
-                label="Real P&L"
-                value={
-                  <Signed
-                    value={sold ? '0' : (reading?.unrealizedPnl ?? null)}
-                    currency={currency}
-                    ratio={reading?.unrealizedReturnPercent ?? null}
-                    estimated={estimatedCost !== ''}
-                  />
-                }
-              />
-            </>
-          ) : (
-            <>
-              <Stat
-                label="Cost basis"
-                value={`${estimatedCost}${amount(partial ? asset.knownCostSubtotal : asset.costBasis)}`}
-              />
-              <Stat
-                label="Unrealized P&L"
-                value={
-                  <Signed
-                    value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
-                    currency={currency}
-                    ratio={
-                      partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent
-                    }
-                    estimated={estimatedCost !== ''}
-                  />
-                }
-              />
-            </>
-          )}
+          <CostStats
+            asset={asset}
+            currency={currency}
+            showReal={showReal}
+            reading={reading}
+            facts={facts}
+          />
           <Stat
             label="Realized P&L"
             value={
@@ -548,80 +702,17 @@ function AssetDetails({
             }
           />
         </Stats>
-        {showReal && reading !== null && (
-          <p className="ui-sub portfolio-card-note">
-            In today&apos;s {currency}, {basisText(basis, reading, currency)} ·{' '}
-            <Link className="ui-link" to="/settings">
-              Settings
-            </Link>
-          </p>
-        )}
-        {portfolio.unavailableAccountCount > 0 && (
-          <Banner tone="warn">
-            {portfolio.unavailableAccountCount === 1
-              ? '1 account whose history starts later is'
-              : `${portfolio.unavailableAccountCount} accounts whose history starts later are`}{' '}
-            left out of these figures.
-          </Banner>
-        )}
-        {unknown && (
-          <Banner
-            tone="warn"
-            action={
-              <ButtonLink
-                size="sm"
-                to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
-              >
-                Review transactions
-              </ButtonLink>
-            }
-          >
-            {showReal ? (
-              <>
-                {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so the real cost
-                and profit cannot be worked out.
-              </>
-            ) : (
-              <>
-                {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis
-                and unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known
-                cost: {amount(asset.knownCostSubtotal)}.
-              </>
-            )}
-          </Banner>
-        )}
-        {Number(asset.estimatedCostQuantity ?? 0) > 0 && (
-          <Banner
-            tone="info"
-            action={
-              <ButtonLink
-                size="sm"
-                to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}&cost=unknown`}
-              >
-                Review transactions
-              </ButtonLink>
-            }
-          >
-            {quantity(asset.estimatedCostQuantity ?? '0')} {unit} has no purchase price, so its
-            price when it came in is used: cost basis and unrealized P&amp;L are estimated.
-          </Banner>
-        )}
-        {missingRate && (
-          <Banner tone="warn">
-            {quantity(asset.missingRateQuantity)} {unit} was bought before the stored Bank of Russia
-            rates, so its cost in {currency} is unknown.
-            {!showReal && <> Known cost: {amount(asset.knownCostSubtotal)}.</>}
-          </Banner>
-        )}
-        {asset.unknownRealizedCount > 0 && (
-          <Banner tone="warn">
-            A sale used coins without a purchase price or a stored rate, so realized P&amp;L is
-            unknown. Known part: {amount(asset.knownRealizedSubtotal, true)}.
-          </Banner>
-        )}
+        <PositionNotes
+          asset={asset}
+          portfolio={portfolio}
+          showReal={showReal}
+          reading={reading}
+          basis={basis}
+          facts={facts}
+        />
       </Card>
       <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
-      {!sold && showReal && (
+      {!facts.sold && showReal && (
         <AssetLotsCard
           instrumentId={asset.instrumentId}
           asked={asked}
