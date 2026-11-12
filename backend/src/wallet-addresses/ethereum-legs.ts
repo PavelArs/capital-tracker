@@ -94,6 +94,105 @@ export function rangeEnd(
   return end >= from ? end : null;
 }
 
+/** The transaction and the ether contracts moved inside it, under one hash. */
+interface HashGroup {
+  tx: NormalTransaction | null;
+  inner: InternalTransfer[];
+  block: number;
+  time: number;
+}
+
+/** Ether the transaction itself moved for the address, and the fee the address paid. */
+function transactionMove(address: string, tx: NormalTransaction | null) {
+  if (!tx) return { received: 0n, sent: 0n, fee: 0n };
+  const moved = !tx.failed;
+  return {
+    received: moved && tx.to === address ? tx.value : 0n,
+    sent: moved && tx.from === address ? tx.value : 0n,
+    fee: tx.from === address ? tx.fee : 0n,
+  };
+}
+
+/** The ether leg of one hash; null when it changes nothing for the address. */
+function etherLeg(address: string, hash: string, group: HashGroup): EthereumLeg | null {
+  const { tx, inner, block, time } = group;
+  const own = transactionMove(address, tx);
+  let { received, sent } = own;
+  const { fee } = own;
+  for (const item of inner) {
+    if (item.failed) continue;
+    if (item.from === address) sent += item.value;
+    if (item.to === address) received += item.value;
+  }
+  // A reverted or zero-value transaction someone else sent changes nothing here.
+  if (received === 0n && sent === 0n && fee === 0n) return null;
+  const self = tx !== null && tx.from === address && tx.to === address;
+  return {
+    txid: bare(hash),
+    asset: null,
+    blockHeight: block,
+    blockHash: tx ? bare(tx.blockHash) : null,
+    blockTime: at(time),
+    receivedUnits: received,
+    // The fee leaves the address with the value, as on Bitcoin.
+    sentUnits: sent + fee,
+    feeUnits: fee,
+    direction: self ? 'self' : received > sent + fee ? 'in' : 'out',
+    raw: {
+      txid: bare(hash),
+      hash,
+      transaction: tx?.raw ?? null,
+      internal: inner.map((item) => item.raw),
+    },
+  };
+}
+
+/** An order of one hash's transfers that does not depend on the provider's. */
+function compareTransfers(left: TokenTransfer, right: TokenTransfer): number {
+  return (
+    left.contract.localeCompare(right.contract) ||
+    left.from.localeCompare(right.from) ||
+    left.to.localeCompare(right.to) ||
+    (left.value < right.value ? -1 : left.value > right.value ? 1 : 0)
+  );
+}
+
+/** The token legs of one hash, one per transfer event. */
+function tokenLegs(
+  address: string,
+  hash: string,
+  items: readonly TokenTransfer[],
+  network: EvmNetwork,
+): EthereumLeg[] {
+  // The event index is the transfer's identity on both sides. Without it the transfers of a
+  // hash are numbered in an order that does not depend on the provider's.
+  const indexed = items.every((item) => item.logIndex !== null);
+  const ordered = indexed ? items : [...items].sort(compareTransfers);
+  const seen = new Set<number>();
+  const legs: EthereumLeg[] = [];
+  ordered.forEach((item, position) => {
+    const leg = indexed ? (item.logIndex as number) : position;
+    if (seen.has(leg)) return;
+    seen.add(leg);
+    const txid = `${bare(hash)}-${leg}`;
+    const received = item.to === address ? item.value : 0n;
+    const sent = item.from === address ? item.value : 0n;
+    legs.push({
+      txid,
+      asset: tokenAsset(item.contract, network),
+      blockHeight: item.blockNumber,
+      blockHash: bare(item.blockHash),
+      blockTime: at(item.timeStamp),
+      receivedUnits: received,
+      sentUnits: sent,
+      feeUnits: 0n,
+      direction: received > 0n && sent > 0n ? 'self' : received > 0n ? 'in' : 'out',
+      raw: { txid, hash, transfer: item.raw },
+    });
+  });
+  return legs;
+}
+
 /** Legs of the address's transactions in the given lists, oldest first. */
 export function ethereumLegs(
   address: string,
@@ -103,10 +202,7 @@ export function ethereumLegs(
   network: EvmNetwork = 'ethereum',
 ): EthereumLeg[] {
   const legs: EthereumLeg[] = [];
-  const hashes = new Map<
-    string,
-    { tx: NormalTransaction | null; inner: InternalTransfer[]; block: number; time: number }
-  >();
+  const hashes = new Map<string, HashGroup>();
   const group = (hash: string, block: number, time: number) => {
     const found = hashes.get(hash) ?? { tx: null, inner: [], block, time };
     hashes.set(hash, found);
@@ -114,41 +210,9 @@ export function ethereumLegs(
   };
   for (const tx of normal) group(tx.hash, tx.blockNumber, tx.timeStamp).tx = tx;
   for (const item of internal) group(item.hash, item.blockNumber, item.timeStamp).inner.push(item);
-  for (const [hash, { tx, inner, block, time }] of hashes) {
-    let received = 0n;
-    let sent = 0n;
-    let fee = 0n;
-    if (tx) {
-      if (tx.from === address) fee = tx.fee;
-      if (!tx.failed && tx.from === address) sent += tx.value;
-      if (!tx.failed && tx.to === address) received += tx.value;
-    }
-    for (const item of inner) {
-      if (item.failed) continue;
-      if (item.from === address) sent += item.value;
-      if (item.to === address) received += item.value;
-    }
-    // A reverted or zero-value transaction someone else sent changes nothing here.
-    if (received === 0n && sent === 0n && fee === 0n) continue;
-    const self = tx !== null && tx.from === address && tx.to === address;
-    legs.push({
-      txid: bare(hash),
-      asset: null,
-      blockHeight: block,
-      blockHash: tx ? bare(tx.blockHash) : null,
-      blockTime: at(time),
-      receivedUnits: received,
-      // The fee leaves the address with the value, as on Bitcoin.
-      sentUnits: sent + fee,
-      feeUnits: fee,
-      direction: self ? 'self' : received > sent + fee ? 'in' : 'out',
-      raw: {
-        txid: bare(hash),
-        hash,
-        transaction: tx?.raw ?? null,
-        internal: inner.map((item) => item.raw),
-      },
-    });
+  for (const [hash, found] of hashes) {
+    const leg = etherLeg(address, hash, found);
+    if (leg) legs.push(leg);
   }
   // Zero-value transfers (address poisoning) move nothing.
   const moving = tokens.filter(
@@ -156,41 +220,7 @@ export function ethereumLegs(
   );
   const byHash = new Map<string, TokenTransfer[]>();
   for (const item of moving) byHash.set(item.hash, [...(byHash.get(item.hash) ?? []), item]);
-  for (const [hash, items] of byHash) {
-    // The event index is the transfer's identity on both sides. Without it the transfers of a
-    // hash are numbered in an order that does not depend on the provider's.
-    const indexed = items.every((item) => item.logIndex !== null);
-    const ordered = indexed
-      ? items
-      : [...items].sort(
-          (left, right) =>
-            left.contract.localeCompare(right.contract) ||
-            left.from.localeCompare(right.from) ||
-            left.to.localeCompare(right.to) ||
-            (left.value < right.value ? -1 : left.value > right.value ? 1 : 0),
-        );
-    const seen = new Set<number>();
-    ordered.forEach((item, position) => {
-      const leg = indexed ? (item.logIndex as number) : position;
-      if (seen.has(leg)) return;
-      seen.add(leg);
-      const txid = `${bare(hash)}-${leg}`;
-      const received = item.to === address ? item.value : 0n;
-      const sent = item.from === address ? item.value : 0n;
-      legs.push({
-        txid,
-        asset: tokenAsset(item.contract, network),
-        blockHeight: item.blockNumber,
-        blockHash: bare(item.blockHash),
-        blockTime: at(item.timeStamp),
-        receivedUnits: received,
-        sentUnits: sent,
-        feeUnits: 0n,
-        direction: received > 0n && sent > 0n ? 'self' : received > 0n ? 'in' : 'out',
-        raw: { txid, hash, transfer: item.raw },
-      });
-    });
-  }
+  for (const [hash, items] of byHash) legs.push(...tokenLegs(address, hash, items, network));
   return legs.sort(
     (left, right) => left.blockHeight - right.blockHeight || left.txid.localeCompare(right.txid),
   );
