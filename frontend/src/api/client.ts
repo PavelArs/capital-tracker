@@ -108,6 +108,94 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
+/** The pages that say why their requests failed themselves, so the client raises no notice. */
+function pageHandlesError(config?: InternalAxiosRequestConfig): boolean {
+  const url = config?.url || '';
+  return (
+    ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(url) ||
+    [
+      '/accounting/',
+      '/brokers/',
+      '/deposits',
+      '/goals',
+      '/auth/password-reset',
+      '/auth/security',
+      '/export/',
+    ].some((prefix) => url.startsWith(prefix)) ||
+    // Wallets, inflation and Settings say why a save failed themselves. Reads stay here: some
+    // (the main currency, the bell, token chains) swallow a failure, so this notice is their only one.
+    (isUnsafeRequest(config) &&
+      ['/wallet-addresses', '/inflation', '/owner-settings'].some((prefix) =>
+        url.startsWith(prefix),
+      ))
+  );
+}
+
+/** A write refused with 403 gets a fresh CSRF token for a later, explicit retry. */
+async function renewRefusedCsrf(config?: InternalAxiosRequestConfig): Promise<void> {
+  // A delayed rejection must not discard a newer login or another refresh.
+  if (config?.headers.get('X-CSRF-Token') === csrfToken) setCsrfToken(null);
+  try {
+    await getCsrfToken();
+  } catch {
+    // Preserve the original failure. Only a later explicit action may retry.
+  }
+}
+
+/** A 401 ends the session unless it answers a sign-in step or an authentication now replaced. */
+function endsSession(config?: InternalAxiosRequestConfig): boolean {
+  return (
+    !['/auth/login', '/auth/mfa'].includes(config?.url || '') &&
+    !!config &&
+    requestAuthentication.get(config) === authenticationVersion
+  );
+}
+
+const STATUS_NOTICES: Record<number, string> = {
+  400: 'Bad request',
+  401: 'Unauthorized. Please login again.',
+  403: 'Access forbidden',
+  404: 'Resource not found',
+  429: 'Too many requests. Please try again later.',
+};
+
+/** The notice for a refusal: the server's own words, or what its status means. */
+function refusalNotice(response: AxiosResponse<ApiError>): string {
+  const { status, data } = response;
+  // A server error's own text ("Internal server error") tells the owner nothing.
+  if (status >= 500) return "The server didn't answer. Try again in a moment.";
+  if (data?.message) return data.message;
+  if (typeof data === 'string') return data;
+  return STATUS_NOTICES[status] ?? `Error ${status}: ${response.statusText || 'Unknown error'}`;
+}
+
+/** Whether the server answered: undefined for a request cancelled or about to be asked again. */
+function answeredRead(error: AxiosError, cancelled: boolean): boolean | undefined {
+  if (cancelled || worthRepeating(error)) return undefined;
+  const status = error.response?.status;
+  return status !== undefined && status < 500;
+}
+
+/** A write that may have saved something, unlike a POST that only reads. */
+const changeUnanswered = (config?: InternalAxiosRequestConfig) =>
+  isUnsafeRequest(config) && !config?.changesNothing;
+
+/** The notice for a failure its page does not explain itself. */
+function raiseNotice(error: AxiosError<ApiError>): void {
+  if (!errorHandler || pageHandlesError(error.config)) return;
+  if (!error.response) {
+    errorHandler(
+      error.request
+        ? 'No connection. Check your network and try again.'
+        : error.message || 'An unexpected error occurred',
+    );
+    return;
+  }
+  const status = error.response.status;
+  const anonymousProfile = status === 401 && error.config?.url === '/auth/me';
+  if (status >= 400 && !anonymousProfile) errorHandler(refusalNotice(error.response));
+}
+
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
@@ -123,112 +211,26 @@ apiClient.interceptors.response.use(
     const cancelled = axios.isCancel(error) || error.code === 'ERR_CANCELED';
     // A read the server did not answer (no answer, or a 5xx) means what is shown may be kept
     // from before; one it answered, even with a refusal, means it is reachable.
-    if (error.config) {
-      const status = error.response?.status;
+    if (error.config)
       connection.settled(
         error.config,
-        cancelled || worthRepeating(error) ? undefined : status !== undefined && status < 500,
+        answeredRead(error, cancelled),
         apiClient.getUri(error.config),
       );
-    }
-    if (
-      !error.response &&
-      !cancelled &&
-      isUnsafeRequest(error.config) &&
-      !error.config?.changesNothing
-    )
-      forgetReads();
+    if (!error.response && !cancelled && changeUnanswered(error.config)) forgetReads();
     if (worthRepeating(error) && error.config) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
       return apiClient({ ...error.config, retried: true });
     }
-    const pageHandlesError =
-      ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
-        error.config?.url || '',
-      ) ||
-      error.config?.url?.startsWith('/accounting/') === true ||
-      error.config?.url?.startsWith('/brokers/') === true ||
-      error.config?.url?.startsWith('/deposits') === true ||
-      error.config?.url?.startsWith('/goals') === true ||
-      error.config?.url?.startsWith('/auth/password-reset') === true ||
-      error.config?.url?.startsWith('/auth/security') === true ||
-      error.config?.url?.startsWith('/export/') === true ||
-      // Wallets, inflation and Settings say why a save failed themselves. Reads stay here: some
-      // (the main currency, the bell, token chains) swallow a failure, so this notice is their only one.
-      (isUnsafeRequest(error.config) &&
-        ['/wallet-addresses', '/inflation', '/owner-settings'].some(
-          (prefix) => error.config?.url?.startsWith(prefix) === true,
-        ));
-    if (error.response) {
-      const status = error.response.status;
-      const data = error.response.data;
-
-      if (status === 403 && isUnsafeRequest(error.config)) {
-        // A delayed rejection must not discard a newer login or another refresh.
-        if (error.config?.headers.get('X-CSRF-Token') === csrfToken) setCsrfToken(null);
-        try {
-          await getCsrfToken();
-        } catch {
-          // Preserve the original failure. Only a later explicit action may retry.
-        }
-      }
-
-      if (
-        status === 401 &&
-        !['/auth/login', '/auth/mfa'].includes(error.config?.url || '') &&
-        error.config &&
-        requestAuthentication.get(error.config) === authenticationVersion
-      ) {
-        setCsrfToken(null);
-        forgetReads();
-        // React navigation preserves in-memory commands; the original request still rejects.
-        unauthorizedRegistration?.notify();
-      }
-
-      const anonymousProfile = status === 401 && error.config?.url === '/auth/me';
-      if (status >= 400 && errorHandler && !pageHandlesError && !anonymousProfile) {
-        let errorMessage = 'An error occurred';
-
-        // A server error's own text ("Internal server error") tells the owner nothing.
-        if (status >= 500) {
-          errorMessage = "The server didn't answer. Try again in a moment.";
-        } else if (data?.message) {
-          errorMessage = data.message;
-        } else if (typeof data === 'string') {
-          errorMessage = data;
-        } else {
-          switch (status) {
-            case 400:
-              errorMessage = 'Bad request';
-              break;
-            case 401:
-              errorMessage = 'Unauthorized. Please login again.';
-              break;
-            case 403:
-              errorMessage = 'Access forbidden';
-              break;
-            case 404:
-              errorMessage = 'Resource not found';
-              break;
-            case 429:
-              errorMessage = 'Too many requests. Please try again later.';
-              break;
-            default:
-              errorMessage = `Error ${status}: ${error.response.statusText || 'Unknown error'}`;
-          }
-        }
-
-        errorHandler(errorMessage);
-      }
-    } else if (error.request) {
-      if (errorHandler && !pageHandlesError) {
-        errorHandler('No connection. Check your network and try again.');
-      }
-    } else {
-      if (errorHandler && !pageHandlesError) {
-        errorHandler(error.message || 'An unexpected error occurred');
-      }
+    const status = error.response?.status;
+    if (status === 403 && isUnsafeRequest(error.config)) await renewRefusedCsrf(error.config);
+    if (status === 401 && endsSession(error.config)) {
+      setCsrfToken(null);
+      forgetReads();
+      // React navigation preserves in-memory commands; the original request still rejects.
+      unauthorizedRegistration?.notify();
     }
+    raiseNotice(error);
 
     return Promise.reject(error);
   },

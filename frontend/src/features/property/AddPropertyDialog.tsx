@@ -56,6 +56,80 @@ const failure = (error: unknown, saved: string) => {
   })}`;
 };
 
+/** The failure, after `certain` when the request was refused or `unsure` when no answer came. */
+const failureAfter = (caught: unknown, certain: string, unsure: string) =>
+  failure(caught, answered(status(caught)) ? certain : unsure);
+
+/**
+ * The whole property's price: what it cost on the purchase day, then today's estimate. One
+ * bought today starts at the estimate. Both stay in the currency the property is valued in
+ * (AST-MANUAL-VALUE), so an estimate of 9,000,000 RUB stays 9,000,000 RUB.
+ */
+function pricesOf(
+  entry: PropertyEntry,
+  estimate: string,
+  trade: TradeReceipt['trade'],
+  currency: ValuationCurrency,
+  now: Date,
+) {
+  const estimated = estimate ? { price: unitPrice(estimate, '1'), currency } : null;
+  const boughtToday = entry.bought === moscowDate(now);
+  return [
+    {
+      observedAt: trade.occurredAt,
+      ...(boughtToday && estimated ? estimated : purchasePrice(trade, currency)),
+    },
+    ...(estimated && !boughtToday
+      ? [{ observedAt: `${now.toISOString().slice(0, 19)}Z`, ...estimated }]
+      : []),
+  ];
+}
+
+/** Makes the property's account, then the property, each only once. */
+async function makeProperty(
+  done: Saved,
+  entry: PropertyEntry,
+  ids: { account: string; asset: string },
+) {
+  if (!done.accountId) {
+    const account = await accountingApi.createAccount({
+      requestId: ids.account,
+      name: propertyName(entry),
+      assetClass: 'property',
+    });
+    done.accountId = account.id;
+  }
+  if (!done.asset)
+    done.asset = await portfolioAssetsApi.create({
+      requestId: ids.asset,
+      ...propertyAsset(entry),
+    });
+  return { accountId: done.accountId, asset: done.asset };
+}
+
+/** Saves the prices still missing, in order, each under its own request id. */
+async function savePrices(
+  done: Saved,
+  assetId: string,
+  prices: ReturnType<typeof pricesOf>,
+  ids: string[],
+) {
+  for (let index = done.prices; index < prices.length; index++) {
+    await manualPricesApi.set(assetId, {
+      requestId: ids[index],
+      expectedRevision: index,
+      ...prices[index],
+      assertReviewed: true,
+    });
+    done.prices = index + 1;
+  }
+}
+
+const valueFailure = (caught: unknown) =>
+  answered(status(caught))
+    ? 'The property and its purchase were saved, but its value was not. Try again.'
+    : 'The property and its purchase were saved; its value may have been saved too. Try again; the same request will not save it twice.';
+
 interface Props {
   onClose: () => void;
   onAdded: (asset: PortfolioAsset) => void;
@@ -128,33 +202,21 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
     const estimate = entry.estimate.trim();
     startedAt.current = now;
     setLocked(true);
-    const name = propertyName(entry);
+    let made: { accountId: string; asset: PortfolioAsset };
     try {
-      if (!done.accountId) {
-        const account = await accountingApi.createAccount({
-          requestId: requests.current.account,
-          name,
-          assetClass: 'property',
-        });
-        done.accountId = account.id;
-      }
-      if (!done.asset)
-        done.asset = await portfolioAssetsApi.create({
-          requestId: requests.current.asset,
-          ...propertyAsset(entry),
-        });
+      made = await makeProperty(done, entry, requests.current);
     } catch (caught) {
       // The account may already be made: then only the property is known not to be saved.
       const refused = done.accountId ? 'The property was not saved. ' : 'Nothing was saved. ';
-      setError(failure(caught, answered(status(caught)) ? refused : ''));
+      setError(failureAfter(caught, refused, ''));
       setSaving(false);
       return;
     }
-    const asset = done.asset;
+    const asset = made.asset;
     try {
       // A new account has no journal yet, so its first trade starts it at revision 0.
       done.receipt ??= await tradesApi.create(
-        done.accountId,
+        made.accountId,
         purchaseTrade(entry, asset.id, now, {
           requestId: requests.current.trade,
           expectedJournalRevision: 0,
@@ -162,48 +224,20 @@ export default function AddPropertyDialog({ onClose, onAdded }: Props) {
       );
     } catch (caught) {
       setError(
-        failure(
+        failureAfter(
           caught,
-          answered(status(caught))
-            ? 'The property was added, but its purchase was not saved. '
-            : 'The property was added; its purchase may have been saved. ',
+          'The property was added, but its purchase was not saved. ',
+          'The property was added; its purchase may have been saved. ',
         ),
       );
       setSaving(false);
       return;
     }
-    const trade = done.receipt.trade;
-    // The whole property's price: what it cost on the purchase day, then today's estimate. One
-    // bought today starts at the estimate. Both stay in the currency the property is valued in
-    // (AST-MANUAL-VALUE), so an estimate of 9,000,000 RUB stays 9,000,000 RUB.
-    const currency = asset.valuationCurrency;
-    const estimated = estimate ? { price: unitPrice(estimate, '1'), currency } : null;
-    const boughtToday = entry.bought === moscowDate(now);
-    const prices = [
-      {
-        observedAt: trade.occurredAt,
-        ...(boughtToday && estimated ? estimated : purchasePrice(trade, currency)),
-      },
-      ...(estimated && !boughtToday
-        ? [{ observedAt: `${now.toISOString().slice(0, 19)}Z`, ...estimated }]
-        : []),
-    ];
+    const prices = pricesOf(entry, estimate, done.receipt.trade, asset.valuationCurrency, now);
     try {
-      for (let index = done.prices; index < prices.length; index++) {
-        await manualPricesApi.set(asset.id, {
-          requestId: requests.current.prices[index],
-          expectedRevision: index,
-          ...prices[index],
-          assertReviewed: true,
-        });
-        done.prices = index + 1;
-      }
+      await savePrices(done, asset.id, prices, requests.current.prices);
     } catch (caught) {
-      setError(
-        answered(status(caught))
-          ? 'The property and its purchase were saved, but its value was not. Try again.'
-          : 'The property and its purchase were saved; its value may have been saved too. Try again; the same request will not save it twice.',
-      );
+      setError(valueFailure(caught));
       setSaving(false);
       return;
     }

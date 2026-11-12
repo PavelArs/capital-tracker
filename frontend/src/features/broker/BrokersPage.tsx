@@ -232,6 +232,53 @@ function Broker({
   );
 }
 
+/** What is held at brokers, its share of the net worth and what its total leaves out. */
+function BrokersSummary({
+  groups,
+  accounts,
+  portfolio,
+}: {
+  groups: BrokerGroup[];
+  /** How many broker accounts there are. */
+  accounts: number;
+  portfolio: PortfolioValuation;
+}) {
+  const valued = groups.filter((group) => group.valued);
+  const total = sumDecimals(valued.map((group) => group.value));
+  const sum = (part: 'unpriced' | 'unrated' | 'pending') =>
+    groups.reduce((count, group) => count + group[part], 0);
+  // Nothing valued yet is "—", never zero, and no share is worked out from it.
+  const share = valued.length > 0 ? brokerShare(total, portfolio) : null;
+  const unknown = netWorthUnknown(portfolio);
+  const estimated = shareBase(portfolio)?.estimated;
+  const missing = brokerGaps(sum('unpriced'), sum('unrated'), sum('pending'));
+  return (
+    <Card labelledBy="broker-summary-title">
+      <h2 id="broker-summary-title" className="ui-sr">
+        Total at brokers
+      </h2>
+      <Stats size="lg">
+        <Stat
+          lead
+          label="At brokers"
+          value={valued.length > 0 ? money(total, portfolio.currency) : '—'}
+          hint={`${plural(groups.length, 'broker')} · ${plural(accounts, 'account')}`}
+        />
+        <Stat
+          label="Share of net worth"
+          value={
+            share === null
+              ? '—'
+              : `${estimateMark(estimated)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share.percent)}%`
+          }
+          hint={(share === null ? unknown : estimated) || undefined}
+        />
+      </Stats>
+      {missing && <p className="ui-sub broker-summary__note">{missing}</p>}
+    </Card>
+  );
+}
+
 // Brokers (v8): each broker account with its stocks, bonds and funds at the prices the owner
 // entered, and its cash. A position's page updates its price.
 export default function BrokersPage() {
@@ -278,15 +325,6 @@ export default function BrokersPage() {
 
   const brokers = portfolio && accounts ? brokerAccountsOf(portfolio, accounts) : null;
   const groups = brokerGroupsOf(brokers ?? []);
-  const valued = groups.filter((group) => group.valued);
-  const total = sumDecimals(valued.map((group) => group.value));
-  const sum = (part: 'unpriced' | 'unrated' | 'pending') =>
-    groups.reduce((count, group) => count + group[part], 0);
-  // Nothing valued yet is "—", never zero, and no share is worked out from it.
-  const share = portfolio && valued.length > 0 ? brokerShare(total, portfolio) : null;
-  const unknown = portfolio && netWorthUnknown(portfolio);
-  const estimated = portfolio && shareBase(portfolio)?.estimated;
-  const missing = brokerGaps(sum('unpriced'), sum('unrated'), sum('pending'));
 
   useEffect(() => {
     if (!focus) return;
@@ -338,29 +376,7 @@ export default function BrokersPage() {
             T-Bank accounts read with a read-only token. At another broker, positions are entered by
             hand with the price you see there; update a price on the position's page.
           </PageIntro>
-          <Card labelledBy="broker-summary-title">
-            <h2 id="broker-summary-title" className="ui-sr">
-              Total at brokers
-            </h2>
-            <Stats size="lg">
-              <Stat
-                lead
-                label="At brokers"
-                value={valued.length > 0 ? money(total, portfolio.currency) : '—'}
-                hint={`${plural(groups.length, 'broker')} · ${plural(brokers.length, 'account')}`}
-              />
-              <Stat
-                label="Share of net worth"
-                value={
-                  share === null
-                    ? '—'
-                    : `${estimateMark(estimated)}${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share.percent)}%`
-                }
-                hint={(share === null ? unknown : estimated) || undefined}
-              />
-            </Stats>
-            {missing && <p className="ui-sub broker-summary__note">{missing}</p>}
-          </Card>
+          <BrokersSummary groups={groups} accounts={brokers.length} portfolio={portfolio} />
           <ul className="broker-accounts" ref={list}>
             {groups.map((group) => (
               <Broker key={group.key} group={group} portfolio={portfolio} onImport={setImporting} />

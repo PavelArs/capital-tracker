@@ -5,7 +5,7 @@ import { IconButton } from '@/ui/IconButton';
 import { useDialogFocus } from '@/ui/useDialogFocus';
 import { useCompactScreen } from '@/ui/useMediaQuery';
 import { age } from '../portfolio/format';
-import { needAttention } from './attention';
+import { type AttentionItem, needAttention } from './attention';
 import { useAttention } from './attention-context';
 import CloseButton from './CloseButton';
 import { Icon } from './icons';
@@ -53,11 +53,6 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
   const { items, checked, pricesUpdatedAt } = attention;
   const count = items.length;
   const updated = pricesUpdatedAt ? `Prices updated ${age(pricesUpdatedAt, now)}.` : '';
-  const quiet = !loaded
-    ? 'Checking prices and wallets…'
-    : checked
-      ? `Everything is up to date.${updated ? ` ${updated}` : ''}`
-      : 'Could not check the sync status. Try again later.';
 
   return (
     <div className="shell-bell" ref={root}>
@@ -96,38 +91,9 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
               </span>
             </header>
             {count === 0 ? (
-              <p className="shell-bell__quiet">
-                <Icon
-                  name={loaded && checked ? 'check' : 'info'}
-                  className={`shell-icon${loaded && checked ? ' shell-bell__ok' : ''}`}
-                />
-                <span>{quiet}</span>
-              </p>
+              <BellQuiet loaded={loaded} checked={checked} updated={updated} />
             ) : (
-              <ul className="shell-bell__list">
-                {items.map((item) => (
-                  <li key={item.key} className="shell-bell__row">
-                    <span className={`shell-bell__icon shell-bell__icon--${item.tone}`}>
-                      <Icon name={item.icon} className="shell-icon shell-icon--sm" />
-                    </span>
-                    <span className="shell-bell__text">
-                      {item.title}
-                      <small>{item.detail}</small>
-                    </span>
-                    {item.action && (
-                      // Prototype attention rows: Review is the one to do, Open only looks.
-                      <ButtonLink
-                        variant={item.key === 'classify' ? 'secondary' : 'ghost'}
-                        size="sm"
-                        to={withAsked(item.action.to, asked)}
-                        onClick={() => setOpen(false)}
-                      >
-                        {item.action.label}
-                      </ButtonLink>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <BellItems items={items} asked={asked} onAction={() => setOpen(false)} />
             )}
             {count > 0 && (updated || !checked) && (
               <p className="shell-bell__foot">
@@ -142,6 +108,70 @@ export default function NotificationsBell({ asked }: { asked: AccountingCurrency
         </>
       )}
     </div>
+  );
+}
+
+/** The one quiet line: still checking, all up to date, or the check failed. */
+function BellQuiet({
+  loaded,
+  checked,
+  updated,
+}: {
+  loaded: boolean;
+  checked: boolean;
+  updated: string;
+}) {
+  const quiet = !loaded
+    ? 'Checking prices and wallets…'
+    : checked
+      ? `Everything is up to date.${updated ? ` ${updated}` : ''}`
+      : 'Could not check the sync status. Try again later.';
+  return (
+    <p className="shell-bell__quiet">
+      <Icon
+        name={loaded && checked ? 'check' : 'info'}
+        className={`shell-icon${loaded && checked ? ' shell-bell__ok' : ''}`}
+      />
+      <span>{quiet}</span>
+    </p>
+  );
+}
+
+/** One row per problem, with its way out. */
+function BellItems({
+  items,
+  asked,
+  onAction,
+}: {
+  items: readonly AttentionItem[];
+  asked: AccountingCurrency | undefined;
+  onAction: () => void;
+}) {
+  return (
+    <ul className="shell-bell__list">
+      {items.map((item) => (
+        <li key={item.key} className="shell-bell__row">
+          <span className={`shell-bell__icon shell-bell__icon--${item.tone}`}>
+            <Icon name={item.icon} className="shell-icon shell-icon--sm" />
+          </span>
+          <span className="shell-bell__text">
+            {item.title}
+            <small>{item.detail}</small>
+          </span>
+          {item.action && (
+            // Prototype attention rows: Review is the one to do, Open only looks.
+            <ButtonLink
+              variant={item.key === 'classify' ? 'secondary' : 'ghost'}
+              size="sm"
+              to={withAsked(item.action.to, asked)}
+              onClick={onAction}
+            >
+              {item.action.label}
+            </ButtonLink>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

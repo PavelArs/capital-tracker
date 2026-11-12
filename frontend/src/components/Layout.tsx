@@ -28,6 +28,13 @@ import '@features/shell/tokens.css';
 import './Layout.css';
 
 /** Whether a key press lands in a field (or other editable text) the owner is typing in. */
+/** Ctrl+K, or Cmd+K on a Mac, with no Alt or Shift. */
+const isSearchShortcut = (event: KeyboardEvent) =>
+  event.key.toLowerCase() === 'k' &&
+  (event.ctrlKey || event.metaKey) &&
+  !event.altKey &&
+  !event.shiftKey;
+
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
@@ -121,8 +128,7 @@ export default function Layout() {
   // single-key shortcut fires on dictated or stray key presses (WCAG 2.1.4).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'k' || !(event.ctrlKey || event.metaKey)) return;
-      if (event.altKey || event.shiftKey) return;
+      if (!isSearchShortcut(event)) return;
       if (document.body.classList.contains('has-dialog') || typing(event.target)) return;
       const search = mainRef.current?.querySelector<HTMLInputElement>(
         'input[type="search"], input.ui-search',

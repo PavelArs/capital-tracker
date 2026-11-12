@@ -130,6 +130,224 @@ function Item({
   );
 }
 
+type Day = { heading: string; events: AuditEvent[] };
+
+// One group per Moscow day of the change (the app's day), under a heading as in Transactions.
+function groupByDay(events: readonly AuditEvent[], at: string | undefined): Day[] {
+  const days: Day[] = [];
+  for (const event of events) {
+    const heading = localDayHeading(event.at, at ?? event.at);
+    const last = days.at(-1);
+    if (last?.heading === heading) last.events.push(event);
+    else days.push({ heading, events: [event] });
+  }
+  return days;
+}
+
+/** The change chips and the sheet of the other filters; each choice is kept in the address. */
+function HistoryFilters({
+  entity,
+  change,
+  actor,
+  from,
+  to,
+  update,
+}: {
+  entity: AuditEntity | undefined;
+  change: AuditChange | undefined;
+  actor: AuditActor | undefined;
+  from: string | null;
+  to: string | null;
+  update: (changes: Record<string, string>) => void;
+}) {
+  return (
+    <div className="ui-toolbar">
+      <ChipGroup label="Filter by change">
+        <Chip pressed={!change} onClick={() => update({ change: '' })}>
+          All
+        </Chip>
+        {changes.map((key) => (
+          <Chip key={key} pressed={change === key} onClick={() => update({ change: key })}>
+            {changeLabels[key]}
+          </Chip>
+        ))}
+      </ChipGroup>
+      <FilterSheet
+        active={[entity, actor, from, to].filter(Boolean).length}
+        onReset={() => update({ entity: '', actor: '', from: '', to: '' })}
+      >
+        <label className="ui-filter">
+          <span>Type</span>
+          <Select
+            size="sm"
+            value={entity ?? ''}
+            onChange={(event) => update({ entity: event.target.value })}
+          >
+            <option value="">All types</option>
+            {entities.map((key) => (
+              <option key={key} value={key}>
+                {entityLabels[key]}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="ui-filter">
+          <span>Source</span>
+          <Select
+            size="sm"
+            value={actor ?? ''}
+            onChange={(event) => update({ actor: event.target.value })}
+          >
+            <option value="">Any source</option>
+            {actors.map((key) => (
+              <option key={key} value={key}>
+                {actorLabels[key]}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="ui-filter">
+          <span>From</span>
+          <Input
+            size="sm"
+            type="date"
+            value={from ?? ''}
+            max={to ?? undefined}
+            onChange={(event) => update({ from: event.target.value })}
+          />
+        </label>
+        <label className="ui-filter">
+          <span>To</span>
+          <Input
+            size="sm"
+            type="date"
+            value={to ?? ''}
+            min={from ?? undefined}
+            onChange={(event) => update({ to: event.target.value })}
+          />
+        </label>
+      </FilterSheet>
+    </div>
+  );
+}
+
+/** The changes day by day: two-line rows on a phone, a table elsewhere; or that none match. */
+function HistoryDays({
+  days,
+  narrow,
+  openId,
+  onOpen,
+  onClear,
+}: {
+  days: Day[];
+  narrow: boolean;
+  openId: string | null;
+  onOpen: (id: string) => void;
+  onClear: () => void;
+}) {
+  if (days.length === 0)
+    return (
+      <EmptyState
+        id="history-none"
+        title="No changes match"
+        compact
+        actions={<Button onClick={onClear}>Clear filters</Button>}
+      />
+    );
+  if (narrow)
+    return (
+      <ol className="history-list" aria-label="Changes">
+        {days.map((group) => (
+          <li key={group.heading} className="history-list__day">
+            <h2 className="history-list__heading">{group.heading}</h2>
+            <ul className="ui-rows">
+              {group.events.map((event) => (
+                <Item
+                  key={event.id}
+                  event={event}
+                  current={event.id === openId}
+                  onOpen={() => onOpen(event.id)}
+                />
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    );
+  return (
+    <div className="ui-table-wrap">
+      <table className="ui-table history-table" aria-label="Changes">
+        <colgroup>
+          <col className="history-col--when" />
+          <col className="history-col--change" />
+          <col className="history-col--operation" />
+          <col className="history-col--what" />
+          <col className="history-col--source" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" className="ui-num">
+              Time
+            </th>
+            <th scope="col">Change</th>
+            <th scope="col">Transaction</th>
+            <th scope="col">What changed</th>
+            <th scope="col">Source</th>
+          </tr>
+        </thead>
+        {days.map((group) => (
+          <tbody key={group.heading}>
+            <tr className="history-day">
+              <th scope="rowgroup" colSpan={5}>
+                {group.heading}
+              </th>
+            </tr>
+            {group.events.map((event) => (
+              <Row
+                key={event.id}
+                event={event}
+                current={event.id === openId}
+                onOpen={() => onOpen(event.id)}
+              />
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
+/** A load that failed: the first page for these filters, or the older changes. */
+function LoadFailed({ failed, onRetry }: { failed: 'load' | 'more'; onRetry: () => void }) {
+  return (
+    <Banner
+      tone="warn"
+      role="alert"
+      action={
+        <Button size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    >
+      {failed === 'more'
+        ? 'Could not load older changes.'
+        : 'Could not load the changes for these filters.'}
+    </Banner>
+  );
+}
+
+/** How many changes are shown, and how the history keeps them. */
+function HistoryNote({ count }: { count: number }) {
+  return (
+    <p className="ui-sub history-note">
+      {count} {count === 1 ? 'change' : 'changes'} shown, newest first. Every change is kept as a
+      new version, so nothing is overwritten; deleting a transaction adds a version that removes it
+      from your calculations. Blockchain transactions are never deleted, only classified or hidden.
+      Times are in your local time.
+    </p>
+  );
+}
+
 // Who changed what and when (BR 14): every stored version of the journals, newest first.
 export default function HistoryPage() {
   const [params, setParams] = useSearchParams();
@@ -221,14 +439,7 @@ export default function HistoryPage() {
   const filtered = Boolean(entity || change || actor || from || to);
   const opened = events.find((event) => event.id === openId) ?? null;
 
-  // One group per Moscow day of the change (the app's day), under a heading as in Transactions.
-  const days: { heading: string; events: AuditEvent[] }[] = [];
-  for (const event of events) {
-    const heading = localDayHeading(event.at, history?.at ?? event.at);
-    const last = days.at(-1);
-    if (last?.heading === heading) last.events.push(event);
-    else days.push({ heading, events: [event] });
-  }
+  const days = groupByDay(events, history?.at);
 
   return (
     <div className="shell-page">
@@ -255,155 +466,26 @@ export default function HistoryPage() {
           <h2 id="history-list-title" className="ui-sr">
             Change history
           </h2>
-          <div className="ui-toolbar">
-            <ChipGroup label="Filter by change">
-              <Chip pressed={!change} onClick={() => update({ change: '' })}>
-                All
-              </Chip>
-              {changes.map((key) => (
-                <Chip key={key} pressed={change === key} onClick={() => update({ change: key })}>
-                  {changeLabels[key]}
-                </Chip>
-              ))}
-            </ChipGroup>
-            <FilterSheet
-              active={[entity, actor, from, to].filter(Boolean).length}
-              onReset={() => update({ entity: '', actor: '', from: '', to: '' })}
-            >
-              <label className="ui-filter">
-                <span>Type</span>
-                <Select
-                  size="sm"
-                  value={entity ?? ''}
-                  onChange={(event) => update({ entity: event.target.value })}
-                >
-                  <option value="">All types</option>
-                  {entities.map((key) => (
-                    <option key={key} value={key}>
-                      {entityLabels[key]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="ui-filter">
-                <span>Source</span>
-                <Select
-                  size="sm"
-                  value={actor ?? ''}
-                  onChange={(event) => update({ actor: event.target.value })}
-                >
-                  <option value="">Any source</option>
-                  {actors.map((key) => (
-                    <option key={key} value={key}>
-                      {actorLabels[key]}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="ui-filter">
-                <span>From</span>
-                <Input
-                  size="sm"
-                  type="date"
-                  value={from ?? ''}
-                  max={to ?? undefined}
-                  onChange={(event) => update({ from: event.target.value })}
-                />
-              </label>
-              <label className="ui-filter">
-                <span>To</span>
-                <Input
-                  size="sm"
-                  type="date"
-                  value={to ?? ''}
-                  min={from ?? undefined}
-                  onChange={(event) => update({ to: event.target.value })}
-                />
-              </label>
-            </FilterSheet>
-          </div>
-          {events.length === 0 ? (
-            <EmptyState
-              id="history-none"
-              title="No changes match"
-              compact
-              actions={
-                <Button onClick={() => replaceParams(new URLSearchParams())}>Clear filters</Button>
-              }
-            />
-          ) : narrow ? (
-            <ol className="history-list" aria-label="Changes">
-              {days.map((group) => (
-                <li key={group.heading} className="history-list__day">
-                  <h2 className="history-list__heading">{group.heading}</h2>
-                  <ul className="ui-rows">
-                    {group.events.map((event) => (
-                      <Item
-                        key={event.id}
-                        event={event}
-                        current={event.id === openId}
-                        onOpen={() => setOpenId(event.id)}
-                      />
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <div className="ui-table-wrap">
-              <table className="ui-table history-table" aria-label="Changes">
-                <colgroup>
-                  <col className="history-col--when" />
-                  <col className="history-col--change" />
-                  <col className="history-col--operation" />
-                  <col className="history-col--what" />
-                  <col className="history-col--source" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col" className="ui-num">
-                      Time
-                    </th>
-                    <th scope="col">Change</th>
-                    <th scope="col">Transaction</th>
-                    <th scope="col">What changed</th>
-                    <th scope="col">Source</th>
-                  </tr>
-                </thead>
-                {days.map((group) => (
-                  <tbody key={group.heading}>
-                    <tr className="history-day">
-                      <th scope="rowgroup" colSpan={5}>
-                        {group.heading}
-                      </th>
-                    </tr>
-                    {group.events.map((event) => (
-                      <Row
-                        key={event.id}
-                        event={event}
-                        current={event.id === openId}
-                        onOpen={() => setOpenId(event.id)}
-                      />
-                    ))}
-                  </tbody>
-                ))}
-              </table>
-            </div>
-          )}
+          <HistoryFilters
+            entity={entity}
+            change={change}
+            actor={actor}
+            from={from}
+            to={to}
+            update={update}
+          />
+          <HistoryDays
+            days={days}
+            narrow={narrow}
+            openId={openId}
+            onOpen={(id) => setOpenId(id)}
+            onClear={() => replaceParams(new URLSearchParams())}
+          />
           {failed && (
-            <Banner
-              tone="warn"
-              role="alert"
-              action={
-                <Button size="sm" onClick={() => void (failed === 'more' ? more() : load())}>
-                  Try again
-                </Button>
-              }
-            >
-              {failed === 'more'
-                ? 'Could not load older changes.'
-                : 'Could not load the changes for these filters.'}
-            </Banner>
+            <LoadFailed
+              failed={failed}
+              onRetry={() => void (failed === 'more' ? more() : load())}
+            />
           )}
           {history.next && !failed && (
             <LoadMore
@@ -413,12 +495,7 @@ export default function HistoryPage() {
               label="changes"
             />
           )}
-          <p className="ui-sub history-note">
-            {events.length} {events.length === 1 ? 'change' : 'changes'} shown, newest first. Every
-            change is kept as a new version, so nothing is overwritten; deleting a transaction adds
-            a version that removes it from your calculations. Blockchain transactions are never
-            deleted, only classified or hidden. Times are in your local time.
-          </p>
+          <HistoryNote count={events.length} />
         </Card>
       )}
       {opened && <HistoryDrawer event={opened} onClose={() => setOpenId(null)} />}

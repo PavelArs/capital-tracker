@@ -80,6 +80,64 @@ function runs(plotted: readonly Plotted[]): Plotted[][] {
   return found;
 }
 
+/** The points with a figure in the reading shown: the bank's, or in today's money. */
+function plottedOf(
+  points: readonly DepositChartPoint[],
+  real: boolean,
+  basis: InflationBasis,
+): Plotted[] {
+  const figures = points.map((point) =>
+    real
+      ? point.real[basis]
+      : { balance: point.balance, invested: point.invested, estimated: false },
+  );
+  return points.flatMap((point, index) => {
+    const figure = figures[index];
+    return figure === null
+      ? []
+      : [
+          {
+            index,
+            time: Date.parse(`${point.date}T00:00:00Z`),
+            value: Number(figure.balance),
+            invested: Number(figure.invested),
+            balance: figure.balance,
+            paidIn: figure.invested,
+            estimated: figure.estimated,
+          },
+        ];
+  });
+}
+
+/** The box's scale: time across the period, value up over the value and the money put in. */
+function scaleOf(width: number, points: readonly DepositChartPoint[], plotted: readonly Plotted[]) {
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+  const times = points.map((point) => Date.parse(`${point.date}T00:00:00Z`));
+  const start = times[0];
+  const end = times[times.length - 1];
+  const span = Math.max(1, end - start);
+  const x = (time: number) =>
+    PAD.left + (points.length === 1 ? innerWidth / 2 : ((time - start) / span) * innerWidth);
+  const values = plotted.flatMap((entry) => [entry.value, entry.invested]);
+  let low = Math.min(...values);
+  let high = Math.max(...values);
+  const pad = (high - low) * 0.08 || high * 0.02 || 1;
+  // Money put in can fall below zero after a withdrawal of more than was put in: scale below zero then.
+  low = low < 0 ? low - pad : Math.max(0, low - pad);
+  high += pad;
+  const step = niceStep((high - low) / 4);
+  low = Math.floor(low / step) * step;
+  high = Math.ceil(high / step) * step;
+  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
+  const ticks: number[] = [];
+  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  return { innerWidth, innerHeight, start, end, span, x, y, ticks };
+}
+
+/** The tip sits right of the point, or left of it where it would run out of the box. */
+const tipLeftOf = (at: number, width: number) => (at + 14 + 200 > width ? at - 214 : at + 14);
+
 /**
  * The deposit's value and the money put in over its life, by month and on the day asked. Nominal
  * figures are the bank's; in today's money each figure is carried to the day asked by the
@@ -126,27 +184,7 @@ export default function DepositChart({
     return () => observer.disconnect();
   }, []);
 
-  const figures = points.map((point) =>
-    real
-      ? point.real[basis]
-      : { balance: point.balance, invested: point.invested, estimated: false },
-  );
-  const plotted: Plotted[] = points.flatMap((point, index) => {
-    const figure = figures[index];
-    return figure === null
-      ? []
-      : [
-          {
-            index,
-            time: Date.parse(`${point.date}T00:00:00Z`),
-            value: Number(figure.balance),
-            invested: Number(figure.invested),
-            balance: figure.balance,
-            paidIn: figure.invested,
-            estimated: figure.estimated,
-          },
-        ];
-  });
+  const plotted = plottedOf(points, real, basis);
   const legend = real
     ? { value: "Value in today's money", paid: 'Money put in, grown by inflation' }
     : { value: 'Value', paid: 'Money put in' };
@@ -166,27 +204,11 @@ export default function DepositChart({
       </Card>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
-  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
-  const times = points.map((point) => Date.parse(`${point.date}T00:00:00Z`));
-  const start = times[0];
-  const end = times[times.length - 1];
-  const span = Math.max(1, end - start);
-  const x = (time: number) =>
-    PAD.left + (points.length === 1 ? innerWidth / 2 : ((time - start) / span) * innerWidth);
-  const values = plotted.flatMap((entry) => [entry.value, entry.invested]);
-  let low = Math.min(...values);
-  let high = Math.max(...values);
-  const pad = (high - low) * 0.08 || high * 0.02 || 1;
-  // Money put in can fall below zero after a withdrawal of more than was put in: scale below zero then.
-  low = low < 0 ? low - pad : Math.max(0, low - pad);
-  high += pad;
-  const step = niceStep((high - low) / 4);
-  low = Math.floor(low / step) * step;
-  high = Math.ceil(high / step) * step;
-  const y = (value: number) => PAD.top + innerHeight - ((value - low) / (high - low)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = low; value <= high + step / 2; value += step) ticks.push(value);
+  const { innerWidth, innerHeight, start, end, span, x, y, ticks } = scaleOf(
+    width,
+    points,
+    plotted,
+  );
 
   const segments = runs(plotted);
   const base = PAD.top + innerHeight;
@@ -250,11 +272,7 @@ export default function DepositChart({
       Math.min(plotted.length - 1, Math.max(0, (index ?? plotted.length - 1) + move)),
     );
   };
-  const tipLeft = current
-    ? x(current.time) + 14 + 200 > width
-      ? x(current.time) - 214
-      : x(current.time) + 14
-    : 0;
+  const tipLeft = current ? tipLeftOf(x(current.time), width) : 0;
 
   return (
     <Card variant="chart" className="dashboard-chart-card" labelledBy="deposit-value-chart">
