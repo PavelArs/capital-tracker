@@ -59,17 +59,29 @@ export function assetProblems(entry: AssetEntry, accountCount: number): Set<Asse
   const amount = entry.amount.trim();
   if (amount || amountRequired(entry.kind)) {
     if (positive(amount) === null) found.add('amount');
-    const value = entryValue(entry);
-    if (entry.kind === 'crypto' ? positive(value) === null : value && positive(value) === null)
-      found.add('value');
-    if (entry.accountId === NEW_ACCOUNT) {
-      const name = entry.accountName.trim();
-      if (!name || name.length > MAX_ACCOUNT_NAME || /[\r\n]/.test(name)) found.add('account-name');
-    } else if (accountCount === 0) found.add('no-accounts');
-    else if (!entry.accountId) found.add('account');
+    if (valueInvalid(entry)) found.add('value');
+    const account = accountProblem(entry, accountCount);
+    if (account) found.add(account);
   }
   if (entry.notes.trim().length > MAX_COMMENT_LENGTH) found.add('notes');
   return found;
+}
+
+/** A coin needs what it cost; anything else may leave its value empty, but not unreadable. */
+function valueInvalid(entry: AssetEntry): boolean {
+  const value = entryValue(entry);
+  if (entry.kind === 'crypto') return positive(value) === null;
+  return value !== '' && positive(value) === null;
+}
+
+/** What is wrong with where the balance goes: a new account's name, or no account to choose. */
+function accountProblem(entry: AssetEntry, accountCount: number): AssetProblem | null {
+  if (entry.accountId === NEW_ACCOUNT) {
+    const name = entry.accountName.trim();
+    return !name || name.length > MAX_ACCOUNT_NAME || /[\r\n]/.test(name) ? 'account-name' : null;
+  }
+  if (accountCount === 0) return 'no-accounts';
+  return entry.accountId ? null : 'account';
 }
 
 const entryValue = (entry: AssetEntry) => (entry.kind === 'cash' ? '' : entry.value.trim());
