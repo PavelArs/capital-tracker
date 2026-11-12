@@ -2,10 +2,10 @@ import { type PropertyDetails, propertyDetailsApi } from '@api/property-details.
 import { useToast } from '@contexts/ToastContext';
 import { type FormEvent, useId, useRef, useState } from 'react';
 import { Banner } from '@/ui/Banner';
-import { Button } from '@/ui/Button';
 import { Field } from '@/ui/Field';
+import { SaveFooter } from '@/ui/FormDialog';
 import { Affix, Input, Textarea } from '@/ui/inputs';
-import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
+import Modal, { ModalBody, ModalHeader } from '@/ui/Modal';
 import { requestFailure } from '@/utils/request-failure';
 import { useFocusFirstProblem } from '../portfolio/focus-problem';
 
@@ -139,14 +139,7 @@ export default function PropertyDetailsDialog({
           </Field>
           {error && <Banner tone="neg">{error}</Banner>}
         </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </ModalFooter>
+        <SaveFooter label="Save" saving={saving} onCancel={onClose} />
       </form>
     </Modal>
   );

@@ -6,23 +6,13 @@ import {
   goalsApi,
 } from '@api/goals.api';
 import { isAxiosError, isCancel } from 'axios';
-import {
-  createContext,
-  type FormEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from 'react';
+import { type ReactNode, useEffect, useId, useState } from 'react';
 import { Banner } from '@/ui/Banner';
-import { Button } from '@/ui/Button';
 import { Chip, ChipGroup } from '@/ui/Chip';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { type FieldControl, Field as FormField } from '@/ui/Field';
+import { FormDialog, hasProblems, type Problems, useShownProblem } from '@/ui/FormDialog';
 import { Affix, Input } from '@/ui/inputs';
-import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { requestFailure } from '@/utils/request-failure';
 import { useAttempt } from '../accounting/feedback';
@@ -67,97 +57,6 @@ const failure = (error: unknown, unreachable: string) =>
     fallback: 'Could not save. Try again.',
   });
 
-/** What is wrong with each field, by its key; a field that is fine has none. */
-type Problems = Partial<Record<string, string>>;
-
-const hasProblems = (problems: Problems) => Object.values(problems).some(Boolean);
-
-/** The problems shown under the fields: none until the owner tried to save. */
-const ShownProblems = createContext<Problems>({});
-
-/** One modal form: a title, fields, a refusal line and Cancel/Save. */
-function FormDialog({
-  title,
-  note,
-  submit,
-  problems = () => ({}),
-  unreachable,
-  onClose,
-  onSubmit,
-  children,
-}: {
-  title: string;
-  note?: string;
-  submit: string;
-  /** Every field's problem; each is shown under its field once the owner tried to save. */
-  problems?: () => Problems;
-  /** What a lost answer means for this change. */
-  unreachable: string;
-  onClose: () => void;
-  onSubmit: () => Promise<void>;
-  children: ReactNode;
-}) {
-  const id = useId();
-  const [error, setError] = useState<string | null>(null);
-  const [tried, setTried] = useState(false);
-  const [saving, setSaving] = useState(false);
-  // Each refused save puts the keyboard on the first field that needs a fix.
-  const [refused, setRefused] = useState(0);
-  const form = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (refused > 0) form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
-  }, [refused]);
-
-  const shown = tried ? problems() : {};
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    setTried(true);
-    if (hasProblems(problems())) {
-      setRefused((count) => count + 1);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await onSubmit();
-    } catch (caught) {
-      setError(failure(caught, unreachable));
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      titleId={`${id}-title`}
-      size="wide"
-      onEscape={saving ? undefined : onClose}
-      initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
-    >
-      <form ref={form} onSubmit={save} noValidate>
-        <ModalHeader
-          titleId={`${id}-title`}
-          title={title}
-          onClose={onClose}
-          closeDisabled={saving}
-          intro={note}
-        />
-        <ModalBody>
-          <ShownProblems.Provider value={shown}>{children}</ShownProblems.Provider>
-          {error && <Banner tone="neg">{error}</Banner>}
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? 'Saving…' : submit}
-          </Button>
-        </ModalFooter>
-      </form>
-    </Modal>
-  );
-}
-
 /**
  * A labelled field. `name` is its key among the form's problems: once the owner tried to save,
  * its problem is said under it, in place of the hint, and the control is marked invalid.
@@ -175,7 +74,7 @@ function Field({
   name?: string;
   children: (control: FieldControl) => ReactNode;
 }) {
-  const problems = useContext(ShownProblems);
+  const problem = useShownProblem(name);
   return (
     <FormField
       label={
@@ -188,7 +87,7 @@ function Field({
         )
       }
       hint={hint}
-      error={name ? (problems[name] ?? null) : null}
+      error={problem}
     >
       {children}
     </FormField>
@@ -425,8 +324,10 @@ export function GoalDialog({
       title={words.title}
       note="A goal counts your whole portfolio. The app works out what to put in each month, or when you get there."
       submit={words.submit}
+      submitVariant="secondary"
       problems={problems}
-      unreachable={words.unreachable}
+      failure={(error) => failure(error, words.unreachable)}
+      size="wide"
       onClose={onClose}
       onSubmit={async () => {
         const terms: GoalTerms = {
