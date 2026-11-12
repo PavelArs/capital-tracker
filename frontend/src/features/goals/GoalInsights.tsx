@@ -49,7 +49,10 @@ const paceStatusText: Partial<Record<Insights['paceStatus'], string>> = {
 function paceText(data: Insights): string {
   if (data.paceReachedOn)
     return data.paceReachedOn <= data.asOf ? 'Reached' : monthYear(data.paceReachedOn);
-  return paceStatusText[data.paceStatus] ?? 'No current priced value';
+  return (
+    (Object.hasOwn(paceStatusText, data.paceStatus) && paceStatusText[data.paceStatus]) ||
+    'No current priced value'
+  );
 }
 
 /** How far the pace lands from the goal's date, while it is still ahead. */

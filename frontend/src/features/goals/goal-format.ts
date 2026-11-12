@@ -283,7 +283,7 @@ const verdicts: Record<GoalStatus, Verdict> = {
 };
 
 /** The sentence under a goal: where it stands and what it takes, from the base case. */
-export function verdict(goal: GoalPreview): string {
+export function verdict(goal: GoalPreview): string | undefined {
   // With unpriced assets the value is understated: only "on track" still holds, and projections
   // describe only the priced subset.
   if (!goal.progress.complete && goal.status !== 'reached' && goal.status !== 'unknown') {
@@ -293,6 +293,8 @@ export function verdict(goal: GoalPreview): string {
   }
   const base = goal.scenarios.find((scenario) => scenario.key === 'base');
   const planned = isPositive(goal.monthlyContribution) ? goal.monthlyContribution : null;
+  // A status this build does not know gives no sentence, not a failed render.
+  if (!Object.hasOwn(verdicts, goal.status)) return undefined;
   return verdicts[goal.status](goal, base, planned);
 }
 

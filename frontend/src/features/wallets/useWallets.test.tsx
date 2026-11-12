@@ -239,7 +239,7 @@ describe('WALLET-SYNC-OFF: switching sync in useWallets', () => {
 });
 
 describe('WAL-LIST: loading in useWallets', () => {
-  it('fails a first load with nothing kept, and a quiet refresh keeps what is shown', async () => {
+  it('fails a first load with nothing kept, and a quiet refresh that fails is not marked failed', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(failure(500));
     vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([address()]);
     vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([]);

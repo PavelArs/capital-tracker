@@ -27,7 +27,6 @@ import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
 import './Layout.css';
 
-/** Whether a key press lands in a field (or other editable text) the owner is typing in. */
 /** Ctrl+K, or Cmd+K on a Mac, with no Alt or Shift. */
 const isSearchShortcut = (event: KeyboardEvent) =>
   event.key.toLowerCase() === 'k' &&
@@ -35,6 +34,7 @@ const isSearchShortcut = (event: KeyboardEvent) =>
   !event.altKey &&
   !event.shiftKey;
 
+/** Whether a key press lands in a field (or other editable text) the owner is typing in. */
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);

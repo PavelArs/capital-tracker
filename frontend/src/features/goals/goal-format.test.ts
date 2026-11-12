@@ -383,3 +383,11 @@ describe('EXACT-DIFFERENCE: the difference of two decimal strings without a floa
     expect(exactDifference('1', 'NaN')).toBeNull();
   });
 });
+
+describe('verdict for a status this screen does not know', () => {
+  it('gives no sentence instead of failing the render', () => {
+    for (const status of ['paused', 'constructor']) {
+      expect(verdict(goal({ status: status as Goal['status'] }))).toBeUndefined();
+    }
+  });
+});
