@@ -288,12 +288,9 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
   const at = operation.occurredAt;
   const time = at.slice(11, 16);
   const paid = operation.paid;
-  const fee = paid ? paid.fee : (operation.feeUsd ?? '0');
   // A trade settled in USDT or USDC keeps that choice; otherwise the amounts tell it.
   const kept = operation.settlement?.asset.symbol?.toUpperCase();
   const stable = kept === 'USDT' || kept === 'USDC' ? kept : null;
-  // A transfer's fee is in the coin moved; every other fee is money.
-  const shownFee = operation.kind === 'transfer' ? (operation.fee?.quantity ?? '0') : fee;
   return {
     side: operation.direction === 'out' ? 'sell' : 'buy',
     instrumentId: operation.asset.instrumentId ?? '',
@@ -304,9 +301,17 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
     currency: paid ? paid.currency : (stable ?? 'USD'),
     rate: paid?.rateSource === 'owner' ? paid.perUsd : '',
     rateEdited: paid?.rateSource === 'owner',
-    fee: Number(shownFee) === 0 || operation.type === 'fee' ? '' : shownFee,
+    fee: shownFee(operation),
     comment: operation.comment ?? '',
   };
+}
+
+/** The fee as the window shows it: none for a zero fee, nor on a fee, which is all fee. */
+function shownFee(operation: Operation): string {
+  const fee = operation.paid ? operation.paid.fee : (operation.feeUsd ?? '0');
+  // A transfer's fee is in the coin moved; every other fee is money.
+  const shown = operation.kind === 'transfer' ? (operation.fee?.quantity ?? '0') : fee;
+  return Number(shown) === 0 || operation.type === 'fee' ? '' : shown;
 }
 
 /**
