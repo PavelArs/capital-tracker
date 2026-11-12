@@ -539,6 +539,76 @@ async function readSeriesInputs(
   };
 }
 
+/** A chart point as stored, or as valued again. */
+type ChartPoint = { at: number; value: string | null; complete: boolean };
+
+/**
+ * The stored points valued again for one priced subset, kept across the chart and its flows even
+ * if an excluded asset had old prices. Without `everyPoint`, only up to the first with a value.
+ */
+async function revaluedPoints(
+  manager: EntityManager,
+  owner: string,
+  stored: ChartPoint[],
+  everyPoint: boolean,
+  scope: {
+    original: ValuationInputs;
+    valuation: ValuationInputs;
+    excluded: ReadonlySet<string>;
+    excludedCount: number;
+    fx: FxConverter;
+    readAccounts: ReturnType<typeof accountHistoryReader>;
+    from: number;
+  },
+): Promise<ChartPoint[]> {
+  const { original, valuation, excluded, excludedCount, fx, readAccounts, from } = scope;
+  // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
+  const subset = {
+    ...original,
+    hidden: valuation.hidden,
+    deposits: valuation.deposits,
+    instruments: original.instruments.filter((asset) => !excluded.has(asset.id)),
+  };
+  const revalue = (inputs: SeriesInputs, point: { at: number }) =>
+    scopedValue(
+      valuesAt(subset, point.at, pricesAt(inputs, point.at), [fx], readAccounts(iso(point.at)))[0],
+      valuesAt(
+        original,
+        point.at,
+        pricesAt(inputs, point.at),
+        [fx],
+        readAccounts(iso(point.at)),
+      )[0],
+      subset,
+      excludedCount,
+      new Date(point.at),
+      fx,
+    );
+  primeDepositBalances(
+    original.deposits,
+    stored.map((point) => point.at),
+  );
+  if (everyPoint) {
+    const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
+    return stored.map((point) => revalue(inputs, point));
+  }
+  const valued: ChartPoint[] = [];
+  let inputs: SeriesInputs | undefined;
+  for (const point of stored) {
+    // The first point usually has a value, and its own prices are few to read.
+    if (valued.length < 2)
+      inputs = await readSeriesInputs(manager, owner, {
+        valuation: original,
+        since: from,
+        ...(valued.length === 0 ? { until: point.at } : {}),
+      });
+    const again = revalue(inputs as SeriesInputs, point);
+    valued.push(again);
+    if (again.value !== null) break;
+  }
+  return valued;
+}
+
 /** One asset's value and the known cost of what is held at one instant (ASSET-CHART). */
 function assetAt(
   held: readonly PortfolioAccountInput[],
@@ -792,60 +862,16 @@ export class PortfolioSnapshotsService {
     const excludedCount = excluded.size + excludedDeposits.size;
     const [priced] = valuesAt(valuation, now.getTime(), prices, [fx], currentAccounts);
     const current = scopedValue(priced, whole, valuation, excludedCount, now, fx);
-    if (excludedCount > 0 || section) {
-      // Keep one priced subset across the chart and its flows, even if an excluded asset had old prices.
-      const subset = {
-        ...original,
-        hidden: valuation.hidden,
-        deposits: valuation.deposits,
-        instruments: original.instruments.filter((asset) => !excluded.has(asset.id)),
-      };
-      const revalue = (inputs: SeriesInputs, point: { at: number }) =>
-        scopedValue(
-          valuesAt(
-            subset,
-            point.at,
-            pricesAt(inputs, point.at),
-            [fx],
-            readAccounts(iso(point.at)),
-          )[0],
-          valuesAt(
-            original,
-            point.at,
-            pricesAt(inputs, point.at),
-            [fx],
-            readAccounts(iso(point.at)),
-          )[0],
-          subset,
-          excludedCount,
-          new Date(point.at),
-          fx,
-        );
-      primeDepositBalances(
-        original.deposits,
-        stored.map((point) => point.at),
-      );
-      if (everyPoint) {
-        const inputs = await readSeriesInputs(manager, owner, { valuation: original, since: from });
-        stored = stored.map((point) => revalue(inputs, point));
-      } else {
-        const valued: typeof stored = [];
-        let inputs: SeriesInputs | undefined;
-        for (const point of stored) {
-          // The first point usually has a value, and its own prices are few to read.
-          if (valued.length < 2)
-            inputs = await readSeriesInputs(manager, owner, {
-              valuation: original,
-              since: from,
-              ...(valued.length === 0 ? { until: point.at } : {}),
-            });
-          const again = revalue(inputs as SeriesInputs, point);
-          valued.push(again);
-          if (again.value !== null) break;
-        }
-        stored = valued;
-      }
-    }
+    if (excludedCount > 0 || section)
+      stored = await revaluedPoints(manager, owner, stored, everyPoint, {
+        original,
+        valuation,
+        excluded,
+        excludedCount,
+        fx,
+        readAccounts,
+        from,
+      });
     const series: (SplitPoint & { complete: boolean })[] = [
       ...stored,
       {
