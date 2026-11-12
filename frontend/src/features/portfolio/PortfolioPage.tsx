@@ -418,11 +418,7 @@ function sortBankProducts(
           : null;
   return [...rows].sort((a, b) => {
     if (sort.key === 'name') return direction * byName(a, b);
-    const left = value(a);
-    const right = value(b);
-    if (left === null || right === null)
-      return left === right ? byName(a, b) : left === null ? 1 : -1;
-    return direction * compareDecimals(left, right) || byName(a, b);
+    return byFigure(value(a), value(b), direction, () => byName(a, b));
   });
 }
 

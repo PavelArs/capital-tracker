@@ -1,20 +1,11 @@
 import { cachedReads } from '@api/cached-reads';
-import {
-  announceClassificationChange,
-  CLASSIFICATION_CHANGED,
-  type DuplicateProposal,
-  operationsApi,
-  type DuplicateProposals as Proposals,
-} from '@api/operations.api';
-import { SYNC_CHANGED } from '@api/sync-status.api';
-import { useCallback, useEffect, useState } from 'react';
+import type { DuplicateProposal } from '@api/operations.api';
 import { requestFailure } from '@/utils/request-failure';
-import { useAttempt } from '../accounting/feedback';
 import { money, quantity } from '../portfolio/format';
-import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
+import LoadMore from '../shell/InfiniteScroll';
 import { moment, shortAddress, typeLabels } from './operation-format';
 import { ProposalCard, ProposalItem } from './ProposalCard';
-import { takeHandover } from './proposals-handover';
+import { useProposals } from './useProposals';
 
 const place = (item: DuplicateProposal) =>
   item.transaction.wallet.label ??
@@ -47,65 +38,28 @@ export default function DuplicateProposals({
 }: {
   onReplaced: (message: string) => void;
 }) {
-  const [found, setFound] = useState<Proposals | null>(
-    () => cachedReads.duplicateProposals.last() ?? null,
+  const { found, proposals, paged, busy, problem, act } = useProposals(
+    'duplicate',
+    cachedReads.duplicateProposals,
+    failure,
   );
-  const [busy, setBusy] = useState<string | null>(null);
-  const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
-  // A retry of one answer after a lost reply keeps its request id, so it is recorded once.
-  const attempt = useAttempt();
-
-  const load = useCallback(async () => {
-    try {
-      setFound(await cachedReads.duplicateProposals.load());
-    } catch {
-      // The list is an offer; without it the page works as before.
-    }
-  }, []);
-  useEffect(() => {
-    // The page read it together with the list a moment ago; asking again would only repeat it.
-    // Only an answer that was kept counts: one that landed after a drop was not remembered.
-    const handed = takeHandover('duplicate') && cachedReads.duplicateProposals.last() !== undefined;
-    if (!handed) void load();
-    window.addEventListener(CLASSIFICATION_CHANGED, load);
-    window.addEventListener(SYNC_CHANGED, load);
-    return () => {
-      window.removeEventListener(CLASSIFICATION_CHANGED, load);
-      window.removeEventListener(SYNC_CHANGED, load);
-    };
-  }, [load]);
-
-  const proposals = found?.proposals ?? [];
-  // PAGES: twenty proposals a page.
-  const paged = useInfinite(proposals);
   if (proposals.length === 0) return null;
-  const replace = async (item: DuplicateProposal) => {
-    const key = keyOf(item);
-    setBusy(key);
-    setProblem(null);
-    const answer = {
-      expectedVersion: item.transaction.version,
-      hidden: false,
-      classification: item.classification,
-      ...(item.comment === null ? {} : { comment: item.comment }),
-      replaces: { kind: item.record.kind, id: item.record.id, version: item.record.version },
-    };
-    try {
-      await operationsApi.classify({ id: item.transaction.addressId }, item.transaction.txid, {
-        requestId: attempt([key, answer]),
-        ...answer,
-      });
-      attempt.done([key, answer]);
-      announceClassificationChange();
-      onReplaced(
-        `Replaced your record with the wallet's: ${quantity(item.transaction.quantity)} ${item.coin} in ${item.transaction.accountName}.`,
-      );
-    } catch (error) {
-      setProblem({ key, text: failure(error) });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const replace = (item: DuplicateProposal) =>
+    act(
+      keyOf(item),
+      item.transaction,
+      {
+        expectedVersion: item.transaction.version,
+        hidden: false,
+        classification: item.classification,
+        ...(item.comment === null ? {} : { comment: item.comment }),
+        replaces: { kind: item.record.kind, id: item.record.id, version: item.record.version },
+      },
+      () =>
+        onReplaced(
+          `Replaced your record with the wallet's: ${quantity(item.transaction.quantity)} ${item.coin} in ${item.transaction.accountName}.`,
+        ),
+    );
 
   return (
     <ProposalCard
