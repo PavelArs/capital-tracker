@@ -244,58 +244,16 @@ export class MfaService implements OnModuleInit {
         (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
       )
         return { status: 429 } as const;
-      let accepted = false;
-      try {
-        this.cipher.decrypt(factor.activeEnvelope, owner.userId, factor.activeVersion);
-      } catch {
-        throw new UnauthorizedException();
-      }
-      if (input.kind === 'totp') {
-        const counter = this.counter(
-          factor.activeEnvelope,
-          owner.userId,
-          factor.activeVersion,
-          input.code,
-          now,
-        );
-        if (counter !== null && BigInt(counter) > BigInt(factor.lastCounter!)) {
-          await manager.query('UPDATE owner_mfa SET "lastCounter" = $1 WHERE id = 1', [counter]);
-          accepted = true;
-        }
-      } else {
-        this.cipher.decrypt(factor.activeEnvelope, owner.userId, factor.activeVersion);
-        const rows = await manager.query(
-          `UPDATE owner_mfa_recovery SET "usedAt" = $1
-          WHERE "codeHash" = $2 AND "userId" = $3 AND "enrollmentVersion" = $4 AND "usedAt" IS NULL RETURNING "codeHash"`,
-          [
-            now,
-            recoveryHash(input.code, owner.userId, factor.activeVersion),
-            owner.userId,
-            factor.activeVersion,
-          ],
-        );
-        accepted = rows[0].length === 1;
-      }
+      const accepted = await this.acceptCompletionFactor(
+        manager,
+        owner,
+        factor as FactorRow & { activeVersion: string },
+        input,
+        now,
+      );
       if (!accepted) {
-        const failure = recordFailure(factor, now);
-        await manager.query(
-          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
-          "consecutiveFailures" = $4 WHERE id = 1`,
-          [
-            failure.next.failedAttempts,
-            failure.next.failureWindowStart,
-            failure.next.blockedUntil,
-            failure.next.consecutiveFailures,
-          ],
-        );
-        if (pending.failedAttempts + 1 >= 5)
-          await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [hash]);
-        else
-          await manager.query(
-            'UPDATE auth_sessions SET "failedAttempts" = "failedAttempts" + 1 WHERE "tokenHash" = $1',
-            [hash],
-          );
-        return { status: failure.status } as const;
+        const status = await this.countCompletionFailure(manager, factor, pending, hash, now);
+        return { status } as const;
       }
       await manager.query(
         `UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
@@ -320,6 +278,80 @@ export class MfaService implements OnModuleInit {
         outcome.status!,
       );
     return outcome.session;
+  }
+
+  // Sign-in factor check, after the cooldown check: an undecryptable factor fails closed; a TOTP
+  // step must be newer than the last accepted one; a recovery code must be unused and is spent.
+  private async acceptCompletionFactor(
+    manager: EntityManager,
+    owner: OwnerRow,
+    factor: FactorRow & { activeVersion: string },
+    input: FactorInput,
+    now: Date,
+  ): Promise<boolean> {
+    let accepted = false;
+    try {
+      this.cipher.decrypt(factor.activeEnvelope, owner.userId, factor.activeVersion);
+    } catch {
+      throw new UnauthorizedException();
+    }
+    if (input.kind === 'totp') {
+      const counter = this.counter(
+        factor.activeEnvelope,
+        owner.userId,
+        factor.activeVersion,
+        input.code,
+        now,
+      );
+      if (counter !== null && BigInt(counter) > BigInt(factor.lastCounter!)) {
+        await manager.query('UPDATE owner_mfa SET "lastCounter" = $1 WHERE id = 1', [counter]);
+        accepted = true;
+      }
+    } else {
+      this.cipher.decrypt(factor.activeEnvelope, owner.userId, factor.activeVersion);
+      const rows = await manager.query(
+        `UPDATE owner_mfa_recovery SET "usedAt" = $1
+          WHERE "codeHash" = $2 AND "userId" = $3 AND "enrollmentVersion" = $4 AND "usedAt" IS NULL RETURNING "codeHash"`,
+        [
+          now,
+          recoveryHash(input.code, owner.userId, factor.activeVersion),
+          owner.userId,
+          factor.activeVersion,
+        ],
+      );
+      accepted = rows[0].length === 1;
+    }
+    return accepted;
+  }
+
+  // A wrong or replayed sign-in factor counts toward the owner's limits; the fifth failure of
+  // this pending challenge retires it.
+  private async countCompletionFailure(
+    manager: EntityManager,
+    factor: FactorRow,
+    pending: { failedAttempts: number },
+    hash: string,
+    now: Date,
+  ): Promise<401 | 429> {
+    const failure = recordFailure(factor, now);
+    await manager.query(
+      `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
+          "consecutiveFailures" = $4 WHERE id = 1`,
+      [
+        failure.next.failedAttempts,
+        failure.next.failureWindowStart,
+        failure.next.blockedUntil,
+        failure.next.consecutiveFailures,
+      ],
+    );
+    if (pending.failedAttempts + 1 >= 5)
+      await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [hash]);
+    else
+      await manager.query(
+        'UPDATE auth_sessions SET "failedAttempts" = "failedAttempts" + 1 WHERE "tokenHash" = $1',
+        [hash],
+      );
+    return failure.status;
   }
 
   // SEC-CODES: unused codes of the active factor, as Settings shows them.
