@@ -5,6 +5,7 @@ import { Logger } from '@nestjs/common';
 import { BlockbookClient } from './blockbook-client';
 import { EsploraClient, parsePage as parseEsploraPage } from './esplora-client';
 import { HorizonClient, parseBalance } from './horizon-client';
+import { errorCode, integer, list, loggedDetail, record } from './provider-client';
 import { parseAccountValues, parseEpoch, SolanaRpcClient } from './solana-rpc-client';
 import { parseTip, TronGridClient } from './trongrid-client';
 
@@ -253,5 +254,39 @@ describe('Chain provider clients parse answers strictly', () => {
     expect(parseEsploraPage(BITCOIN, [])).toEqual([]);
     for (const item of [null, [], 'text', 1])
       expect(() => parseEsploraPage(BITCOIN, [item])).toThrow();
+  });
+});
+
+describe('Shared provider client helpers', () => {
+  it('takes only a plain object as a record and only an array as a list', () => {
+    const value = { a: 1 };
+    expect(record(value)).toBe(value);
+    for (const bad of [[], null, undefined, 'text', 1, true]) expect(() => record(bad)).toThrow();
+    const items = [1];
+    expect(list(items)).toBe(items);
+    for (const bad of [{}, null, undefined, 'text', 1]) expect(() => list(bad)).toThrow();
+  });
+
+  it('takes only a safe whole number from 0 to the maximum', () => {
+    expect(integer(0, 5)).toBe(0);
+    expect(integer(5, 5)).toBe(5);
+    for (const bad of [-1, 6, 1.5, Number.NaN, '1', null]) expect(() => integer(bad, 5)).toThrow();
+    expect(() => integer(Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER + 1)).toThrow();
+  });
+
+  it('names a failure by its code, its cause’s code or its name', () => {
+    expect(errorCode({ code: 'ECONNRESET', cause: { code: 'X' }, name: 'Y' })).toBe('ECONNRESET');
+    expect(errorCode({ code: '', cause: { code: 'ETIMEDOUT' }, name: 'Y' })).toBe('ETIMEDOUT');
+    expect(errorCode({ code: 7, name: 'TypeError' })).toBe('TypeError');
+    for (const unknown of [{}, null, undefined, 'text', { name: '' }])
+      expect(errorCode(unknown)).toBe('unknown error');
+  });
+
+  it('keeps 160 characters of what was said, redacted before the cut, on one line', () => {
+    const redact = (text: string) => text.replaceAll('secret', '<key>');
+    expect(loggedDetail(`  a\n\tb  ${'c'.repeat(200)}`, redact)).toBe(`a b ${'c'.repeat(152)}`);
+    // Cut first, "secret" would end at character 160 as "secre".
+    expect(loggedDetail(`${'d'.repeat(154)} secret tail`, redact)).toBe(`${'d'.repeat(154)} <key>`);
+    expect(loggedDetail(' \n ', redact)).toBe('');
   });
 });
