@@ -4,7 +4,7 @@ import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { ChainClassificationService } from '../accounting/chain-classification.service';
 import { errorMessage, recordWalletSync, startTimer, trackJob } from '../observability/metrics';
-import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
+import { INTERRUPTED_AFTER_MS, recordSource, runLocked } from '../sync-status/sync-source';
 import { isNetwork, networkNames } from './chain-assets';
 import {
   CHAIN_SYNC_ADAPTERS,
@@ -69,45 +69,29 @@ export class WalletSyncService {
   // SYNC-BG, SYNC-ISOLATION: every due wallet gets one pass; a wallet whose provider fails
   // or whose adapter throws records its own failure and the next wallet still runs.
   async runDue(now = new Date()): Promise<WalletTickResult> {
-    // A transaction-scoped advisory lock on a dedicated connection: one scheduler at a time,
-    // released by the rollback below or by the connection ending, never left behind.
-    const runner = this.source.createQueryRunner();
-    await runner.connect();
-    try {
-      await runner.startTransaction();
-      try {
-        const [lock]: { locked: boolean }[] = await runner.query(
-          'SELECT pg_try_advisory_xact_lock($1) AS locked',
-          [LOCK_KEY],
-        );
-        if (!lock.locked) return { outcome: 'busy' };
-        const due: DueWallet[] = await this.source.query(
-          `SELECT a.id, a."ownerId", a.network FROM wallet_addresses a
+    return runLocked(this.source, LOCK_KEY, async () => {
+      const due: DueWallet[] = await this.source.query(
+        `SELECT a.id, a."ownerId", a.network FROM wallet_addresses a
             LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
             WHERE a."removedAt" IS NULL AND a."syncDisabledAt" IS NULL
               AND (s.key IS NULL OR s."nextRunAt" IS NULL OR s."nextRunAt" <= $1)
             ORDER BY s."nextRunAt" ASC NULLS FIRST, a."createdAt", a.id LIMIT $2`,
-          [now, WALLETS_PER_TICK],
-        );
-        const wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] = [];
-        for (const wallet of due) {
-          // WALLET-SYNC-OFF: the owner may have switched this wallet off while earlier ones ran.
-          const [still] = await this.source.query(
-            `SELECT 1 FROM wallet_addresses
+        [now, WALLETS_PER_TICK],
+      );
+      const wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] = [];
+      for (const wallet of due) {
+        // WALLET-SYNC-OFF: the owner may have switched this wallet off while earlier ones ran.
+        const [still] = await this.source.query(
+          `SELECT 1 FROM wallet_addresses
               WHERE id = $1 AND "removedAt" IS NULL AND "syncDisabledAt" IS NULL`,
-            [wallet.id],
-          );
-          if (!still) continue;
-          const result = await this.run(wallet, now, true);
-          wallets.push({ id: wallet.id, state: result === 'busy' ? 'busy' : result.state });
-        }
-        return { outcome: 'ran', wallets };
-      } finally {
-        await runner.rollbackTransaction();
+          [wallet.id],
+        );
+        if (!still) continue;
+        const result = await this.run(wallet, now, true);
+        wallets.push({ id: wallet.id, state: result === 'busy' ? 'busy' : result.state });
       }
-    } finally {
-      await runner.release();
-    }
+      return { outcome: 'ran', wallets };
+    });
   }
 
   /**
