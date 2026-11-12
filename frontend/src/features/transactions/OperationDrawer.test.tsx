@@ -1,9 +1,13 @@
+import { assetRewardsApi, type RewardReceipt } from '@api/asset-rewards.api';
 import apiClient from '@api/client';
-import type { Operation } from '@api/operations.api';
-import { cleanup, render, screen } from '@testing-library/react';
-import { AxiosError } from 'axios';
+import { type Operation, operationsApi } from '@api/operations.api';
+import { type JournalState, tradesApi } from '@api/trades.api';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { POOL_DEPOSIT_NAMED } from './ClassifyForm';
 import OperationDrawer from './OperationDrawer';
 
 // Characterization of the drawer's facts, rendered as the owner sees them. Synthetic data only.
@@ -88,6 +92,21 @@ function details(): [string, string][] {
     term.nextElementSibling?.textContent ?? '',
   ]);
 }
+
+const httpError = (status: number, data: object = {}) =>
+  new AxiosError('refused', String(status), undefined, undefined, {
+    status,
+    statusText: 'Refused',
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+    data,
+  });
+const dependent = {
+  operationId: `trade:${id(50)}`,
+  accountId: bybit.id,
+  instrumentId: id(1),
+  occurredAt: '2025-07-01T00:00:00.000Z',
+};
 
 // Without a network the portfolio read fails, so the title shows plain tickers.
 const networkAdapter = apiClient.defaults.adapter;
@@ -342,5 +361,107 @@ describe('OperationDrawer facts', () => {
       ['Status', 'Recorded'],
       ['Source', 'Added by you'],
     ]);
+  });
+});
+
+describe('OperationDrawer commands', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(tradesApi, 'state').mockResolvedValue({
+      accountId: bybit.id,
+      eligible: false,
+      ineligibilityReason: 'already-initialized',
+      journal: { journalRevision: 5 } as JournalState['journal'],
+    });
+    vi.spyOn(tradesApi, 'versions').mockResolvedValue({ items: [], nextBeforeVersion: null });
+    vi.spyOn(tradesApi, 'voidCheck').mockImplementation(async (_account, tradeId) => ({
+      tradeId,
+      dependent: null,
+    }));
+  });
+
+  const journal = (changes: Partial<Operation> & Pick<Operation, 'id' | 'kind'>) =>
+    operation({ source: 'manual', wallet: null, chain: null, version: 1, ...changes });
+  const renderWith = (subject: Operation) => {
+    const user = userEvent.setup();
+    const onDeleted = vi.fn();
+    render(
+      <MemoryRouter>
+        <OperationDrawer operation={subject} onClose={() => undefined} onDeleted={onDeleted} />
+      </MemoryRouter>,
+    );
+    return { user, onDeleted };
+  };
+  const confirmDelete = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const confirm = await screen.findByRole('alertdialog', { name: 'Delete this transaction?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Delete transaction' }));
+    return confirm;
+  };
+
+  it('OPS-DELETE: a reward is voided with its own command at the revision read first', async () => {
+    const voidReward = vi.spyOn(assetRewardsApi, 'void').mockResolvedValue({} as RewardReceipt);
+    const { user, onDeleted } = renderWith(
+      journal({ id: `reward:${id(42)}`, kind: 'reward', type: 'reward', version: 3 }),
+    );
+    await confirmDelete(user);
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    expect(voidReward).toHaveBeenCalledWith(bybit.id, id(42), {
+      requestId: expect.any(String),
+      expectedJournalRevision: 5,
+      expectedVersion: 3,
+    });
+  });
+
+  it.each([
+    [
+      'no answer',
+      new AxiosError('offline'),
+      'Could not reach the server. The transaction may have been deleted; reload the page to check.',
+    ],
+    [
+      'a conflict',
+      httpError(409),
+      'This transaction was changed elsewhere. Close this window, reload and try again.',
+    ],
+    ['a server error', httpError(500), 'Could not delete the transaction. Try again.'],
+  ])('OPS-DELETE: a failed deletion after %s says so', async (_case, error, text) => {
+    vi.spyOn(tradesApi, 'void').mockRejectedValue(error);
+    const { user, onDeleted } = renderWith(journal({ id: `trade:${id(43)}`, kind: 'trade' }));
+    const confirm = await confirmDelete(user);
+    expect(await within(confirm).findByText(text)).toBeInTheDocument();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'a later transaction spends the coins',
+      httpError(409, { message: 'refused', dependent }),
+      'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.',
+    ],
+    [
+      'a pool withdrawal names the deposit',
+      httpError(422, { message: POOL_DEPOSIT_NAMED }),
+      'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.',
+    ],
+    [
+      'no answer',
+      new AxiosError('offline'),
+      'Could not reach the server. It may have been saved; reload the page to check.',
+    ],
+    [
+      'a conflict',
+      httpError(409),
+      'This transaction was changed elsewhere. Close this window, reload and try again.',
+    ],
+    ['another refusal', httpError(422, { message: 'refused' }), 'Could not save. Try again.'],
+  ])('CLS-HIDE: hiding refused when %s says so', async (_case, error, text) => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(error);
+    const { user } = renderWith(
+      operation({ id: `chain:${bitcoinWallet.id}:${txid(4)}`, type: 'deposit' }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Hide from calculations' }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide from calculations' })).toBeEnabled();
   });
 });
