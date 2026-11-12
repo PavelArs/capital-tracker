@@ -410,6 +410,60 @@ const removalFailure = (error: unknown) =>
     fallback: 'Could not remove the wallet. Nothing was changed; try again.',
   });
 
+/** What the page shows instead of the wallet: its read failed, is running, or found no wallet. */
+function WalletStatus({
+  failed,
+  loading,
+  asked,
+  onRetry,
+}: {
+  failed: boolean;
+  loading: boolean;
+  asked: AccountingCurrency | undefined;
+  onRetry: () => void;
+}) {
+  if (failed) return <ErrorState what="this wallet" onRetry={onRetry} />;
+  if (loading) return <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />;
+  return (
+    <EmptyState
+      id="wallet-missing"
+      title="Wallet not found"
+      actions={<ButtonLink to={withCurrency('/wallets', asked)}>Open Wallets</ButtonLink>}
+    >
+      It may belong to another owner or the link is wrong.
+    </EmptyState>
+  );
+}
+
+/** The page's wallet and what it holds, from what useWallets read; empty while that loads. */
+function walletOf(
+  {
+    portfolio,
+    addresses,
+    kinds,
+    classed,
+  }: Pick<ReturnType<typeof useWallets>, 'portfolio' | 'addresses' | 'kinds' | 'classed'>,
+  accountId: string,
+) {
+  const account = portfolio?.accounts.find((item) => item.accountId === accountId);
+  // A broker account or a property (v8) is never offered as a wallet to put an address in.
+  const accounts: WalletAccount[] = (portfolio?.accounts ?? [])
+    .filter((item) => !classed.has(item.accountId))
+    .map(({ accountId: id, name }) => ({ accountId: id, name }));
+  const list = addresses ?? [];
+  const own = list.filter((address) => address.accountId === accountId);
+  return {
+    account,
+    kind: kinds[accountId] ?? null,
+    accounts,
+    list,
+    own,
+    currency: portfolio?.currency ?? 'USD',
+    holdings: portfolio ? withoutHiddenTokens(holdingsOf(portfolio, accountId), own) : [],
+    total: account?.pricedValue ?? null,
+  };
+}
+
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
@@ -456,19 +510,13 @@ export default function WalletPage() {
     void loadOperations();
   }, [loadOperations]);
 
-  const account = portfolio?.accounts.find((item) => item.accountId === accountId);
-  const kind = kinds[accountId] ?? null;
-  // A broker account or a property (v8) is never offered as a wallet to put an address in.
-  const accounts: WalletAccount[] = (portfolio?.accounts ?? [])
-    .filter((item) => !classed.has(item.accountId))
-    .map(({ accountId: id, name }) => ({ accountId: id, name }));
-  const list = addresses ?? [];
-  const own = list.filter((address) => address.accountId === accountId);
-  const currency = portfolio?.currency ?? 'USD';
+  const { account, kind, accounts, list, own, currency, holdings, total } = walletOf(
+    { portfolio, addresses, kinds, classed },
+    accountId,
+  );
+  const loading = portfolio === null || addresses === null;
   const prices = pricesOf(portfolio);
-  const holdings = portfolio ? withoutHiddenTokens(holdingsOf(portfolio, accountId), own) : [];
   const chains = tokenChains(addresses, accountId);
-  const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
   // PAGES: twenty addresses a page.
@@ -493,19 +541,7 @@ export default function WalletPage() {
       <div className="wallets-crumbs">
         <Crumb to={withCurrency('/wallets', asked)}>Wallets</Crumb>
       </div>
-      {failed ? (
-        <ErrorState what="this wallet" onRetry={() => void load()} />
-      ) : portfolio === null || addresses === null ? (
-        <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
-      ) : !account ? (
-        <EmptyState
-          id="wallet-missing"
-          title="Wallet not found"
-          actions={<ButtonLink to={withCurrency('/wallets', asked)}>Open Wallets</ButtonLink>}
-        >
-          It may belong to another owner or the link is wrong.
-        </EmptyState>
-      ) : (
+      {!failed && !loading && account ? (
         <>
           <PageHead
             icon={
@@ -595,6 +631,8 @@ export default function WalletPage() {
             />
           )}
         </>
+      ) : (
+        <WalletStatus failed={failed} loading={loading} asked={asked} onRetry={() => void load()} />
       )}
       {adding && account && (
         <AddWalletDialog
