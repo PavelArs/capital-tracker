@@ -3,7 +3,7 @@ import { CAPITAL_RETURN_LIMITS } from '../accounting/capital-return.store';
 import { canonicalDecimalToAtoms, formatAtoms } from '../accounting/money';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import type { TBankOperation } from './tbank-client';
-import { operationKind } from './tbank-operation-kinds';
+import { type OperationKind, operationKind } from './tbank-operation-kinds';
 
 // BROKER-SYNC: what a T-Bank account's executed operations would become in the owner's records,
 // before anything is written. A trade's broker fee joins its trade; money paid in or out is
@@ -269,114 +269,144 @@ function entries(operations: readonly TBankOperation[], skipped: PlanSkip[]): Pl
     skipped.push({ operationId: item.id, type: item.type, reason });
     return [];
   };
-  const cash = (item: TBankOperation, record: PlanEntry['record'], action: PlanAction) => ({
-    record,
-    action,
-    occurredAt: item.occurredAt,
-    instrumentUid: '',
-    ticker: '',
-    instrumentType: '',
-    quantity: absolute(item.payment),
-    amount: absolute(item.payment),
-    fee: '0',
-    currency: item.paymentCurrency,
-    operationIds: [item.id],
-  });
-  // A reward is cash received; it names the instrument that paid it, so dividends of two
-  // shares stay apart.
-  const reward = (item: TBankOperation, action: PlanAction): PlanEntry => ({
-    ...cash(item, 'reward', action),
-    paidBy: {
-      instrumentUid: item.instrumentUid,
-      ticker: item.ticker,
-      instrumentType: item.instrumentType,
-    },
-  });
+  const orSkip = (item: TBankOperation, result: PlanEntry[] | PlanSkip['reason']) =>
+    typeof result === 'string' ? skip(item, result) : result;
   return executed.flatMap((item): PlanEntry[] => {
     const kind = operationKind(item.type);
-    if (kind === 'unsupported') return skip(item, 'unsupported');
-    if (kind === 'transfer') return skip(item, 'transfer');
+    // The kind is the reason: an unsupported type or a transfer is listed, not recorded.
+    if (kind === 'unsupported' || kind === 'transfer') return skip(item, kind);
     if (item.type === 'OPERATION_TYPE_DIV_EXT') return skip(item, 'outside-dividend');
     if (joins(item)) return [];
-    if (isZero(item.payment))
-      // A trade or repayment that moved units for no money changed the holding, so it is listed;
-      // only money of nothing moved nothing.
-      return skip(
-        item,
-        kind === 'repayment' || ((kind === 'buy' || kind === 'sell') && !isZero(item.quantity))
-          ? 'no-payment'
-          : 'no-amount',
-      );
-    if (!recordable(item.paymentCurrency)) return skip(item, 'currency');
-    const incoming = signOf(item.payment) === 'in';
-    const expected = expectedSign[kind];
-    if (expected && signOf(item.payment) !== expected) return skip(item, 'sign');
-    const security = securityProblem(item);
-    if (kind === 'buy' || kind === 'sell') {
-      if (security) return skip(item, security);
-      if (notPositive(item.quantity)) return skip(item, 'no-quantity');
-      const fees = feesOf.get(item.id) ?? [];
-      const parts = tradeParts(item);
-      if (!parts) return skip(item, 'fills');
-      const weights = parts.map((part) => part.weight);
-      const amounts = split(absolute(item.payment), weights);
-      // T-Bank can list one fee twice: a row of the same type and amount as another. Such a
-      // repeat is left out only when the commission the trade reports in its own currency is
-      // exactly the total without it; any other mismatch keeps every row. The rows stay its record.
-      const rows = atoms(absolute(sum(fees.map((fee) => fee.payment))));
-      const distinct = new Map(
-        fees.map((fee) => [`${fee.type} ${fee.paymentCurrency} ${fee.payment}`, fee.payment]),
-      );
-      const once = atoms(absolute(sum([...distinct.values()])));
-      const commission =
-        item.commission !== '' && item.commissionCurrency === item.paymentCurrency
-          ? atoms(absolute(item.commission))
-          : -1n;
-      const charged = once < rows && commission === once ? once : rows;
-      const paidFees = split(formatAtoms(charged), weights);
-      const moved = cashOf(item);
-      return parts.map((part, index) => ({
-        record: 'trade',
-        action: kind,
-        occurredAt: part.occurredAt,
-        instrumentUid: item.instrumentUid,
-        ticker: item.ticker,
-        instrumentType: item.instrumentType,
-        ...(moved ? { cash: moved } : {}),
-        ...(cardSettled.has(item.type) ? { externalCash: true as const } : {}),
-        quantity: formatAtoms(part.quantity),
-        amount: amounts[index],
-        fee: paidFees[index],
-        currency: item.paymentCurrency,
-        // A later part of one order names it as `<id>#<n>`, so each entry is written once.
-        operationIds:
-          index === 0 ? [item.id, ...fees.map((fee) => fee.id)] : [`${item.id}#${index + 1}`],
-      }));
-    }
-    if (kind === 'repayment') {
-      if (security) return skip(item, security);
-      if (item.quantity.startsWith('-')) return skip(item, 'no-quantity');
-      const bond = {
-        instrumentUid: item.instrumentUid,
-        ticker: item.ticker,
-        instrumentType: item.instrumentType,
-      };
-      // A bond paid back in full leaves the account; T-Bank gives no quantity for it, so
-      // checkHeld takes the units held then.
-      if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
-        return [{ ...cash(item, 'trade', 'sell'), ...bond, quantity: item.quantity }];
-      }
-      // One paid back in part returns principal and keeps its units: it lowers what they cost,
-      // and the money is not income.
-      return [{ ...cash(item, 'capital-return', 'return'), ...bond }];
-    }
-    // A tax or fee given back is money received, like income.
-    if (kind === 'income' || ((kind === 'tax' || kind === 'fee') && incoming))
-      return [reward(item, 'income')];
-    if (kind === 'tax' || kind === 'fee') return [cash(item, 'trade', kind)];
-    if (kind === 'deposit') return [cash(item, 'trade', 'deposit')];
-    return [cash(item, 'trade', 'withdrawal')];
+    const refused = paymentProblem(item, kind);
+    if (refused) return skip(item, refused);
+    if (kind === 'buy' || kind === 'sell')
+      return orSkip(item, tradeEntries(item, kind, feesOf.get(item.id) ?? []));
+    if (kind === 'repayment') return orSkip(item, repaymentEntries(item));
+    return [moneyEntry(item, kind)];
   });
+}
+
+/** Why a payment cannot be recorded: there is none, its currency is not kept or its sign is off. */
+function paymentProblem(item: TBankOperation, kind: OperationKind): PlanSkip['reason'] | null {
+  // A trade or repayment that moved units for no money changed the holding, so it is listed;
+  // only money of nothing moved nothing.
+  if (isZero(item.payment))
+    return kind === 'repayment' || ((kind === 'buy' || kind === 'sell') && !isZero(item.quantity))
+      ? 'no-payment'
+      : 'no-amount';
+  if (!recordable(item.paymentCurrency)) return 'currency';
+  const expected = expectedSign[kind];
+  if (expected && signOf(item.payment) !== expected) return 'sign';
+  return null;
+}
+
+/** Money paid in, paid out, spent or received. */
+function moneyEntry(item: TBankOperation, kind: OperationKind): PlanEntry {
+  const incoming = signOf(item.payment) === 'in';
+  // A tax or fee given back is money received, like income.
+  if (kind === 'income' || ((kind === 'tax' || kind === 'fee') && incoming))
+    return reward(item, 'income');
+  if (kind === 'tax' || kind === 'fee') return cash(item, 'trade', kind);
+  if (kind === 'deposit') return cash(item, 'trade', 'deposit');
+  return cash(item, 'trade', 'withdrawal');
+}
+
+const cash = (item: TBankOperation, record: PlanEntry['record'], action: PlanAction) => ({
+  record,
+  action,
+  occurredAt: item.occurredAt,
+  instrumentUid: '',
+  ticker: '',
+  instrumentType: '',
+  quantity: absolute(item.payment),
+  amount: absolute(item.payment),
+  fee: '0',
+  currency: item.paymentCurrency,
+  operationIds: [item.id],
+});
+
+// A reward is cash received; it names the instrument that paid it, so dividends of two
+// shares stay apart.
+const reward = (item: TBankOperation, action: PlanAction): PlanEntry => ({
+  ...cash(item, 'reward', action),
+  paidBy: {
+    instrumentUid: item.instrumentUid,
+    ticker: item.ticker,
+    instrumentType: item.instrumentType,
+  },
+});
+
+/**
+ * The fees a trade paid. T-Bank can list one fee twice: a row of the same type and amount as
+ * another. Such a repeat is left out only when the commission the trade reports in its own
+ * currency is exactly the total without it; any other mismatch keeps every row. The rows stay
+ * its record.
+ */
+function chargedFees(item: TBankOperation, fees: readonly TBankOperation[]): bigint {
+  const rows = atoms(absolute(sum(fees.map((fee) => fee.payment))));
+  const distinct = new Map(
+    fees.map((fee) => [`${fee.type} ${fee.paymentCurrency} ${fee.payment}`, fee.payment]),
+  );
+  const once = atoms(absolute(sum([...distinct.values()])));
+  const commission =
+    item.commission !== '' && item.commissionCurrency === item.paymentCurrency
+      ? atoms(absolute(item.commission))
+      : -1n;
+  return once < rows && commission === once ? once : rows;
+}
+
+/** A buy or sale as one entry per fill time, with its fees, or why it is skipped. */
+function tradeEntries(
+  item: TBankOperation,
+  kind: 'buy' | 'sell',
+  fees: readonly TBankOperation[],
+): PlanEntry[] | PlanSkip['reason'] {
+  const security = securityProblem(item);
+  if (security) return security;
+  if (notPositive(item.quantity)) return 'no-quantity';
+  const parts = tradeParts(item);
+  if (!parts) return 'fills';
+  const weights = parts.map((part) => part.weight);
+  const amounts = split(absolute(item.payment), weights);
+  const paidFees = split(formatAtoms(chargedFees(item, fees)), weights);
+  const moved = cashOf(item);
+  return parts.map((part, index) => ({
+    record: 'trade',
+    action: kind,
+    occurredAt: part.occurredAt,
+    instrumentUid: item.instrumentUid,
+    ticker: item.ticker,
+    instrumentType: item.instrumentType,
+    ...(moved ? { cash: moved } : {}),
+    ...(cardSettled.has(item.type) ? { externalCash: true as const } : {}),
+    quantity: formatAtoms(part.quantity),
+    amount: amounts[index],
+    fee: paidFees[index],
+    currency: item.paymentCurrency,
+    // A later part of one order names it as `<id>#<n>`, so each entry is written once.
+    operationIds:
+      index === 0 ? [item.id, ...fees.map((fee) => fee.id)] : [`${item.id}#${index + 1}`],
+  }));
+}
+
+/** A bond paid back in full or in part, or why it is skipped. */
+function repaymentEntries(item: TBankOperation): PlanEntry[] | PlanSkip['reason'] {
+  const security = securityProblem(item);
+  if (security) return security;
+  if (item.quantity.startsWith('-')) return 'no-quantity';
+  const bond = {
+    instrumentUid: item.instrumentUid,
+    ticker: item.ticker,
+    instrumentType: item.instrumentType,
+  };
+  // A bond paid back in full leaves the account; T-Bank gives no quantity for it, so
+  // checkHeld takes the units held then.
+  if (item.type === 'OPERATION_TYPE_BOND_REPAYMENT_FULL') {
+    return [{ ...cash(item, 'trade', 'sell'), ...bond, quantity: item.quantity }];
+  }
+  // One paid back in part returns principal and keeps its units: it lowers what they cost,
+  // and the money is not income.
+  return [{ ...cash(item, 'capital-return', 'return'), ...bond }];
 }
 
 // Within one instant, money arrives before it is spent.
@@ -427,12 +457,7 @@ function combine(
       }
       continue;
     }
-    let run = 0;
-    if (entry.instrumentUid) {
-      const previous = runs.get(entry.instrumentUid);
-      run = previous?.action === entry.action ? previous.run : (previous?.run ?? 0) + 1;
-      runs.set(entry.instrumentUid, { action: entry.action, run });
-    }
+    const run = nextRun(runs, entry);
     const key = [
       entry.action,
       entry.instrumentUid,
@@ -460,6 +485,15 @@ function combine(
     };
   });
   return [...kept, ...combined];
+}
+
+/** The run of one instrument's trades a trade belongs to: a change of action starts the next. */
+function nextRun(runs: Map<string, { action: PlanAction; run: number }>, entry: PlanEntry) {
+  if (!entry.instrumentUid) return 0;
+  const previous = runs.get(entry.instrumentUid);
+  const run = previous?.action === entry.action ? previous.run : (previous?.run ?? 0) + 1;
+  runs.set(entry.instrumentUid, { action: entry.action, run });
+  return run;
 }
 
 /**
@@ -494,74 +528,99 @@ function checkHeld(
   const uncovered = new Map<string, bigint>();
   const listed = new Set<string>();
   const kept: PlanEntry[] = [];
+  const refuse = (entry: PlanEntry, reason: PlanSkip['reason']) => {
+    // Its fee was still paid: it stays as money spent.
+    if (!isZero(entry.fee)) kept.push(feeLeft(entry));
+    const operationId = entry.operationIds[0].split('#')[0];
+    if (listed.has(`${operationId} ${reason}`)) return;
+    listed.add(`${operationId} ${reason}`);
+    skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
+  };
   for (const entry of ordered(list, hoist)) {
-    // A split takes effect before anything at or after its instant.
-    while (applied < due.length && timeKey(due[applied].effectiveAt) <= timeKey(entry.occurredAt)) {
-      const split = due[applied++];
-      const units = held.get(split.uid);
-      if (units !== undefined) held.set(split.uid, units * split.ratio);
-    }
-    // Dollars and euros are cash: the journal's own check finds a sale of more than is held.
-    if (
-      (entry.record !== 'trade' && entry.record !== 'capital-return') ||
-      entry.instrumentUid === '' ||
-      entry.cash
-    ) {
+    applied = applySplits(held, due, applied, entry.occurredAt);
+    if (!walksUnits(entry)) {
       kept.push(entry);
       continue;
     }
     const uid = entry.instrumentUid;
-    const units = held.get(uid) ?? 0n;
-    const operationId = entry.operationIds[0].split('#')[0];
-    const refuse = (reason: PlanSkip['reason']) => {
-      // Its fee was still paid: it stays as money spent.
-      if (!isZero(entry.fee))
-        kept.push({
-          ...entry,
-          action: 'fee',
-          instrumentUid: '',
-          ticker: '',
-          instrumentType: '',
-          quantity: entry.fee,
-          amount: entry.fee,
-          fee: '0',
-          operationIds:
-            entry.operationIds.length > 1 ? entry.operationIds.slice(1) : entry.operationIds,
-        });
-      if (listed.has(`${operationId} ${reason}`)) return;
-      listed.add(`${operationId} ${reason}`);
-      skipped.push({ operationId, type: typeOf.get(operationId) ?? 'unknown', reason });
-    };
-    if (entry.record === 'capital-return') {
-      // Money returned on units the history never shows held has no cost to lower.
-      if (units <= 0n) refuse('not-held');
-      else kept.push(entry);
+    const verdict = heldVerdict(entry, held.get(uid) ?? 0n, uncovered.get(uid) ?? 0n);
+    if ('refused' in verdict) {
+      refuse(entry, verdict.refused);
+      if (verdict.uncovered !== undefined) uncovered.set(uid, verdict.uncovered);
       continue;
     }
-    let quantity = entry.quantity;
-    if (entry.action === 'sell' && isZero(quantity)) {
-      if (units <= 0n) {
-        refuse('no-quantity');
-        continue;
-      }
-      quantity = formatAtoms(units);
-    }
-    if (entry.action === 'sell' && atoms(quantity) > units) {
-      refuse('not-held');
-      uncovered.set(uid, (uncovered.get(uid) ?? 0n) + atoms(quantity));
-      continue;
-    }
-    const open = uncovered.get(uid) ?? 0n;
-    if (entry.action === 'buy' && open > 0n) {
-      // Whether this buy closes a short or starts a holding is unknown, so it is not guessed.
-      refuse('short-cover');
-      uncovered.set(uid, open > atoms(quantity) ? open - atoms(quantity) : 0n);
-      continue;
-    }
-    held.set(uid, units + (entry.action === 'buy' ? atoms(quantity) : -atoms(quantity)));
-    kept.push(quantity === entry.quantity ? entry : { ...entry, quantity });
+    if (verdict.units !== undefined) held.set(uid, verdict.units);
+    kept.push(verdict.kept);
   }
   return kept;
+}
+
+/** Applies the splits due by `time` from index `applied` on; returns the index after them. */
+function applySplits(
+  held: Map<string, bigint>,
+  due: readonly PlanSplit[],
+  applied: number,
+  time: string,
+): number {
+  let next = applied;
+  // A split takes effect before anything at or after its instant.
+  while (next < due.length && timeKey(due[next].effectiveAt) <= timeKey(time)) {
+    const split = due[next++];
+    const units = held.get(split.uid);
+    if (units !== undefined) held.set(split.uid, units * split.ratio);
+  }
+  return next;
+}
+
+/**
+ * Whether checkHeld walks the units an entry moves: a security's trade or capital return.
+ * Dollars and euros are cash: the journal's own check finds a sale of more than is held.
+ */
+const walksUnits = (entry: PlanEntry) =>
+  (entry.record === 'trade' || entry.record === 'capital-return') &&
+  entry.instrumentUid !== '' &&
+  !entry.cash;
+
+/** A refused trade's fee, which was still paid, as money spent. */
+const feeLeft = (entry: PlanEntry): PlanEntry => ({
+  ...entry,
+  action: 'fee',
+  instrumentUid: '',
+  ticker: '',
+  instrumentType: '',
+  quantity: entry.fee,
+  amount: entry.fee,
+  fee: '0',
+  operationIds: entry.operationIds.length > 1 ? entry.operationIds.slice(1) : entry.operationIds,
+});
+
+/**
+ * What the units held say of a security's entry: kept, with the units then held, or refused,
+ * with the units then sold but never shown held.
+ */
+function heldVerdict(
+  entry: PlanEntry,
+  units: bigint,
+  open: bigint,
+): { kept: PlanEntry; units?: bigint } | { refused: PlanSkip['reason']; uncovered?: bigint } {
+  // Money returned on units the history never shows held has no cost to lower.
+  if (entry.record === 'capital-return')
+    return units <= 0n ? { refused: 'not-held' } : { kept: entry };
+  let quantity = entry.quantity;
+  if (entry.action === 'sell' && isZero(quantity)) {
+    if (units <= 0n) return { refused: 'no-quantity' };
+    quantity = formatAtoms(units);
+  }
+  const moved = atoms(quantity);
+  if (entry.action === 'sell' && moved > units)
+    return { refused: 'not-held', uncovered: open + moved };
+  // Whether this buy closes a short or starts a holding is unknown, so it is not guessed.
+  if (entry.action === 'buy' && open > 0n)
+    return { refused: 'short-cover', uncovered: open > moved ? open - moved : 0n };
+  return {
+    kept: quantity === entry.quantity ? entry : { ...entry, quantity },
+    units: units + (entry.action === 'buy' ? moved : -moved),
+  };
 }
 
 /** T-Bank operation numbers in numeric order: 9 before 10. */
@@ -598,67 +657,76 @@ const ordered = (list: PlanEntry[], hoist: boolean) =>
 function buysFirst(sorted: PlanEntry[], hoist: boolean): PlanEntry[] {
   if (!hoist) return sorted;
   const result: PlanEntry[] = [];
-  const isSecurity = (entry: PlanEntry, action: PlanAction) =>
-    entry.record === 'trade' &&
-    entry.action === action &&
-    entry.instrumentUid !== '' &&
-    !entry.cash;
   for (let start = 0; start < sorted.length; ) {
     const time = timeKey(sorted[start].occurredAt);
     let end = start;
     while (end < sorted.length && timeKey(sorted[end].occurredAt) === time) end += 1;
-    const instant = sorted.slice(start, end);
-    // Each security's buys at this instant, placed together before its first sale.
-    const buys = new Map<string, PlanEntry[]>();
-    for (const entry of instant) {
-      if (!isSecurity(entry, 'buy')) continue;
-      const list = buys.get(entry.instrumentUid);
-      if (list) list.push(entry);
-      else buys.set(entry.instrumentUid, [entry]);
-    }
-    const placed = new Set<PlanEntry>();
-    // Dollars or euros bought, or dollars or euros sold for rubles, that pay for a buy at this
-    // instant come before it, so the buy never spends cash not yet there.
-    const producers = (buy: PlanEntry) =>
-      instant.filter(
-        (entry) =>
-          entry.cash !== undefined &&
-          !placed.has(entry) &&
-          ((entry.action === 'buy' && entry.cash === buy.currency) ||
-            (entry.action === 'sell' && entry.currency === buy.currency)),
-      );
-    // The currency a producer spends, and the currency an unplaced entry of this instant still
-    // brings in. A producer is pulled ahead only when no such entry is still to come, since
-    // that entry (a sale, or the exchange purchase of the currency it spends) may pay for it.
-    const spent = (entry: PlanEntry) => (entry.action === 'buy' ? entry.currency : entry.cash);
-    const brought = (entry: PlanEntry) => (entry.action === 'sell' ? entry.currency : entry.cash);
-    const stillToCome = (currency: string | undefined, except: PlanEntry) =>
-      currency !== undefined &&
-      instant.some(
-        (entry) => entry !== except && !placed.has(entry) && brought(entry) === currency,
-      );
-    for (const entry of instant) {
-      if (placed.has(entry)) continue;
-      if (isSecurity(entry, 'sell')) {
-        for (const buy of buys.get(entry.instrumentUid) ?? []) {
-          const cash = producers(buy);
-          // Left in place: the buy is placed by its own turn in the instant, after what funds it.
-          if (cash.some((producer) => stillToCome(spent(producer), producer))) continue;
-          for (const producer of cash) {
-            result.push(producer);
-            placed.add(producer);
-          }
-          result.push(buy);
-          placed.add(buy);
-        }
-        buys.delete(entry.instrumentUid);
-      }
-      result.push(entry);
-      placed.add(entry);
-    }
+    placeInstant(result, sorted.slice(start, end));
     start = end;
   }
   return result;
+}
+
+const isSecurity = (entry: PlanEntry, action: PlanAction) =>
+  entry.record === 'trade' && entry.action === action && entry.instrumentUid !== '' && !entry.cash;
+
+// The currency a producer spends, and the currency an unplaced entry of an instant still
+// brings in.
+const spent = (entry: PlanEntry) => (entry.action === 'buy' ? entry.currency : entry.cash);
+const brought = (entry: PlanEntry) => (entry.action === 'sell' ? entry.currency : entry.cash);
+
+/** Each security's buys at one instant, by its instrument UID, in their order. */
+function securityBuys(instant: readonly PlanEntry[]): Map<string, PlanEntry[]> {
+  const buys = new Map<string, PlanEntry[]>();
+  for (const entry of instant) {
+    if (!isSecurity(entry, 'buy')) continue;
+    const list = buys.get(entry.instrumentUid);
+    if (list) list.push(entry);
+    else buys.set(entry.instrumentUid, [entry]);
+  }
+  return buys;
+}
+
+/** The entries of one instant in buysFirst order, appended to `result`. */
+function placeInstant(result: PlanEntry[], instant: readonly PlanEntry[]) {
+  // Each security's buys at this instant, placed together before its first sale.
+  const buys = securityBuys(instant);
+  const placed = new Set<PlanEntry>();
+  const place = (entry: PlanEntry) => {
+    result.push(entry);
+    placed.add(entry);
+  };
+  // Dollars or euros bought, or dollars or euros sold for rubles, that pay for a buy at this
+  // instant come before it, so the buy never spends cash not yet there.
+  const producers = (buy: PlanEntry) =>
+    instant.filter(
+      (entry) =>
+        entry.cash !== undefined &&
+        !placed.has(entry) &&
+        ((entry.action === 'buy' && entry.cash === buy.currency) ||
+          (entry.action === 'sell' && entry.currency === buy.currency)),
+    );
+  // A producer is pulled ahead only when no entry that brings in what it spends is still to
+  // come, since that entry (a sale, or the exchange purchase of the currency it spends) may pay
+  // for it.
+  const stillToCome = (currency: string | undefined, except: PlanEntry) =>
+    currency !== undefined &&
+    instant.some((entry) => entry !== except && !placed.has(entry) && brought(entry) === currency);
+  const placeBuysOf = (uid: string) => {
+    for (const buy of buys.get(uid) ?? []) {
+      const cash = producers(buy);
+      // Left in place: the buy is placed by its own turn in the instant, after what funds it.
+      if (cash.some((producer) => stillToCome(spent(producer), producer))) continue;
+      for (const producer of cash) place(producer);
+      place(buy);
+    }
+    buys.delete(uid);
+  };
+  for (const entry of instant) {
+    if (placed.has(entry)) continue;
+    if (isSecurity(entry, 'sell')) placeBuysOf(entry.instrumentUid);
+    place(entry);
+  }
 }
 
 /** The cash an entry moves, by T-Bank currency code, as tbank-import-entries records it. */
@@ -676,6 +744,34 @@ function cashMoves(entry: PlanEntry): [string, bigint][] {
 }
 
 /**
+ * The time of the last entry of the earliest instant from which the history always holds `gap`
+ * of `currency`, or null when it never does.
+ */
+function gapInstant(
+  list: PlanEntry[],
+  currency: string,
+  gap: bigint,
+  opening: bigint,
+): string | null {
+  let balance = opening;
+  const after = list.map((entry) => {
+    for (const [code, delta] of cashMoves(entry)) if (code === currency) balance += delta;
+    return balance;
+  });
+  let at: string | null = null;
+  let lowest = balance;
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (after[index] < lowest) lowest = after[index];
+    if (lowest < gap) break;
+    const time = timeKey(list[index].occurredAt);
+    // Only after the last entry of an instant, so it never splits one.
+    if (index === list.length - 1 || timeKey(list[index + 1].occurredAt) !== time)
+      at = list[index].occurredAt;
+  }
+  return at;
+}
+
+/**
  * BROKER-CASH-GAP: cash that left without an operation T-Bank lists, paid out as money paid out
  * just after the earliest instant from which the history always holds it. Earlier, the history
  * holds less, so the money cannot have left by then as one payment, and dating it so never shows
@@ -689,22 +785,12 @@ function cashGapEntries(
   const entries: PlanEntry[] = [];
   const placed: CashGap[] = [];
   for (const [currency, amount] of gaps) {
-    const gap = atoms(amount);
-    let balance = initialHoldings.get(`cash:${currency.toUpperCase()}`) ?? 0n;
-    const after = list.map((entry) => {
-      for (const [code, delta] of cashMoves(entry)) if (code === currency) balance += delta;
-      return balance;
-    });
-    let at: string | null = null;
-    let lowest = balance;
-    for (let index = list.length - 1; index >= 0; index -= 1) {
-      if (after[index] < lowest) lowest = after[index];
-      if (lowest < gap) break;
-      const time = timeKey(list[index].occurredAt);
-      // Only after the last entry of an instant, so it never splits one.
-      if (index === list.length - 1 || timeKey(list[index + 1].occurredAt) !== time)
-        at = list[index].occurredAt;
-    }
+    const at = gapInstant(
+      list,
+      currency,
+      atoms(amount),
+      initialHoldings.get(`cash:${currency.toUpperCase()}`) ?? 0n,
+    );
     if (at === null) continue;
     const occurredAt = new Date(Date.parse(at) + 1).toISOString();
     placed.push({ currency, amount, occurredAt });

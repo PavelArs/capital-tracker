@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
+import type { FifoTrade } from '../accounting/fifo';
 import { parseDecimal, parseUuid } from '../accounting/input';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from '../accounting/money';
 import type {
@@ -211,21 +212,28 @@ export function tradeSeries(valuation: ValuationInputs): Map<string, PricePoint[
   for (const ledger of new Set(valuation.ledgers.values()))
     for (const account of ledger.accounts.values())
       for (const trade of account.trades) {
-        if (trade.purpose) continue;
-        const amount = canonicalDecimalToAtoms(trade.paid?.gross ?? trade.grossUsd);
-        const units = canonicalDecimalToAtoms(trade.quantity);
-        if (amount <= 0n || units <= 0n) continue;
+        const point = tradePrice(trade);
+        if (!point) continue;
         const points = series.get(trade.instrumentId) ?? [];
-        points.push({
-          at: Date.parse(trade.occurredAt),
-          price: formatAtoms((amount * 10n ** 30n) / units),
-          source: 'trade',
-          currency: trade.paid?.currency ?? 'USD',
-        });
+        points.push(point);
         series.set(trade.instrumentId, points);
       }
   for (const points of series.values()) points.sort((left, right) => left.at - right.at);
   return series;
+}
+
+/** A buy or sale's price as paid; none for another entry or a trade for nothing. */
+function tradePrice(trade: FifoTrade): PricePoint | null {
+  if (trade.purpose) return null;
+  const amount = canonicalDecimalToAtoms(trade.paid?.gross ?? trade.grossUsd);
+  const units = canonicalDecimalToAtoms(trade.quantity);
+  if (amount <= 0n || units <= 0n) return null;
+  return {
+    at: Date.parse(trade.occurredAt),
+    price: formatAtoms((amount * 10n ** 30n) / units),
+    source: 'trade',
+    currency: trade.paid?.currency ?? 'USD',
+  };
 }
 
 /**
@@ -279,19 +287,22 @@ export function pricesAt(inputs: SeriesInputs, at: number, laterIfNone = false):
     }
     return prices;
   };
+  const ownId = (id: string) => [id];
   const market = stored(inputs.market, symbolIds);
-  const manual = stored(inputs.manual, (id) => [id]);
+  const manual = stored(inputs.manual, ownId);
+  if (!laterIfNone) return { market, manual, splits };
   // An asset with no stored price at all can still be estimated from its own trades.
-  if (laterIfNone)
-    for (const instrument of inputs.valuation.instruments) {
-      if (instrument.priceSource === 'fixed') continue;
-      const byMarket = instrument.priceSource === 'market';
-      const key = byMarket ? instrument.symbol?.toUpperCase() : instrument.id;
-      const [prices, series] = byMarket ? [market, inputs.market] : [manual, inputs.manual];
-      if (!key || prices.has(key) || series.has(key)) continue;
-      const point = estimate([], byMarket ? symbolIds(key) : [key]);
-      if (point) prices.set(key, price(point));
-    }
+  for (const instrument of inputs.valuation.instruments) {
+    if (instrument.priceSource === 'fixed') continue;
+    const byMarket = instrument.priceSource === 'market';
+    const key = byMarket ? instrument.symbol?.toUpperCase() : instrument.id;
+    const [prices, series, idsOf] = byMarket
+      ? [market, inputs.market, symbolIds]
+      : [manual, inputs.manual, ownId];
+    if (!key || prices.has(key) || series.has(key)) continue;
+    const point = estimate([], idsOf(key));
+    if (point) prices.set(key, price(point));
+  }
   return { market, manual, splits };
 }
 
@@ -321,25 +332,9 @@ export function valuesAt(
           (quantities.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.quantity),
         );
   return converters.map((fx) => {
-    const held = new Map<string, { quantity: string; value: string | null }>();
-    let subtotal = 0n;
-    let rated = true;
-    let missingPriceCount = 0;
-    let stalePrices = 0;
-    for (const instrument of valuation.instruments) {
-      const quantity = quantities.get(instrument.id) ?? 0n;
-      if (quantity === 0n) continue;
-      const { price, missingPrice } = resolvePrice(instrument, prices, instant, fx);
-      const value = price === null ? null : quantity * canonicalDecimalToAtoms(price.value);
-      if (value === null) missingPriceCount++;
-      else subtotal += value;
-      if (missingPrice === 'no-rate') rated = false;
-      if (price?.status === 'stale') stalePrices++;
-      held.set(instrument.id, {
-        quantity: formatAtoms(quantity),
-        value: value === null ? null : formatProduct(value),
-      });
-    }
+    const valued = heldValues(valuation.instruments, quantities, prices, instant, fx);
+    const { held, rated, missingPriceCount, stalePrices } = valued;
+    let subtotal = valued.subtotal;
     const deposits = depositValuesAt(valuation.deposits, instant, fx);
     for (const deposit of deposits)
       if (deposit.value !== null && deposit.value > 0n) subtotal += deposit.value;
@@ -369,6 +364,39 @@ export function valuesAt(
       stalePrices,
     };
   });
+}
+
+/**
+ * What each held asset is worth in one currency at the instant, their priced sum, whether every
+ * rate they need is there, and how many have no price or a stale one.
+ */
+function heldValues(
+  instruments: ValuationInputs['instruments'],
+  quantities: ReadonlyMap<string, bigint>,
+  prices: PortfolioPrices,
+  instant: Date,
+  fx: FxConverter,
+) {
+  const held = new Map<string, { quantity: string; value: string | null }>();
+  let subtotal = 0n;
+  let rated = true;
+  let missingPriceCount = 0;
+  let stalePrices = 0;
+  for (const instrument of instruments) {
+    const quantity = quantities.get(instrument.id) ?? 0n;
+    if (quantity === 0n) continue;
+    const { price, missingPrice } = resolvePrice(instrument, prices, instant, fx);
+    const value = price === null ? null : quantity * canonicalDecimalToAtoms(price.value);
+    if (value === null) missingPriceCount++;
+    else subtotal += value;
+    if (missingPrice === 'no-rate') rated = false;
+    if (price?.status === 'stale') stalePrices++;
+    held.set(instrument.id, {
+      quantity: formatAtoms(quantity),
+      value: value === null ? null : formatProduct(value),
+    });
+  }
+  return { held, subtotal, rated, missingPriceCount, stalePrices };
 }
 
 /** A missing-only subset has no value; genuinely empty history still has zero. */

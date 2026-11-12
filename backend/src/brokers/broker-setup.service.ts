@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { insertAccount } from '../accounting/accounting.service';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseCheck, parseSetup, parseUuid } from './broker-connection-input';
@@ -70,19 +70,7 @@ export class BrokerSetupService {
           assetClass: 'broker',
         });
         if (!created) {
-          // A repeated request writes nothing: it returns the account it made while that account
-          // is still live and still reads the same T-Bank account, so a replay can neither store
-          // a token on a removed account nor re-point or restore a connection the owner changed.
-          const [saved]: { brokerAccountId: string; removedAt: Date | null }[] =
-            await manager.query(
-              `SELECT c."brokerAccountId", a."removedAt"
-                 FROM manual_accounts a
-                 LEFT JOIN broker_connections c ON c."accountId" = a.id AND c.provider = 'tbank'
-                WHERE a.id = $1 AND a."ownerId" = $2`,
-              [value.id, owner],
-            );
-          if (!saved || saved.removedAt || saved.brokerAccountId !== pick.brokerAccountId)
-            throw new ConflictException('This request conflicts with what is saved now');
+          await assertReplayable(manager, owner, value.id, pick.brokerAccountId);
           made.push({
             accountId: value.id,
             name: value.name,
@@ -168,4 +156,26 @@ export class BrokerSetupService {
     }
     return made;
   }
+}
+
+/**
+ * A repeated request writes nothing: it returns the account it made while that account is still
+ * live and still reads the same T-Bank account, so a replay can neither store a token on a
+ * removed account nor re-point or restore a connection the owner changed.
+ */
+async function assertReplayable(
+  manager: EntityManager,
+  owner: string,
+  accountId: string,
+  brokerAccountId: string,
+) {
+  const [saved]: { brokerAccountId: string; removedAt: Date | null }[] = await manager.query(
+    `SELECT c."brokerAccountId", a."removedAt"
+                 FROM manual_accounts a
+                 LEFT JOIN broker_connections c ON c."accountId" = a.id AND c.provider = 'tbank'
+                WHERE a.id = $1 AND a."ownerId" = $2`,
+    [accountId, owner],
+  );
+  if (!saved || saved.removedAt || saved.brokerAccountId !== brokerAccountId)
+    throw new ConflictException('This request conflicts with what is saved now');
 }

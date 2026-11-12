@@ -31,18 +31,24 @@ export function instrumentFacts(
     const fact = facts.get(row.instrumentUid);
     if (!fact) continue;
     if (row.providerInstrumentUid) fact.uids.add(row.providerInstrumentUid);
-    const named = {
-      assetUid: 'assetUid' in row ? row.assetUid : undefined,
-      instrumentType: securityTypes.includes(row.instrumentType) ? row.instrumentType : undefined,
-    };
-    for (const key of ['assetUid', 'instrumentType'] as const) {
-      const value = named[key];
-      if (!value) continue;
-      if (fact[key] && fact[key] !== value) return undefined;
-      fact[key] = value;
-    }
+    if (!addFacts(fact, row)) return undefined;
   }
   return facts;
+}
+
+/** Adds the asset and security type a row names to its facts; false when either differs. */
+function addFacts(fact: InstrumentFacts, row: TBankOperation | TBankPosition): boolean {
+  const named = {
+    assetUid: 'assetUid' in row ? row.assetUid : undefined,
+    instrumentType: securityTypes.includes(row.instrumentType) ? row.instrumentType : undefined,
+  };
+  for (const key of ['assetUid', 'instrumentType'] as const) {
+    const value = named[key];
+    if (!value) continue;
+    if (fact[key] && fact[key] !== value) return false;
+    fact[key] = value;
+  }
+  return true;
 }
 
 /**
