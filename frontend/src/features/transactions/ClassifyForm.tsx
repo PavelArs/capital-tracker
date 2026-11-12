@@ -607,7 +607,9 @@ const typeChecks: Partial<Record<ChainType, (draft: Draft, choosesAddress: boole
   };
 
 function problems(draft: Draft, choosesAddress = false): Set<Problem> {
-  const check = draft.type === null ? null : (typeChecks[draft.type] ?? requiredValue);
+  // Own keys only: a type with no entry asks for a value, as the old if-chain did.
+  const known = draft.type !== null && Object.hasOwn(typeChecks, draft.type);
+  const check = draft.type === null ? null : known ? typeChecks[draft.type] : requiredValue;
   const found = new Set<Problem>(check ? check(draft, choosesAddress) : []);
   if ([...draft.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
