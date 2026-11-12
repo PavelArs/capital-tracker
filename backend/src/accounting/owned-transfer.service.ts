@@ -6,6 +6,8 @@ import { firstShortfall, type Shortfall } from './available-quantity';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  type ConnectedAccount,
+  type ConnectedLedger,
   notCovered,
   projectConnectedLedger,
   readConnectedLedger,
@@ -23,10 +25,12 @@ import {
   TRANSFER_LIMITS,
   type TransferKind,
   type TransferReceipt,
+  type TransferVersion,
   type TransferVersionRow,
   transferReceipt,
   transferVersionSelect,
 } from './owned-transfer.store';
+import type { ActiveTransferInput } from './owned-transfer-fifo';
 import {
   parseTransferAllocationQuery,
   parseTransferCorrection,
@@ -40,7 +44,12 @@ import {
   type TransferVoidInput,
   transferPayload,
 } from './owned-transfer-input';
-import { readJournal, readOwnedAccount, startEmptyJournal } from './trade-journal.store';
+import {
+  type AccountRow,
+  readJournal,
+  readOwnedAccount,
+  startEmptyJournal,
+} from './trade-journal.store';
 import { automaticOrder } from './trade-order';
 
 const conflict = () => new ConflictException('Transfer request conflicts with saved state');
@@ -63,6 +72,95 @@ function movement(value: RequestedMovement): RequestedMovement {
     feeInstrumentId: value.feeInstrumentId,
     feeQuantity: value.feeQuantity,
   };
+}
+type TransferInput = TransferCreateInput | TransferCorrectionInput | TransferVoidInput;
+
+/** A repeated request gets its saved answer, unless it asks for something else. */
+function replayed(replay: TransferVersionRow, payload: string) {
+  if (replay.canonicalPayload !== payload) throw conflict();
+  return { created: false, value: transferReceipt(replay) };
+}
+/** The current version of the transfer a correction or void names; none for a create. */
+async function readCurrent(manager: EntityManager, owner: string, target: string | undefined) {
+  const row = target === undefined ? undefined : await readTransferHead(manager, owner, target);
+  if (target !== undefined && !row) throw new NotFoundException();
+  return row ? projectTransferVersion(row) : undefined;
+}
+/** The first operation of an account starts its journal (M9, OPS-ADD-BUY). */
+async function startJournals(
+  manager: EntityManager,
+  owner: string,
+  input: TransferInput,
+  fromOwned: AccountRow,
+  toOwned: AccountRow,
+) {
+  if (input.expectedFromJournalRevision === 0)
+    await startEmptyJournal(manager, owner, fromOwned, input.requestId);
+  if (input.expectedToJournalRevision === 0)
+    await startEmptyJournal(manager, owner, toOwned, input.requestId);
+}
+function assertExpectedVersion(input: TransferInput, current: TransferVersion | undefined) {
+  if (
+    'expectedVersion' in input &&
+    (current?.kind === 'void' || current?.version !== input.expectedVersion)
+  )
+    throw conflict();
+}
+function requestedMovement(
+  input: TransferInput,
+  current: TransferVersion | undefined,
+): RequestedMovement {
+  const fields = 'quantity' in input ? movement(input) : current && movement(current);
+  if (!fields) throw new Error('Transfer movement required');
+  return fields;
+}
+function assertJournalPins(input: TransferInput, from: ConnectedAccount, to: ConnectedAccount) {
+  if (
+    from.journal.currentRevision !== input.expectedFromJournalRevision ||
+    to.journal.currentRevision !== input.expectedToJournalRevision
+  )
+    throw conflict();
+}
+/**
+ * Before an account's records begin nothing can be moved in or out of it (a journal opened
+ * on a date by an opening balance), whatever its balance then.
+ */
+function assertCovered(occurredAt: string, accounts: readonly ConnectedAccount[]) {
+  for (const account of accounts)
+    if (occurredAt < account.coverageFrom)
+      throw notCovered(account.accountId, account.coverageFrom);
+}
+/** Without an order the transfer goes after every event of both accounts at its instant. */
+function transferOrder(
+  fields: RequestedMovement,
+  from: ConnectedAccount,
+  to: ConnectedAccount,
+  candidates: readonly ActiveTransferInput[],
+): number {
+  const order =
+    fields.orderWithinTimestamp ??
+    Math.max(
+      automaticOrder(from, candidates, fields.occurredAt, undefined) ?? Infinity,
+      automaticOrder(to, candidates, fields.occurredAt, undefined) ?? Infinity,
+    );
+  if (!Number.isSafeInteger(order)) throw conflict();
+  return order;
+}
+/** Replays the changed transfers; names what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND. */
+function assertReplays(
+  ledger: ConnectedLedger,
+  transfers: readonly ActiveTransferInput[],
+  transferId: string,
+) {
+  try {
+    projectConnectedLedger(ledger, { transfers });
+  } catch (error) {
+    const shortfall =
+      error instanceof FifoHistoryError &&
+      firstShortfall({ accounts: ledger.accounts, transfers, splits: ledger.splits });
+    if (shortfall) throw dependent(shortfall, shortfall.operationId === `transfer:${transferId}`);
+    throw error;
+  }
 }
 
 @Injectable()
@@ -109,33 +207,17 @@ export class OwnedTransferService {
     const payload = transferPayload(kind, input, target);
     await lockAccountingOwner(manager, owner);
     const replay = await readTransferReplay(manager, owner, input.requestId);
-    if (replay) {
-      if (replay.canonicalPayload !== payload) throw conflict();
-      return { created: false, value: transferReceipt(replay) };
-    }
-    const row = target === undefined ? undefined : await readTransferHead(manager, owner, target);
-    if (target !== undefined && !row) throw new NotFoundException();
-    const current = row ? projectTransferVersion(row) : undefined;
+    if (replay) return replayed(replay, payload);
+    const current = await readCurrent(manager, owner, target);
     const pair = 'fromAccountId' in input ? input : current;
     if (!pair) throw new Error('Transfer target required');
     const { fromAccountId, toAccountId } = pair;
     const fromOwned = await readOwnedAccount(manager, owner, fromAccountId);
     const toOwned = await readOwnedAccount(manager, owner, toAccountId);
     if (fromAccountId === toAccountId) throw conflict();
-    // The first operation of an account starts its journal (M9, OPS-ADD-BUY).
-    if (kind === 'create') {
-      if (input.expectedFromJournalRevision === 0)
-        await startEmptyJournal(manager, owner, fromOwned, input.requestId);
-      if (input.expectedToJournalRevision === 0)
-        await startEmptyJournal(manager, owner, toOwned, input.requestId);
-    }
-    if (
-      'expectedVersion' in input &&
-      (current?.kind === 'void' || current?.version !== input.expectedVersion)
-    )
-      throw conflict();
-    const fields = 'quantity' in input ? movement(input) : current && movement(current);
-    if (!fields) throw new Error('Transfer movement required');
+    if (kind === 'create') await startJournals(manager, owner, input, fromOwned, toOwned);
+    assertExpectedVersion(input, current);
+    const fields = requestedMovement(input, current);
     const labels = await this.labels(manager, owner, fields);
     const revision = await readTransferRevision(manager, owner);
     if (revision >= TRANSFER_LIMITS.versions) throw conflict();
@@ -160,40 +242,14 @@ export class OwnedTransferService {
     });
     const from = ledger.accounts.get(fromAccountId)!;
     const to = ledger.accounts.get(toAccountId)!;
-    if (
-      from.journal.currentRevision !== input.expectedFromJournalRevision ||
-      to.journal.currentRevision !== input.expectedToJournalRevision
-    )
-      throw conflict();
-    // Before an account's records begin nothing can be moved in or out of it (a journal opened
-    // on a date by an opening balance), whatever its balance then.
-    if (kind !== 'void')
-      for (const account of [from, to])
-        if (fields.occurredAt < account.coverageFrom)
-          throw notCovered(account.accountId, account.coverageFrom);
-    // Without an order the transfer goes after every event of both accounts at its instant.
-    const order =
-      fields.orderWithinTimestamp ??
-      Math.max(
-        automaticOrder(from, candidates, fields.occurredAt, undefined) ?? Infinity,
-        automaticOrder(to, candidates, fields.occurredAt, undefined) ?? Infinity,
-      );
-    if (!Number.isSafeInteger(order)) throw conflict();
-    const next = placed(order);
+    assertJournalPins(input, from, to);
+    if (kind !== 'void') assertCovered(fields.occurredAt, [from, to]);
+    const next = placed(transferOrder(fields, from, to, candidates));
     const candidateEvents = kind === 'void' ? candidates : [...candidates, next];
     assertRevisionCapacity(ledger);
     projectConnectedLedger(ledger);
     const transfers = candidateEvents.filter((event) => ledger.accounts.has(event.fromAccountId));
-    try {
-      projectConnectedLedger(ledger, { transfers });
-    } catch (error) {
-      // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
-      const shortfall =
-        error instanceof FifoHistoryError &&
-        firstShortfall({ accounts: ledger.accounts, transfers, splits: ledger.splits });
-      if (shortfall) throw dependent(shortfall, shortfall.operationId === `transfer:${transferId}`);
-      throw error;
-    }
+    assertReplays(ledger, transfers, transferId);
     const receipt = await appendTransferVersion(manager, owner, {
       ...next,
       kind,
