@@ -210,20 +210,34 @@ const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
   </span>
 );
 
+const walletLink = (place: NonNullable<Operation['account']>) => (
+  <Link key={place.id} className="ui-link" to={`/wallets/${place.id}`}>
+    {place.name}
+  </Link>
+);
+
 /** SWAP-ONE-TX: the owner's transaction called a contract, by the method the explorer names. */
 function callFact(call: { method: string | null }): [string, ReactNode] {
   return ['Contract call', call.method ?? 'Method not named'];
 }
 
+/** The recorded value in the list's currency. */
+const valueFact = (operation: Operation, currency: AccountingCurrency): [string, ReactNode] => [
+  'Value',
+  shown(
+    operation.value,
+    operation.valueUsd,
+    currency,
+    'Not recorded',
+    rounding(operation, currency),
+  ),
+];
+
 /**
  * CLS-SWAP: a blockchain swap reads as both of its transactions, what was paid and from where,
  * then what arrived and where; its value is the cost basis of the coins bought.
  */
-function swapFacts(
-  operation: Operation,
-  currency: AccountingCurrency,
-  walletLink: (place: NonNullable<Operation['account']>) => ReactNode,
-): [string, ReactNode][] {
+function swapFacts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
   const { wallet, chain } = operation;
   if (!wallet || !chain) return [];
   const other = operation.counterWallet;
@@ -256,18 +270,259 @@ function swapFacts(
     rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
   rows.push(
     ['Network fee', operation.fee ? networkFee(operation.fee, currency) : 'Paid by sender'],
-    [
-      'Value',
-      shown(
-        operation.value,
-        operation.valueUsd,
-        currency,
-        'Not recorded',
-        rounding(operation, currency),
-      ),
-    ],
+    valueFact(operation, currency),
     ['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, 'Unknown')],
   );
+  return rows;
+}
+
+const commentFacts = (operation: Operation): [string, ReactNode][] =>
+  operation.classification ? [['Comment', operation.classification.comment ?? 'None']] : [];
+
+/** A buy's or sale's price per coin. */
+function priceFacts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
+  if ((operation.type !== 'buy' && operation.type !== 'sell') || operation.value === null)
+    return [];
+  return [
+    [
+      'Price',
+      `${price(String(Number(operation.value) / Number(operation.quantity)), currency)} per ${ticker(operation.asset)}`,
+    ],
+  ];
+}
+
+/** M9: what a trade paid, where the money stayed or came from in its own account, its cost basis. */
+function settlementFacts(
+  operation: Operation,
+  currency: AccountingCurrency,
+): [string, ReactNode][] {
+  const rows: [string, ReactNode][] = [];
+  if (operation.paid)
+    rows.push([
+      'Paid',
+      `${quantity(operation.paid.gross)} ${operation.paid.currency} at ${operation.paid.perUsd} ${operation.paid.currency} per USD`,
+    ]);
+  const cash = operation.settlement;
+  if (cash && Number(cash.quantity) > 0)
+    rows.push(
+      operation.type === 'sell'
+        ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
+        : ['Paid from cash', amount(cash.quantity, cash.asset)],
+    );
+  if (operation.costBasisUsd !== null)
+    rows.push(['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, DASH)]);
+  return rows;
+}
+
+type Wallet = NonNullable<Operation['wallet']>;
+type Chain = NonNullable<Operation['chain']>;
+type Place = NonNullable<Operation['account']>;
+
+/** The wallet's own address, or a Bybit account's UID. */
+function addressFact(wallet: Wallet): [string, ReactNode] {
+  const exchange = wallet.network === 'bybit';
+  return [
+    exchange ? 'Account' : 'Address',
+    <span key="wallet" className="ui-mono transactions-line">
+      {wallet.label ? `${wallet.label} · ` : ''}
+      {exchange ? (
+        <CopyValue value={wallet.address} text={`UID ${wallet.address}`} label="Copy UID" />
+      ) : (
+        <CopyValue value={wallet.address} label="Copy address" />
+      )}
+    </span>,
+  ];
+}
+
+/** Where a blockchain transaction happened: its network, wallets and addresses. */
+function placeFacts(
+  operation: Operation,
+  wallet: Wallet,
+  moved: { from: Place; to: Place } | null,
+): [string, ReactNode][] {
+  const onChain = exchangeChain(operation);
+  const rows: [string, ReactNode][] = [['Network', networkName(wallet)]];
+  if (onChain) rows.push(['Blockchain', onChain.chainName]);
+  if (moved) rows.push(['From', walletLink(moved.from)], ['To', walletLink(moved.to)]);
+  else
+    rows.push([
+      'Wallet',
+      operation.account ? walletLink(operation.account) : 'Not in a wallet yet',
+    ]);
+  rows.push(addressFact(wallet));
+  const other = operation.counterWallet;
+  if (other)
+    rows.push([
+      moved ? 'Other address' : 'Your other address',
+      <span key="other" className="ui-mono transactions-line">
+        {other.label ? `${other.label} · ` : ''}
+        <CopyValue value={other.address} label="Copy address" />
+      </span>,
+    ]);
+  // BYBIT-CHAIN-FACTS: the address a Bybit withdrawal went to, or its deposit came to.
+  if (onChain?.address || onChain?.fromAddress)
+    rows.push([
+      onChain.address ? onChain.addressLabel : 'Sending address',
+      <span key="onchain" className="ui-mono transactions-line">
+        <CopyValue value={onChain.address ?? onChain.fromAddress ?? ''} label="Copy address" />
+      </span>,
+    ]);
+  return rows;
+}
+
+function estimatedValue(operation: Operation, chain: Chain, currency: AccountingCurrency): string {
+  if (operation.estimatedValue !== null && chain.priceObservedAt)
+    return `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price stored ${moment(chain.priceObservedAt)}`;
+  return operation.estimatedValueUsd !== null
+    ? 'No Bank of Russia rate for that date'
+    : 'No stored price for that time';
+}
+
+/** The transaction itself: its hash or Bybit record, call, block, fee and estimated value. */
+function transactionFacts(
+  operation: Operation,
+  wallet: Wallet,
+  chain: Chain,
+  currency: AccountingCurrency,
+): [string, ReactNode][] {
+  const exchange = wallet.network === 'bybit';
+  const onChain = exchangeChain(operation);
+  // A Bybit record has no block; its id stands in for a hash it does not have (M22).
+  const chainHash = onChain?.hash ?? transactionHash(operation);
+  const rows: [string, ReactNode][] = [
+    [
+      exchange && !chainHash ? 'Bybit record' : 'Transaction',
+      <TxHash
+        key="txid"
+        hash={chainHash ?? exchangeRecord(operation) ?? chain.txid}
+        network={onChain?.hash ? (onChain.network ?? undefined) : wallet.network}
+        record={exchange && !chainHash}
+      />,
+    ],
+  ];
+  if (chain.call) rows.push(callFact(chain.call));
+  if (!exchange) rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
+  const noFee = exchange ? 'None' : 'Paid by sender';
+  rows.push(
+    [exchange ? 'Fee' : 'Network fee', operation.fee ? networkFee(operation.fee, currency) : noFee],
+    ['Estimated value', estimatedValue(operation, chain, currency)],
+  );
+  return rows;
+}
+
+/** POOL-WITHDRAW: what the deposit put in, the difference and the deposit's transaction. */
+function poolFacts(operation: Operation, wallet: Wallet, chain: Chain): [string, ReactNode][] {
+  const rows: [string, ReactNode][] = [];
+  const difference = poolDifference(operation);
+  if (operation.pool && difference)
+    rows.push(
+      ['Deposited', amount(operation.pool.deposited, operation.asset)],
+      [difference.label, difference.text],
+    );
+  if (operation.pool?.partial && operation.pool.remaining !== undefined)
+    rows.push(['Left in the pool', amount(operation.pool.remaining, operation.asset)]);
+  if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
+    rows.push([
+      'Deposit transaction',
+      <CopyValue
+        key="deposit"
+        value={hashOf(chain.pairedTxid, wallet.network)}
+        label="Copy transaction hash"
+      />,
+    ]);
+  return rows;
+}
+
+/**
+ * CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no value of
+ * its own, only the network fee (XFER-CAPITAL).
+ */
+function answerFacts(
+  operation: Operation,
+  wallet: Wallet,
+  currency: AccountingCurrency,
+  moved: boolean,
+  record: Operation | undefined,
+): [string, ReactNode][] {
+  if (operation.status !== 'recorded') return [];
+  const rows: [string, ReactNode][] = [];
+  // SOL-STAKE-MOVE: SOL kept in the wallet's own stake account has no value of its own either,
+  // nor have coins in a liquidity pool; a withdrawal's value is that of its pool income.
+  const staking = operation.type === 'stake' || operation.type === 'unstake';
+  const pooled =
+    operation.type === 'pool-deposit' ||
+    (operation.type === 'pool-withdrawal' && operation.valueUsd === null);
+  // CLS-RECORDED: the record added by hand carries the value; the transaction has none.
+  const linked = operation.classification?.value?.type === 'recorded';
+  if (linked)
+    rows.push([
+      'Recorded as',
+      record
+        ? recordText(record, record.account?.id !== operation.account?.id)
+        : 'A record added by hand or from CSV',
+    ]);
+  if (moved || staking || pooled || linked) return rows;
+  rows.push(
+    valueFact(operation, currency),
+    ...(wallet.network === 'bybit' ? priceFacts(operation, currency) : []),
+    ...settlementFacts(operation, currency),
+  );
+  return rows;
+}
+
+/** A transaction read from a blockchain or from Bybit. */
+function chainFacts(
+  operation: Operation,
+  wallet: Wallet,
+  chain: Chain,
+  currency: AccountingCurrency,
+  record: Operation | undefined,
+): [string, ReactNode][] {
+  // XFER-AUTO: a transfer names both wallets and, when it is one, the other address.
+  const moved =
+    operation.type === 'transfer' && operation.account && operation.counterAccount
+      ? { from: operation.account, to: operation.counterAccount }
+      : null;
+  return [
+    ...placeFacts(operation, wallet, moved),
+    ...transactionFacts(operation, wallet, chain, currency),
+    ...poolFacts(operation, wallet, chain),
+    ...answerFacts(operation, wallet, currency, moved !== null, record),
+    ...commentFacts(operation),
+  ];
+}
+
+function journalFee(operation: Operation, currency: AccountingCurrency): string {
+  if (operation.feeUsd !== null && Number(operation.feeUsd) !== 0)
+    return shown(
+      operation.feeValue,
+      operation.feeUsd,
+      currency,
+      DASH,
+      rounding(operation, currency, 'up'),
+    );
+  return operation.fee ? amount(operation.fee.quantity, operation.fee.asset) : 'None';
+}
+
+/** An entry of the journal: a trade, transfer, reward or capital return. */
+function journalFacts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
+  const rows: [string, ReactNode][] = [];
+  if (operation.counterAccount && operation.account)
+    rows.push(['From', operation.account.name], ['To', operation.counterAccount.name]);
+  else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
+  if (operation.counterAsset && operation.counterQuantity)
+    rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
+  // BROKER-CAPRET: the money came back out of what these units cost.
+  if (operation.type === 'capital-return' && operation.counterAsset)
+    rows.push(['Lowered the cost of', ticker(operation.counterAsset)]);
+  // M9: where the money stayed or came from in the trade's own account.
+  rows.push(
+    valueFact(operation, currency),
+    ...priceFacts(operation, currency),
+    ...settlementFacts(operation, currency),
+    ['Fee', journalFee(operation, currency)],
+  );
+  if (operation.kind === 'trade') rows.push(['Comment', operation.comment ?? 'None']);
   return rows;
 }
 
@@ -278,216 +533,10 @@ function facts(
 ): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [['Date', operationMoment(operation)]];
   const { wallet, chain } = operation;
-  const walletLink = (place: NonNullable<Operation['account']>) => (
-    <Link key={place.id} className="ui-link" to={`/wallets/${place.id}`}>
-      {place.name}
-    </Link>
-  );
-  if (wallet && chain && operation.type === 'swap') {
-    rows.push(...swapFacts(operation, currency, walletLink));
-    if (operation.classification)
-      rows.push(['Comment', operation.classification.comment ?? 'None']);
-  } else if (wallet && chain) {
-    // XFER-AUTO: a transfer names both wallets and, when it is one, the other address.
-    const moved =
-      operation.type === 'transfer' && operation.account && operation.counterAccount
-        ? { from: operation.account, to: operation.counterAccount }
-        : null;
-    const exchange = wallet.network === 'bybit';
-    const onChain = exchangeChain(operation);
-    rows.push(['Network', networkName(wallet)]);
-    if (onChain) rows.push(['Blockchain', onChain.chainName]);
-    if (moved) rows.push(['From', walletLink(moved.from)], ['To', walletLink(moved.to)]);
-    else
-      rows.push([
-        'Wallet',
-        operation.account ? walletLink(operation.account) : 'Not in a wallet yet',
-      ]);
-    rows.push([
-      exchange ? 'Account' : 'Address',
-      <span key="wallet" className="ui-mono transactions-line">
-        {wallet.label ? `${wallet.label} · ` : ''}
-        {exchange ? (
-          <CopyValue value={wallet.address} text={`UID ${wallet.address}`} label="Copy UID" />
-        ) : (
-          <CopyValue value={wallet.address} label="Copy address" />
-        )}
-      </span>,
-    ]);
-    const other = operation.counterWallet;
-    if (other)
-      rows.push([
-        moved ? 'Other address' : 'Your other address',
-        <span key="other" className="ui-mono transactions-line">
-          {other.label ? `${other.label} · ` : ''}
-          <CopyValue value={other.address} label="Copy address" />
-        </span>,
-      ]);
-    // BYBIT-CHAIN-FACTS: the address a Bybit withdrawal went to, or its deposit came to.
-    if (onChain?.address || onChain?.fromAddress)
-      rows.push([
-        onChain.address ? onChain.addressLabel : 'Sending address',
-        <span key="onchain" className="ui-mono transactions-line">
-          <CopyValue value={onChain.address ?? onChain.fromAddress ?? ''} label="Copy address" />
-        </span>,
-      ]);
-    // A Bybit record has no block; its id stands in for a hash it does not have (M22).
-    const chainHash = onChain?.hash ?? transactionHash(operation);
-    rows.push([
-      exchange && !chainHash ? 'Bybit record' : 'Transaction',
-      <TxHash
-        key="txid"
-        hash={chainHash ?? exchangeRecord(operation) ?? chain.txid}
-        network={onChain?.hash ? (onChain.network ?? undefined) : wallet.network}
-        record={exchange && !chainHash}
-      />,
-    ]);
-    if (chain.call) rows.push(callFact(chain.call));
-    if (!exchange) rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
-    rows.push(
-      [
-        exchange ? 'Fee' : 'Network fee',
-        operation.fee ? networkFee(operation.fee, currency) : exchange ? 'None' : 'Paid by sender',
-      ],
-      [
-        'Estimated value',
-        operation.estimatedValue !== null && chain.priceObservedAt
-          ? `≈ ${money(operation.estimatedValue, currency, false, derivedRounding(operation))} at the price stored ${moment(chain.priceObservedAt)}`
-          : operation.estimatedValueUsd !== null
-            ? 'No Bank of Russia rate for that date'
-            : 'No stored price for that time',
-      ],
-    );
-    // POOL-WITHDRAW: what the deposit put in, the difference and the deposit's transaction.
-    const difference = poolDifference(operation);
-    if (operation.pool && difference)
-      rows.push(
-        ['Deposited', amount(operation.pool.deposited, operation.asset)],
-        [difference.label, difference.text],
-      );
-    if (operation.pool?.partial && operation.pool.remaining !== undefined)
-      rows.push(['Left in the pool', amount(operation.pool.remaining, operation.asset)]);
-    if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
-      rows.push([
-        'Deposit transaction',
-        <CopyValue
-          key="deposit"
-          value={hashOf(chain.pairedTxid, wallet.network)}
-          label="Copy transaction hash"
-        />,
-      ]);
-    // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
-    // value of its own, only the network fee (XFER-CAPITAL).
-    // SOL-STAKE-MOVE: SOL kept in the wallet's own stake account has no value of its own either,
-    // nor have coins in a liquidity pool; a withdrawal's value is that of its pool income.
-    const staking = operation.type === 'stake' || operation.type === 'unstake';
-    const pooled =
-      operation.type === 'pool-deposit' ||
-      (operation.type === 'pool-withdrawal' && operation.valueUsd === null);
-    // CLS-RECORDED: the record added by hand carries the value; the transaction has none.
-    const linked = operation.classification?.value?.type === 'recorded';
-    if (linked && operation.status === 'recorded')
-      rows.push([
-        'Recorded as',
-        record
-          ? recordText(record, record.account?.id !== operation.account?.id)
-          : 'A record added by hand or from CSV',
-      ]);
-    if (operation.status === 'recorded' && !moved && !staking && !pooled && !linked) {
-      rows.push([
-        'Value',
-        shown(
-          operation.value,
-          operation.valueUsd,
-          currency,
-          'Not recorded',
-          rounding(operation, currency),
-        ),
-      ]);
-      if (
-        exchange &&
-        (operation.type === 'buy' || operation.type === 'sell') &&
-        operation.value !== null
-      )
-        rows.push([
-          'Price',
-          `${price(String(Number(operation.value) / Number(operation.quantity)), currency)} per ${ticker(operation.asset)}`,
-        ]);
-      if (operation.paid)
-        rows.push([
-          'Paid',
-          `${quantity(operation.paid.gross)} ${operation.paid.currency} at ${operation.paid.perUsd} ${operation.paid.currency} per USD`,
-        ]);
-      const cash = operation.settlement;
-      if (cash && Number(cash.quantity) > 0)
-        rows.push(
-          operation.type === 'sell'
-            ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
-            : ['Paid from cash', amount(cash.quantity, cash.asset)],
-        );
-      if (operation.costBasisUsd !== null)
-        rows.push([
-          'Cost basis',
-          shown(operation.costBasis, operation.costBasisUsd, currency, DASH),
-        ]);
-    }
-    if (operation.classification)
-      rows.push(['Comment', operation.classification.comment ?? 'None']);
-  } else {
-    if (operation.counterAccount && operation.account)
-      rows.push(['From', operation.account.name], ['To', operation.counterAccount.name]);
-    else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
-    if (operation.counterAsset && operation.counterQuantity)
-      rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
-    // BROKER-CAPRET: the money came back out of what these units cost.
-    if (operation.type === 'capital-return' && operation.counterAsset)
-      rows.push(['Lowered the cost of', ticker(operation.counterAsset)]);
-    rows.push([
-      'Value',
-      shown(
-        operation.value,
-        operation.valueUsd,
-        currency,
-        'Not recorded',
-        rounding(operation, currency),
-      ),
-    ]);
-    if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
-      rows.push([
-        'Price',
-        `${price(String(Number(operation.value) / Number(operation.quantity)), currency)} per ${ticker(operation.asset)}`,
-      ]);
-    if (operation.paid)
-      rows.push([
-        'Paid',
-        `${quantity(operation.paid.gross)} ${operation.paid.currency} at ${operation.paid.perUsd} ${operation.paid.currency} per USD`,
-      ]);
-    // M9: where the money stayed or came from in the trade's own account.
-    const cash = operation.settlement;
-    if (cash && Number(cash.quantity) > 0)
-      rows.push(
-        operation.type === 'sell'
-          ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
-          : ['Paid from cash', amount(cash.quantity, cash.asset)],
-      );
-    if (operation.costBasisUsd !== null)
-      rows.push(['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, DASH)]);
-    rows.push([
-      'Fee',
-      operation.feeUsd !== null && Number(operation.feeUsd) !== 0
-        ? shown(
-            operation.feeValue,
-            operation.feeUsd,
-            currency,
-            DASH,
-            rounding(operation, currency, 'up'),
-          )
-        : operation.fee
-          ? amount(operation.fee.quantity, operation.fee.asset)
-          : 'None',
-    ]);
-    if (operation.kind === 'trade') rows.push(['Comment', operation.comment ?? 'None']);
-  }
+  if (wallet && chain && operation.type === 'swap')
+    rows.push(...swapFacts(operation, currency), ...commentFacts(operation));
+  else if (wallet && chain) rows.push(...chainFacts(operation, wallet, chain, currency, record));
+  else rows.push(...journalFacts(operation, currency));
   rows.push(
     ['Status', statusLabel(operation)],
     ['Source', sourceLabel(operation) === 'Bybit' ? 'Bybit' : sourceDetails[operation.source]],
