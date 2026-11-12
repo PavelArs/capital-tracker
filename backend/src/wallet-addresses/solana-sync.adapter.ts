@@ -28,6 +28,7 @@ import {
   TOKEN_PROGRAM,
   WRAPPED_SOL,
 } from './solana-token-metadata';
+import { insertTransactions } from './wallet-transactions';
 
 // Bounds for one pass; the next pass continues from the committed slot.
 export const MAX_TRANSACTIONS_PER_SYNC = 40;
@@ -585,34 +586,10 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
 
   private async insert(manager: EntityManager, address: ScanRow, legs: SolanaLeg[]) {
     let count = 0;
-    for (let start = 0; start < legs.length; start += 1_000) {
-      const values: unknown[] = [];
-      const rows = legs.slice(start, start + 1_000).map((leg) => {
-        const base = values.length;
-        values.push(
-          address.ownerId,
-          address.id,
-          leg.txid,
-          leg.blockHeight,
-          leg.blockTime,
-          leg.receivedUnits.toString(),
-          leg.sentUnits.toString(),
-          leg.feeUnits.toString(),
-          leg.direction,
-          jsonbText(leg.raw),
-          leg.asset,
-        );
-        const slot = (offset: number) => `$${base + offset}`;
-        return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},NULL,${slot(5)},${slot(6)}::numeric,${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)},${slot(10)}::jsonb,${slot(11)})`;
+    for (let start = 0; start < legs.length; start += 1_000)
+      count += await insertTransactions(manager, address, legs.slice(start, start + 1_000), {
+        blockHash: 'NULL',
       });
-      const inserted: { txid: string }[] = await manager.query(
-        `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-          "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
-          VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-        values,
-      );
-      count += inserted.length;
-    }
     return count;
   }
 

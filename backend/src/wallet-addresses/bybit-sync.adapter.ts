@@ -32,6 +32,7 @@ import {
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
 import { jsonbText } from './jsonb-text';
+import { insertTransactions } from './wallet-transactions';
 
 const DAY_MS = 86_400_000;
 // Bybit's longest ranges: seven days of trades, less than 30 days of deposits or withdrawals.
@@ -596,33 +597,8 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       withoutStoredYields(read, stored),
       new Map(counted.map((row) => [row.asset, row.countedAt.getTime()])),
     );
-    if (legs.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = legs.map((leg) => {
-      const base = values.length;
-      values.push(
-        account.ownerId,
-        account.id,
-        leg.txid,
-        leg.blockTime,
-        leg.receivedUnits.toString(),
-        leg.sentUnits.toString(),
-        leg.feeUnits.toString(),
-        leg.direction,
-        jsonbText(leg.raw),
-        leg.asset,
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      // Bybit's records have no block: height 0 and no block hash.
-      return `(${slot(1)},${slot(2)},${slot(3)},0,NULL,${slot(4)},${slot(5)}::numeric,${slot(6)}::numeric,${slot(7)}::numeric,${slot(8)},${slot(9)}::jsonb,${slot(10)})`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
+    // Bybit's records have no block: height 0 and no block hash.
+    return insertTransactions(manager, account, legs, { blockHeight: '0', blockHash: 'NULL' });
   }
 
   /**

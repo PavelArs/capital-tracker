@@ -27,7 +27,7 @@ import {
 import { readEvmBlock, type EvmScan as ScanRow, sameEvmScan } from './evm-block-progress';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
 import { EvmReader } from './evm-reader';
-import { jsonbText } from './jsonb-text';
+import { insertTransactions } from './wallet-transactions';
 
 // Blocks this deep are final; a shallower one could still be replaced and its rows are
 // never rewritten, so they wait for the next pass.
@@ -431,37 +431,9 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
   }
 
   private async insert(manager: EntityManager, address: ScanRow, legs: EthereumLeg[]) {
-    if (legs.length === 0) return 0;
     let count = 0;
-    for (let start = 0; start < legs.length; start += 1000) {
-      const values: unknown[] = [];
-      const rows = legs.slice(start, start + 1000).map((leg) => {
-        const base = values.length;
-        values.push(
-          address.ownerId,
-          address.id,
-          leg.txid,
-          leg.blockHeight,
-          leg.blockHash,
-          leg.blockTime,
-          leg.receivedUnits.toString(),
-          leg.sentUnits.toString(),
-          leg.feeUnits.toString(),
-          leg.direction,
-          jsonbText(leg.raw),
-          leg.asset,
-        );
-        const slot = (offset: number) => `$${base + offset}`;
-        return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb,${slot(12)})`;
-      });
-      const inserted: { txid: string }[] = await manager.query(
-        `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-        values,
-      );
-      count += inserted.length;
-    }
+    for (let start = 0; start < legs.length; start += 1000)
+      count += await insertTransactions(manager, address, legs.slice(start, start + 1000));
     return count;
   }
 
