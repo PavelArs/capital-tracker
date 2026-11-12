@@ -364,6 +364,105 @@ describe('OperationDrawer facts', () => {
   });
 });
 
+describe('OperationDrawer notes', () => {
+  /** The verdicts on the transaction (role note), in order. */
+  const notes = () => screen.queryAllByRole('note').map((note) => note.textContent);
+  const automatic = {
+    version: 1,
+    hidden: false,
+    value: null,
+    comment: null,
+    automatic: true,
+  };
+  const ethWallet = { ...bitcoinWallet, id: id(23), network: 'ethereum' as const };
+  const withdrawal = (pool: Operation['pool']) =>
+    operation({
+      id: `chain:${ethWallet.id}:${txid(5)}`,
+      type: 'pool-withdrawal',
+      wallet: ethWallet,
+      asset: usdt,
+      quantity: '1000',
+      pool,
+    });
+
+  it('SOL-STAKE-MOVE, ETH-STAKE-MOVE: a stake move says where the coins went and back', () => {
+    renderDrawer(operation({ id: `chain:${id(24)}:${txid(6)}`, type: 'stake' }));
+    renderDrawer(
+      operation({ id: `chain:${ethWallet.id}:${txid(7)}`, type: 'unstake', wallet: ethWallet }),
+    );
+    expect(notes()).toEqual([
+      'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price. Only the network fee is a cost.',
+      'Returned from a staking pool of this wallet: not income and not a deposit, rewards count as they are earned. Only the network fee is a cost.',
+    ]);
+  });
+
+  it('POOL-PARTIAL: a part of a deposit names what is left and the loss below it', () => {
+    renderDrawer(
+      withdrawal({ deposited: '1000', difference: '-0.5', partial: true, remaining: '0' }),
+    );
+    renderDrawer(
+      withdrawal({ deposited: '1000', difference: '400', partial: true, remaining: '250' }),
+    );
+    renderDrawer(withdrawal({ deposited: '1000', difference: '0' }));
+    expect(notes()).toEqual([
+      'Returned from a liquidity pool: a part of the deposit comes back as your own coins, not income and not a deposit. Nothing is left in the pool. The 0.5 USDT below it left without a sale price (impermanent loss).',
+      'Returned from a liquidity pool: a part of the deposit comes back as your own coins, not income and not a deposit. The 250 USDT left in the pool stay yours, with their purchase price. The 400 USDT above it is pool income.',
+      'Returned from a liquidity pool: the deposit comes back as your own coins, not income and not a deposit.',
+    ]);
+  });
+
+  it('BYBIT-CONVERT, BYBIT-TRADES: an automatic sale names the history it came from', () => {
+    renderDrawer(
+      operation({
+        id: `chain:${bybitWallet.id}:bybit-trade-convert-4000000001`,
+        type: 'sell',
+        wallet: bybitWallet,
+        chain: {
+          txid: 'bybit-trade-convert-4000000001',
+          blockHeight: 0,
+          priceObservedAt: null,
+          direction: 'out',
+        },
+        classification: automatic,
+      }),
+    );
+    expect(notes()).toEqual([
+      "Recognised automatically from Bybit's convert history: the coins sold were already in this account, so it counts as a sale, not a deposit. Change the classification if it is wrong.",
+    ]);
+  });
+
+  it('CLS-PAID: coins that paid for a purchase in an account without a name say that account', () => {
+    const bought = operation({
+      id: `trade:${id(44)}`,
+      kind: 'trade',
+      source: 'manual',
+      wallet: null,
+      chain: null,
+      account: null,
+    });
+    render(
+      <MemoryRouter>
+        <OperationDrawer
+          operation={operation({
+            id: `chain:${bitcoinWallet.id}:${txid(8)}`,
+            type: 'transfer',
+            classification: {
+              ...automatic,
+              automatic: false,
+              value: { type: 'recorded', operation: { kind: 'trade', id: id(44) } },
+            },
+          })}
+          operations={[bought]}
+          onClose={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+    expect(notes()).toEqual([
+      'These coins moved to that account and paid for the purchase you added there, so the purchase is not new money. Change the classification if it is wrong.',
+    ]);
+  });
+});
+
 describe('OperationDrawer commands', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
