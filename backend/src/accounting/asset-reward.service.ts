@@ -7,6 +7,7 @@ import {
   projectRewardVersion,
   REWARD_LIMITS,
   type RewardKind,
+  type RewardVersion,
   type RewardVersionRow,
   readRewardCounts,
   readRewardHead,
@@ -31,6 +32,8 @@ import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  type ConnectedAccount,
+  type ConnectedLedger,
   notCovered,
   projectConnectedLedger,
   readConnectedLedger,
@@ -55,6 +58,72 @@ function fields(value: RewardFields): RewardFields {
     acquisitionBasisUsd: value.acquisitionBasisUsd,
     incomeValueUsd: value.incomeValueUsd,
   };
+}
+type RewardInput = RewardCreateInput | RewardCorrectionInput | RewardVoidInput;
+
+/** The reward a correction or void names, as it stands; none for a create. */
+async function readTargetReward(
+  manager: EntityManager,
+  owner: string,
+  accountId: string,
+  target: string | undefined,
+): Promise<RewardVersion | undefined> {
+  const row =
+    target === undefined ? undefined : await readRewardHead(manager, owner, accountId, target);
+  if (target !== undefined && !row) throw new NotFoundException();
+  return row ? projectRewardVersion(row) : undefined;
+}
+
+/** The fields of the next version once its version check passes: as requested, or as it stands. */
+function requestedReward(input: RewardInput, current: RewardVersion | undefined): RewardFields {
+  if (
+    'expectedVersion' in input &&
+    (current?.kind === 'void' || current?.version !== input.expectedVersion)
+  )
+    throw conflict();
+  const values = 'quantity' in input ? fields(input) : current && fields(current);
+  if (!values) throw new Error('Reward fields required');
+  return values;
+}
+
+/** The owner's and then the account's limits; only a create counts the active rewards. */
+async function assertRewardCapacity(
+  manager: EntityManager,
+  owner: string,
+  accountId: string,
+  kind: RewardKind,
+): Promise<void> {
+  const ownerCounts = await readRewardCounts(manager, owner);
+  const accountCounts = await readRewardCounts(manager, owner, accountId);
+  for (const counts of [ownerCounts, accountCounts]) {
+    if (
+      counts.versionCount >= REWARD_LIMITS.versions ||
+      (kind === 'create' && counts.activeCount >= REWARD_LIMITS.activeRewards)
+    )
+      throw conflict();
+  }
+}
+
+/** The order as given, or after every other event at the reward's instant. */
+function rewardOrder(
+  account: ConnectedAccount,
+  rewardId: string,
+  transfers: ConnectedLedger['transfers'],
+  values: RewardFields,
+): number {
+  const orderWithinTimestamp =
+    values.orderWithinTimestamp ??
+    automaticOrder(
+      {
+        ...account,
+        rewards: (account.rewards ?? []).filter((reward) => reward.rewardId !== rewardId),
+      },
+      transfers,
+      values.occurredAt,
+      undefined,
+    );
+  if (orderWithinTimestamp === null) throw conflict();
+  return orderWithinTimestamp;
 }
 
 @Injectable()
@@ -123,31 +192,14 @@ export class AssetRewardService {
     // The first operation of an account starts its journal (M9, OPS-ADD-BUY).
     if (kind === 'create' && input.expectedJournalRevision === 0)
       await startEmptyJournal(manager, owner, owned, input.requestId);
-    const row =
-      target === undefined ? undefined : await readRewardHead(manager, owner, accountId, target);
-    if (target !== undefined && !row) throw new NotFoundException();
-    const current = row ? projectRewardVersion(row) : undefined;
-    if (
-      'expectedVersion' in input &&
-      (current?.kind === 'void' || current?.version !== input.expectedVersion)
-    )
-      throw conflict();
-    const values = 'quantity' in input ? fields(input) : current && fields(current);
-    if (!values) throw new Error('Reward fields required');
+    const current = await readTargetReward(manager, owner, accountId, target);
+    const values = requestedReward(input, current);
     const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
       'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
       [owner, values.instrumentId],
     );
     if (!instrument) throw new NotFoundException();
-    const ownerCounts = await readRewardCounts(manager, owner);
-    const accountCounts = await readRewardCounts(manager, owner, accountId);
-    for (const counts of [ownerCounts, accountCounts]) {
-      if (
-        counts.versionCount >= REWARD_LIMITS.versions ||
-        (kind === 'create' && counts.activeCount >= REWARD_LIMITS.activeRewards)
-      )
-        throw conflict();
-    }
+    await assertRewardCapacity(manager, owner, accountId, kind);
     const ledger = await readConnectedLedger(manager, owner, [accountId], { lock: true });
     const account = ledger.accounts.get(accountId)!;
     if (account.journal.currentRevision !== input.expectedJournalRevision) throw conflict();
@@ -155,18 +207,7 @@ export class AssetRewardService {
       throw notCovered(accountId, account.coverageFrom);
     assertRevisionCapacity(ledger);
     const rewardId = target ?? randomUUID();
-    const orderWithinTimestamp =
-      values.orderWithinTimestamp ??
-      automaticOrder(
-        {
-          ...account,
-          rewards: (account.rewards ?? []).filter((reward) => reward.rewardId !== rewardId),
-        },
-        ledger.transfers,
-        values.occurredAt,
-        undefined,
-      );
-    if (orderWithinTimestamp === null) throw conflict();
+    const orderWithinTimestamp = rewardOrder(account, rewardId, ledger.transfers, values);
     const next = {
       ...values,
       orderWithinTimestamp,
