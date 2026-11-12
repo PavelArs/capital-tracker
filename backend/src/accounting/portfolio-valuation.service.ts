@@ -522,39 +522,53 @@ function allAccountsAt(
         });
         continue;
       }
-      const journal = {
-        ...ledger.accounts.get(row.accountId)!,
-        linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
-        splits: ledger.splits,
-      };
-      const lotsAt = (projection: OwnedProjection, instant = at) =>
-        portfolioAccount(
-          identity,
-          projection.accounts.get(row.accountId)!,
-          { ...journal, at: instant },
-          projection.swapAllocations,
-          projection.capitalReturnAllocations,
-        );
-      const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
-      projections.set(ledger, projection);
-      const valued = lotsAt(projection);
-      // A chain payment whose coins a later sale by hand already spent asks what the journal
-      // held at the payment's time; that replay runs only then.
-      const earlier = new Map<string, readonly PortfolioLot[]>();
-      const journalHeld = (instrumentId: string, time: string) => {
-        const lots =
-          earlier.get(time) ?? lotsAt(projectConnectedLedger(ledger, { at: time }), time).lots;
-        earlier.set(time, lots);
-        return lots
-          .filter((lot) => lot.instrumentId === instrumentId)
-          .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.quantity), 0n);
-      };
-      accounts.push({ ...valued, lots: applyChainMoves(valued.lots, moves, at, journalHeld) });
+      accounts.push(replayedAccount(identity, ledger, moves, at, projections));
     }
   } catch (error) {
     rethrowAccountingHistory(error);
   }
   return accounts;
+}
+
+/**
+ * An account's FIFO lots from its ledger's replay at `at` (shared by the ledger's accounts
+ * through `projections`), with its chain movements applied.
+ */
+function replayedAccount(
+  identity: Pick<PortfolioAccountInput, 'accountId' | 'name' | 'assetClass'>,
+  ledger: ConnectedLedger,
+  moves: readonly ChainMove[],
+  at: string,
+  projections: Map<ConnectedLedger, OwnedProjection>,
+): PortfolioAccountInput {
+  const journal = {
+    ...ledger.accounts.get(identity.accountId)!,
+    linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+    splits: ledger.splits,
+  };
+  const lotsAt = (projection: OwnedProjection, instant = at) =>
+    portfolioAccount(
+      identity,
+      projection.accounts.get(identity.accountId)!,
+      { ...journal, at: instant },
+      projection.swapAllocations,
+      projection.capitalReturnAllocations,
+    );
+  const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
+  projections.set(ledger, projection);
+  const valued = lotsAt(projection);
+  // A chain payment whose coins a later sale by hand already spent asks what the journal
+  // held at the payment's time; that replay runs only then.
+  const earlier = new Map<string, readonly PortfolioLot[]>();
+  const journalHeld = (instrumentId: string, time: string) => {
+    const lots =
+      earlier.get(time) ?? lotsAt(projectConnectedLedger(ledger, { at: time }), time).lots;
+    earlier.set(time, lots);
+    return lots
+      .filter((lot) => lot.instrumentId === instrumentId)
+      .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.quantity), 0n);
+  };
+  return { ...valued, lots: applyChainMoves(valued.lots, moves, at, journalHeld) };
 }
 
 /** Stored market prices by code and manual prices by instrument, latest at or before `at`. */
