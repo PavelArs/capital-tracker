@@ -517,3 +517,58 @@ describe('DEP-ACCOUNT: an account that reaches zero stays open', () => {
     expect(balances.get('2026-03-01')).toBe(canonicalDecimalToAtoms(projected.balance));
   });
 });
+
+describe('DEP-ACCRUAL: closing a deposit and refusing a movement', () => {
+  const closing: DepositMovement[] = [
+    topup('2026-01-01', '100000'),
+    { date: '2026-02-11', kind: 'withdrawal', amount: '100000' },
+    { date: '2026-02-15', kind: 'interest-payout', amount: '5000' },
+  ];
+  const dates = ['2026-02-10', '2026-02-11', '2026-02-14', '2026-02-15', '2026-03-01'];
+
+  it.each([
+    ['forfeits-interest', ['101315.07', '1019.18', '1019.18', '0.00', '0.00']],
+    ['keeps-interest', ['101315.07', '1347.95', '1347.95', '0.00', '0.00']],
+  ] as const)(
+    'reads the balances of an early closure that %s, paid out after it',
+    (rule, expected) => {
+      const deposit = terms({ earlyClose: rule });
+      const balances = depositBalances(deposit, closing, dates);
+      expect(dates.map((date) => projectDeposit(deposit, closing, date).balance)).toEqual(expected);
+      expect(dates.map((date) => balances.get(date))).toEqual(
+        expected.map((balance) => canonicalDecimalToAtoms(balance)),
+      );
+    },
+  );
+
+  it('forfeits nothing when everything is taken out on the end date', () => {
+    const atEnd = terms({ payout: 'at-end', endDate: '2026-02-01' });
+    const emptied: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-01', kind: 'withdrawal', amount: '100000' },
+    ];
+    const result = projectDeposit(atEnd, emptied, '2026-02-10');
+    expect(result).toMatchObject({
+      closedOn: '2026-02-01',
+      principal: '0.00',
+      due: '1019.18',
+      balance: '1019.18',
+      interestPosted: '1019.18',
+      interestForfeited: '0.00',
+    });
+    expect(result.periods).toHaveLength(1);
+    expect(depositBalances(atEnd, emptied, ['2026-02-01', '2026-02-10'])).toEqual(
+      new Map([
+        ['2026-02-01', canonicalDecimalToAtoms('1019.18')],
+        ['2026-02-10', canonicalDecimalToAtoms('1019.18')],
+      ]),
+    );
+  });
+
+  it('refuses a movement before the start or out of date order', () => {
+    expect(firstImpossibleMovement(terms(), [topup('2025-12-31', '10')])).toBe(0);
+    expect(
+      firstImpossibleMovement(terms(), [topup('2026-01-10', '10'), topup('2026-01-05', '10')]),
+    ).toBe(1);
+  });
+});
