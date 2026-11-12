@@ -251,12 +251,27 @@ export function explorerUrl(hash: string, network: string | undefined): string |
   return page && /^(0x)?[0-9A-Za-z]+$/.test(hash) ? page(hash) : null;
 }
 
+const whole = (lead: string) => ({ lead, address: '' });
+
+/** A chain row of an address in a wallet shows the wallet, then the address's own name. */
+function walletPlace(
+  wallet: NonNullable<Operation['wallet']>,
+  account: Operation['account'],
+): { lead: string; address: string } {
+  if (account)
+    return wallet.label
+      ? whole(`${account.name} · ${wallet.label}`)
+      : { lead: `${account.name} · `, address: shortAddress(wallet.address) };
+  return wallet.network === 'bybit'
+    ? whole(walletLabel(wallet))
+    : { lead: `${networkNames[wallet.network]} wallet `, address: shortAddress(wallet.address) };
+}
+
 /**
  * Where the operation happened, as the text before an address and the shortened address itself,
  * which a narrow row keeps whole; the address is empty when the place names none.
  */
 export function placeParts(operation: Operation): { lead: string; address: string } {
-  const whole = (lead: string) => ({ lead, address: '' });
   // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
   if (operation.type === 'transfer' && operation.account && operation.counterAccount)
     return whole(`${operation.account.name} → ${operation.counterAccount.name}`);
@@ -267,18 +282,7 @@ export function placeParts(operation: Operation): { lead: string; address: strin
         ? `${operation.counterAccount.name} → ${operation.account.name}`
         : operation.account.name,
     );
-  // A chain row of an address in a wallet shows the wallet, then the address's own name.
-  if (operation.wallet && operation.account)
-    return operation.wallet.label
-      ? whole(`${operation.account.name} · ${operation.wallet.label}`)
-      : { lead: `${operation.account.name} · `, address: shortAddress(operation.wallet.address) };
-  if (operation.wallet)
-    return operation.wallet.network === 'bybit'
-      ? whole(walletLabel(operation.wallet))
-      : {
-          lead: `${networkNames[operation.wallet.network]} wallet `,
-          address: shortAddress(operation.wallet.address),
-        };
+  if (operation.wallet) return walletPlace(operation.wallet, operation.account);
   if (operation.account && operation.counterAccount)
     return whole(`${operation.account.name} → ${operation.counterAccount.name}`);
   return whole(operation.account?.name ?? 'Whole portfolio');
