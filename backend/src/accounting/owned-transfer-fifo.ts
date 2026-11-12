@@ -1,16 +1,14 @@
 import { swapAtoms } from './asset-swap-fifo';
 import type { SwapAllocation } from './asset-swap-types';
 import type { CapitalReturnAllocation } from './capital-return-types';
-import { CostTally } from './cost-evidence';
-import { type BookLimits, type BookPortion, FifoBook, portionReturned } from './fifo-book';
+import { allocationItem, type BookLimits, FifoBook, portionCost } from './fifo-book';
 import { FifoHistoryError } from './fifo-lot-interval';
-import { canonicalDecimalToAtoms, formatAtoms } from './money';
+import { canonicalDecimalToAtoms } from './money';
 import type {
   ActiveTransferInput,
   OwnedAccountInput,
   OwnedProjection,
   TransferAllocation,
-  TransferAllocationItem,
 } from './owned-transfer-types';
 import { type FifoSplit, SPLIT_LIMITS, validSplitRatio } from './share-split-types';
 
@@ -43,26 +41,6 @@ export class OwnedTransferCapacityError extends FifoHistoryError {
     super();
     this.name = 'OwnedTransferCapacityError';
   }
-}
-
-function cost(portions: readonly BookPortion[]): CostTally {
-  const total = new CostTally();
-  for (const portion of portions) total.add(portion.cost);
-  return total;
-}
-
-function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
-  return {
-    kind,
-    instrumentId: portion.fragment.instrumentId,
-    quantity: formatAtoms(portion.interval.end - portion.interval.start),
-    costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
-    origin: portion.fragment.origin,
-    intervalStart: formatAtoms(portion.interval.start),
-    intervalEnd: formatAtoms(portion.interval.end),
-    arrival: portion.fragment.arrival,
-    ...portionReturned(portion),
-  };
 }
 
 type Event =
@@ -349,15 +327,15 @@ function replayTransfer(transfer: ActiveTransferInput, replay: Replay): void {
   sender.recordSent(principal);
   sender.recordFee(fee);
   receiver.receive(principal, { transferId: transfer.transferId, version: transfer.version });
-  const principalCost = cost(principal);
-  const feeCost = cost(fee);
+  const principalCost = portionCost(principal);
+  const feeCost = portionCost(fee);
   replay.allocations.set(transfer.transferId, {
     transferId: transfer.transferId,
     principalBasisUsd: principalCost.value,
     feeConsumedBasisUsd: feeCost.value,
     items: [
-      ...principal.map((portion) => item('principal', portion)),
-      ...fee.map((portion) => item('fee', portion)),
+      ...principal.map((portion) => allocationItem('principal', portion)),
+      ...fee.map((portion) => allocationItem('fee', portion)),
     ],
     ...(principalCost.incomplete || feeCost.incomplete
       ? {
