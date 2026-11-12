@@ -86,6 +86,23 @@ function ineligibility(
   if (!known(opening)) return 'unknown-cost';
   return null;
 }
+/** Whether one reconciliation row has this instrument-level issue. */
+function hasIssue(
+  code: Exclude<IssueCode, 'acquisition-after-coverage'>,
+  row: Reconciliation,
+  exists: boolean,
+  supplied: boolean,
+): boolean {
+  return code === 'extra-instrument'
+    ? !exists
+    : code === 'missing-instrument'
+      ? !supplied
+      : exists &&
+        supplied &&
+        (code === 'quantity-mismatch'
+          ? row.openingQuantity !== row.carriedQuantity
+          : row.openingCostUsd !== row.carriedCostUsd);
+}
 
 @Injectable()
 export class CarryInService {
@@ -322,17 +339,8 @@ export class CarryInService {
       for (const row of reconciliation) {
         const exists = positions.has(row.instrumentId);
         const supplied = totals.has(row.instrumentId);
-        const matches =
-          code === 'extra-instrument'
-            ? !exists
-            : code === 'missing-instrument'
-              ? !supplied
-              : exists &&
-                supplied &&
-                (code === 'quantity-mismatch'
-                  ? row.openingQuantity !== row.carriedQuantity
-                  : row.openingCostUsd !== row.carriedCostUsd);
-        if (matches) issues.push({ code, instrumentId: row.instrumentId, ordinal: null });
+        if (hasIssue(code, row, exists, supplied))
+          issues.push({ code, instrumentId: row.instrumentId, ordinal: null });
       }
     }
     return {
