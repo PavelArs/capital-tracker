@@ -373,7 +373,11 @@ describe('OperationDrawer commands', () => {
       ineligibilityReason: 'already-initialized',
       journal: { journalRevision: 5 } as JournalState['journal'],
     });
-    vi.spyOn(tradesApi, 'versions').mockResolvedValue({ items: [], nextBeforeVersion: null });
+    vi.spyOn(tradesApi, 'versions').mockImplementation(async (_account, tradeId) => ({
+      tradeId,
+      items: [],
+      nextBeforeVersion: null,
+    }));
     vi.spyOn(tradesApi, 'voidCheck').mockImplementation(async (_account, tradeId) => ({
       tradeId,
       dependent: null,
