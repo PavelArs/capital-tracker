@@ -24,6 +24,7 @@ import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  type ConnectedLedger,
   connectedResult,
   journalNotStarted,
   notCovered,
@@ -168,6 +169,148 @@ function page<T>(snapshot: CurrentSnapshot, items: readonly T[], query: TradePag
     items: items.slice(query.offset, end),
     nextOffset: end < items.length ? end : null,
   };
+}
+type Labels = { instrumentName: string; instrumentSymbol: string | null };
+
+/** The canonical payload a replay of the request must match. */
+function tradePayload(
+  kind: Kind,
+  target: string | undefined,
+  value: TradeCreateInput | TradeVoidInput,
+  input: TradeCreateInput | undefined,
+): string {
+  const fields = input && requested(input);
+  return JSON.stringify({
+    kind,
+    ...(target === undefined ? {} : { tradeId: target }),
+    expectedJournalRevision: value.expectedJournalRevision,
+    ...fields,
+  });
+}
+
+/** The journal a write goes to; the first trade of an account that held nothing starts it (M9). */
+async function writableJournal(
+  manager: EntityManager,
+  owner: string,
+  id: string,
+  kind: Kind,
+  value: TradeCreateInput | TradeVoidInput,
+): Promise<JournalRow> {
+  const account = await readOwnedAccount(manager, owner, id);
+  const starts = kind === 'create' && value.expectedJournalRevision === 0;
+  const journal =
+    (await readJournal(manager, owner, id)) ??
+    (starts ? await startEmptyJournal(manager, owner, account, value.requestId) : undefined);
+  if (!journal) throw starts ? journalNotStarted(id) : conflict();
+  return journal;
+}
+
+/** The order as given, or after every event already at the trade's instant (OPS-SAME-DAY). */
+function place(
+  ledger: ConnectedLedger,
+  id: string,
+  target: string | undefined,
+  fields: Ordered<number | null>,
+): Execution {
+  const orderWithinTimestamp =
+    fields.orderWithinTimestamp ??
+    automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
+  if (orderWithinTimestamp === null) throw conflict();
+  return { ...fields, orderWithinTimestamp };
+}
+
+/** The amounts in USD: as stated, or converted from what was paid in RUB or EUR. */
+async function requestedExecution(
+  manager: EntityManager,
+  input: TradeCreateInput,
+): Promise<Ordered<number | null>> {
+  if (!input.paid) return execution(input);
+  const rates = await readFxRates(manager);
+  let derived: ReturnType<typeof derivePaidAmounts>;
+  try {
+    derived = derivePaidAmounts(input.paid, rates, input.occurredAt);
+  } catch (error) {
+    // An amount that rounds to nothing is the request's fault: a BadRequestException would
+    // leave as a history conflict (409) through the rethrow, as settle() explains below.
+    if (error instanceof BadRequestException)
+      throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+    throw error;
+  }
+  if (!derived) throw noRate();
+  return execution({ ...input, ...derived });
+}
+
+/** The execution and labels of the next version: as requested, or as a voided trade stands. */
+async function nextTrade(
+  manager: EntityManager,
+  owner: string,
+  input: TradeCreateInput | undefined,
+  current: TradeVersion | undefined,
+  placed: (fields: Ordered<number | null>) => Execution,
+): Promise<{ execution: Execution; labels: Labels }> {
+  if (!input) {
+    if (!current) throw new NotFoundException();
+    return {
+      execution: execution(current),
+      labels: {
+        instrumentName: current.instrumentName,
+        instrumentSymbol: current.instrumentSymbol,
+      },
+    };
+  }
+  const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
+    'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
+    [owner, input.instrumentId],
+  );
+  if (!instrument) throw new NotFoundException();
+  return {
+    execution: placed(await requestedExecution(manager, input)),
+    labels: { instrumentName: instrument.name, instrumentSymbol: instrument.symbol },
+  };
+}
+
+/** The version and coverage checks of a write, in this order. */
+function assertWritable(
+  journal: JournalRow,
+  current: TradeVersion | undefined,
+  value: TradeCreateInput | TradeVoidInput,
+  next: Execution,
+  id: string,
+): void {
+  if (
+    current?.kind === 'void' ||
+    journal.currentRevision !== value.expectedJournalRevision ||
+    journal.currentRevision >= 10000
+  )
+    throw conflict();
+  if (next.occurredAt < journal.coverageFrom.toISOString())
+    throw notCovered(id, journal.coverageFrom.toISOString());
+}
+
+/** The transfer, reward and swap summaries a journal reports, and the revision budget they share. */
+function participationSummaries(
+  fifo: Pick<AccountFifoResult, 'transferSummary' | 'rewardSummary' | 'swapSummary'>,
+  revision: number,
+) {
+  return {
+    ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
+    ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
+    ...(fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
+    ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
+      ? { revisionBudget: { used: revision, limit: 10000 } }
+      : {}),
+  };
+}
+
+/** What the cash side may spend: the ledger without the trade and the coins of `apart`. */
+function settlementView(
+  ledger: ConnectedLedger,
+  id: string,
+  target: string | undefined,
+  apart: string | undefined,
+): LedgerView {
+  const others = target === undefined ? ledger : withoutTrade(ledger, id, target);
+  return apart === undefined ? others : withoutOperation(others, `transfer:${apart}`);
 }
 
 /**
@@ -351,24 +494,9 @@ export class TradeService {
     apart?: string,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     const input = kind === 'void' ? undefined : (value as TradeCreateInput);
-    const fields = input && requested(input);
-    const payload = JSON.stringify({
-      kind,
-      ...(target === undefined ? {} : { tradeId: target }),
-      expectedJournalRevision: value.expectedJournalRevision,
-      ...fields,
-    });
+    const payload = tradePayload(kind, target, value, input);
     await lockAccountingOwner(manager, owner);
-    const account = await readOwnedAccount(manager, owner, id);
-    const journal =
-      (await readJournal(manager, owner, id)) ??
-      (kind === 'create' && value.expectedJournalRevision === 0
-        ? await startEmptyJournal(manager, owner, account, value.requestId)
-        : undefined);
-    if (!journal)
-      throw kind === 'create' && value.expectedJournalRevision === 0
-        ? journalNotStarted(id)
-        : conflict();
+    const journal = await writableJournal(manager, owner, id, kind, value);
     const [previous]: VersionRow[] = await manager.query(
       `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
       [owner, id, value.requestId],
@@ -382,61 +510,19 @@ export class TradeService {
     const current =
       target === undefined ? undefined : heads.find((head) => head.tradeId === target);
     if (target !== undefined && !current) throw new NotFoundException();
-    let nextExecution: Execution;
-    let labels: { instrumentName: string; instrumentSymbol: string | null };
-    const place = (fields: Ordered<number | null>): Execution => {
-      const orderWithinTimestamp =
-        fields.orderWithinTimestamp ??
-        automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
-      if (orderWithinTimestamp === null) throw conflict();
-      return { ...fields, orderWithinTimestamp };
-    };
-    if (input) {
-      const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
-        'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
-        [owner, input.instrumentId],
-      );
-      if (!instrument) throw new NotFoundException();
-      if (input.paid) {
-        const rates = await readFxRates(manager);
-        let derived: ReturnType<typeof derivePaidAmounts>;
-        try {
-          derived = derivePaidAmounts(input.paid, rates, input.occurredAt);
-        } catch (error) {
-          // An amount that rounds to nothing is the request's fault: a BadRequestException would
-          // leave as a history conflict (409) through the rethrow, as settle() explains below.
-          if (error instanceof BadRequestException)
-            throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-          throw error;
-        }
-        if (!derived) throw noRate();
-        nextExecution = place(execution({ ...input, ...derived }));
-      } else nextExecution = place(execution(input));
-      labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
-    } else {
-      if (!current) throw new NotFoundException();
-      nextExecution = execution(current);
-      labels = {
-        instrumentName: current.instrumentName,
-        instrumentSymbol: current.instrumentSymbol,
-      };
-    }
-    if (
-      current?.kind === 'void' ||
-      journal.currentRevision !== value.expectedJournalRevision ||
-      journal.currentRevision >= 10000
-    )
-      throw conflict();
-    if (nextExecution.occurredAt < journal.coverageFrom.toISOString())
-      throw notCovered(id, journal.coverageFrom.toISOString());
+    const requestedTrade = await nextTrade(manager, owner, input, current, (fields) =>
+      place(ledger, id, target, fields),
+    );
+    const { labels } = requestedTrade;
+    let nextExecution = requestedTrade.execution;
+    assertWritable(journal, current, value, nextExecution, id);
     if (input?.settlementCurrency) {
-      const others = target === undefined ? ledger : withoutTrade(ledger, id, target);
       const settlement = await this.settle(
         manager,
         owner,
         input.settlementCurrency,
         nextExecution,
-        apart === undefined ? others : withoutOperation(others, `transfer:${apart}`),
+        settlementView(ledger, id, target, apart),
         id,
       );
       if (settlement) nextExecution = { ...nextExecution, settlement };
@@ -610,14 +696,7 @@ export class TradeService {
           versionCount: await readTradeVersionCount(manager, owner, id),
           limits: { activeTrades: 1000, versions: 10000 },
           summary: fifo.summary,
-          ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
-          ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
-          ...(fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
-          ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
-            ? {
-                revisionBudget: { used: journal.currentRevision, limit: 10000 },
-              }
-            : {}),
+          ...participationSummaries(fifo, journal.currentRevision),
         },
       };
     });
