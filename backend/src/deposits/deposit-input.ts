@@ -143,6 +143,24 @@ const optionalKeys = ['kind', 'ratePercent'] as const;
 /** An account pays out no term: only these schedules fit it. */
 const accountPayouts = ['daily', 'monthly'] as const;
 
+function checkTerm(
+  kind: DepositKind,
+  payout: PayoutSchedule,
+  startDate: string,
+  endDate: string | null,
+): void {
+  // An account has no term: no end date, and interest is paid out or added as it is earned.
+  const accountPayout = (accountPayouts as readonly string[]).includes(payout);
+  if (kind === 'account' && (endDate !== null || !accountPayout)) bad();
+  if (endDate === null) {
+    if (payout === 'at-end') bad();
+    return;
+  }
+  if (endDate <= startDate) bad();
+  // A bank term never runs this long; the figures are replayed day by day to the end date.
+  if (endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`) bad();
+}
+
 function depositTerms(
   record: Record<string, unknown>,
   payouts: readonly PayoutSchedule[],
@@ -151,18 +169,7 @@ function depositTerms(
   const endDate = record.endDate === null ? null : parseDate(record.endDate);
   const payout = member(record.payout, payouts);
   const kind = record.kind === undefined ? 'term-deposit' : member(record.kind, depositKinds);
-  if (kind === 'account') {
-    // An account has no term: no end date, and interest is paid out or added as it is earned.
-    if (endDate !== null || !(accountPayouts as readonly string[]).includes(payout)) return bad();
-  }
-  if (endDate !== null && endDate <= startDate) return bad();
-  // A bank term never runs this long; the figures are replayed day by day to the end date.
-  if (
-    endDate !== null &&
-    endDate > `${Number(startDate.slice(0, 4)) + MAX_TERM_YEARS}${startDate.slice(4)}`
-  )
-    return bad();
-  if (payout === 'at-end' && endDate === null) return bad();
+  checkTerm(kind, payout, startDate, endDate);
   if (typeof record.capitalized !== 'boolean') return bad();
   return {
     name: text(record.name, 120),
