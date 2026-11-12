@@ -186,6 +186,51 @@ export async function readConnectedLedgers(
   return readLedgers(manager, owner, components, transfers);
 }
 
+/** Every account of each component, in order, has its journal; the first one without is named. */
+function assertJournalsStarted(
+  components: readonly (readonly string[])[],
+  journals: readonly JournalRow[][],
+): void {
+  components.forEach((component, index) => {
+    if (journals[index].length !== component.length) {
+      const started = new Set(journals[index].map((journal) => journal.accountId));
+      const missing = component.find((id) => !started.has(id));
+      throw missing ? journalNotStarted(missing) : conflict();
+    }
+  });
+}
+
+/** No account of a component counts more than `each`, nor the whole component more than `total`. */
+function assertActive<T>(
+  parts: readonly T[][],
+  count: (row: T) => number,
+  each: number,
+  total = each,
+): void {
+  for (const part of parts)
+    if (part.some((row) => count(row) > each) || part.reduce((n, row) => n + count(row), 0) > total)
+      throw new OwnedTransferCapacityError();
+}
+
+/** No component read more rows than it may hold. */
+function assertRead(parts: readonly unknown[][], limit: number): void {
+  if (parts.some((part) => part.length > limit)) throw new OwnedTransferCapacityError();
+}
+
+/** The rows of each account, projected in the order read. */
+function byAccountId<T, R extends { accountId: string }>(
+  rows: readonly R[],
+  project: (row: R) => T,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const items = grouped.get(row.accountId) ?? [];
+    items.push(project(row));
+    grouped.set(row.accountId, items);
+  }
+  return grouped;
+}
+
 /**
  * The ledgers of disjoint components. Each step reads every component at once and then checks
  * each component as a single read would, so one component reads and fails exactly as before.
@@ -205,13 +250,7 @@ async function readLedgers(
     [owner, ids],
   );
   const journals = parts(allJournals);
-  components.forEach((component, index) => {
-    if (journals[index].length !== component.length) {
-      const started = new Set(journals[index].map((journal) => journal.accountId));
-      const missing = component.find((id) => !started.has(id));
-      throw missing ? journalNotStarted(missing) : conflict();
-    }
-  });
+  assertJournalsStarted(components, journals);
   // Count first: do not materialize a corrupt/oversized component and then truncate it.
   const counts: { accountId: string; count: number }[] = await manager.query(
     `SELECT t."accountId",count(*)::int AS count FROM account_trades t
@@ -220,12 +259,7 @@ async function readLedgers(
       WHERE t."ownerId"=$1 AND t."accountId"=ANY($2::uuid[]) AND v.kind<>'void' GROUP BY t."accountId"`,
     [owner, ids],
   );
-  for (const part of parts(counts))
-    if (
-      part.some((row) => row.count > 1000) ||
-      part.reduce((n, row) => n + row.count, 0) > OWNED_TRANSFER_LIMITS.activeTrades
-    )
-      throw new OwnedTransferCapacityError();
+  assertActive(parts(counts), (row) => row.count, 1000, OWNED_TRANSFER_LIMITS.activeTrades);
   // One row more than a component may hold, per component: an oversized one is still refused.
   const rows: (VersionRow & { accountId: string })[] = await manager.query(
     `${versionSelect} JOIN account_trades t ON t."ownerId"=v."ownerId" AND t."accountId"=v."accountId"
@@ -234,92 +268,57 @@ async function readLedgers(
       ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."tradeId" LIMIT $3`,
     [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeTrades + 1)],
   );
-  if (parts(rows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeTrades))
-    throw new OwnedTransferCapacityError();
-  const byAccount = new Map<string, FifoTrade[]>();
-  for (const row of rows) {
-    const trades = byAccount.get(row.accountId) ?? [];
-    trades.push(projectTradeVersion(row));
-    byAccount.set(row.accountId, trades);
-  }
+  assertRead(parts(rows), OWNED_TRANSFER_LIMITS.activeTrades);
+  const byAccount = byAccountId(rows, projectTradeVersion);
   const rewardCounts: { accountId: string; active: number }[] = await manager.query(
     `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
       FROM account_reward_versions v ${rewardHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  for (const part of parts(rewardCounts))
-    if (
-      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeRewards) ||
-      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeRewards
-    )
-      throw new OwnedTransferCapacityError();
+  assertActive(parts(rewardCounts), (row) => row.active, OWNED_TRANSFER_LIMITS.activeRewards);
   const rewardRows: RewardVersionRow[] = await manager.query(
     `${rewardVersionSelect} ${rewardHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
       ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."rewardId" LIMIT $3`,
     [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeRewards + 1)],
   );
-  if (parts(rewardRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeRewards))
-    throw new OwnedTransferCapacityError();
-  const rewardsByAccount = new Map<string, FifoReward[]>();
-  for (const row of rewardRows) {
-    const rewards = rewardsByAccount.get(row.accountId) ?? [];
-    rewards.push(projectRewardVersion(row));
-    rewardsByAccount.set(row.accountId, rewards);
-  }
+  assertRead(parts(rewardRows), OWNED_TRANSFER_LIMITS.activeRewards);
+  const rewardsByAccount = byAccountId(rewardRows, projectRewardVersion);
   const swapCounts: { accountId: string; active: number }[] = await manager.query(
     `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
       FROM account_swap_versions v ${swapHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  for (const part of parts(swapCounts))
-    if (
-      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeSwaps) ||
-      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeSwaps
-    )
-      throw new OwnedTransferCapacityError();
+  assertActive(parts(swapCounts), (row) => row.active, OWNED_TRANSFER_LIMITS.activeSwaps);
   const swapRows: SwapVersionRow[] = await manager.query(
     `${swapVersionSelect} ${swapHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
       ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."swapId" LIMIT $3`,
     [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeSwaps + 1)],
   );
-  if (parts(swapRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeSwaps))
-    throw new OwnedTransferCapacityError();
-  const swapsByAccount = new Map<string, FifoSwap[]>();
-  for (const row of swapRows) {
-    const swaps = swapsByAccount.get(row.accountId) ?? [];
-    swaps.push(projectSwapVersion(row));
-    swapsByAccount.set(row.accountId, swaps);
-  }
+  assertRead(parts(swapRows), OWNED_TRANSFER_LIMITS.activeSwaps);
+  const swapsByAccount = byAccountId(swapRows, projectSwapVersion);
   const returnCounts: { accountId: string; active: number }[] = await manager.query(
     `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
       FROM account_capital_return_versions v ${capitalReturnHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
     [owner, ids],
   );
-  for (const part of parts(returnCounts))
-    if (
-      part.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeCapitalReturns) ||
-      part.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeCapitalReturns
-    )
-      throw new OwnedTransferCapacityError();
+  assertActive(
+    parts(returnCounts),
+    (row) => row.active,
+    OWNED_TRANSFER_LIMITS.activeCapitalReturns,
+  );
   const returnRows: CapitalReturnVersionRow[] = await manager.query(
     `${capitalReturnVersionSelect} ${capitalReturnHeadJoin}
       WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
       ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."capitalReturnId" LIMIT $3`,
     [owner, ids, components.length * (OWNED_TRANSFER_LIMITS.activeCapitalReturns + 1)],
   );
-  if (parts(returnRows).some((part) => part.length > OWNED_TRANSFER_LIMITS.activeCapitalReturns))
-    throw new OwnedTransferCapacityError();
-  const returnsByAccount = new Map<string, FifoCapitalReturn[]>();
-  for (const row of returnRows) {
-    const returns = returnsByAccount.get(row.accountId) ?? [];
-    returns.push(projectCapitalReturnVersion(row));
-    returnsByAccount.set(row.accountId, returns);
-  }
+  assertRead(parts(returnRows), OWNED_TRANSFER_LIMITS.activeCapitalReturns);
+  const returnsByAccount = byAccountId(returnRows, projectCapitalReturnVersion);
   const baselines = await readBaselines(manager, owner, allJournals);
   const participants = await readTransferParticipants(manager, owner, ids);
   const splits = await readSplits(manager, owner);
