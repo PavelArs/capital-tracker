@@ -1161,7 +1161,7 @@ describe('recordSwap: a swap of two raw transactions', () => {
     ]);
   });
 
-  it('writes a new swap when the other side names another one', async () => {
+  it('writes a new swap when the other side is unclassified', async () => {
     world.swapHeads.set(SWAP_OLD, { version: 1, kind: 'create' });
     put(
       ADDR_A,

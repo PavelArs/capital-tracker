@@ -9,8 +9,9 @@ import { FactorInput, MfaService } from './mfa.service';
 import { createTotp, MfaCipher, recoveryHash } from './mfa-crypto';
 import { SessionService } from './session.service';
 
-// Source-level pin of factor completion: every check, its order and every write, with the
-// exact SQL and parameters. tests/e2e/mfa-db.cjs carries the real PostgreSQL evidence.
+// Source-level pin of factor completion: every check, its order and every write, with the SQL
+// (whitespace collapsed) and its exact parameters. tests/e2e/mfa-db.cjs carries the real
+// PostgreSQL evidence.
 const owner = '11111111-1111-4111-8111-111111111111';
 const version = '22222222-2222-4222-8222-222222222222';
 const hash = 'p'.repeat(64);

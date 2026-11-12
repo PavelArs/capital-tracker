@@ -1480,7 +1480,7 @@ describe('TradeService.mutateWithin characterization', () => {
 `);
   });
 
-  it('settles a corrected buy apart from a named transfer', async () => {
+  it('corrects a buy with a transfer named apart that the account does not hold', async () => {
     const state = world({ heads: [cash('100'), head()] });
     const input = buy({ settlementCurrency: 'USD', orderWithinTimestamp: 0 });
     expect(await mutate(state, 'correct', tradeA, input, transfer)).toMatchInlineSnapshot(`
