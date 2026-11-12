@@ -194,39 +194,50 @@ function shownValue(draft: Draft): string {
   return draft.offered && fits ? draft.suggested : draft.value;
 }
 
-function draftOf(operation: Operation): Draft {
-  const saved = operation.classification;
-  const value = saved?.value ?? null;
+/** CLS-BUY: what a saved buy or sale paid, as the form shows it. */
+function pricedFields(
+  value: ChainClassification | null,
+): Pick<Draft, 'amount' | 'currency' | 'rate'> {
   const priced = value && (value.type === 'buy' || value.type === 'sell') ? value : null;
-  const valued = value && !priced && 'valueUsd' in value ? value : null;
-  const moved = value?.type === 'transfer' ? value : null;
-  const swapped = value?.type === 'swap' && 'with' in value ? value : null;
-  const replaced = value?.type === 'swap' && 'record' in value ? value.record : null;
-  const recorded = value?.type === 'recorded' ? value.operation : null;
-  const returned = value?.type === 'pool-withdrawal' ? value : null;
-  const suggested = suggestedType(operation);
-  const together = suggested === 'swap' ? operation.chain?.swapWith : undefined;
-  const offered = value ? '' : suggestedValue(operation);
   return {
-    type: recorded ? 'swap' : (value?.type ?? suggested),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
+  };
+}
+
+/**
+ * The other side of a swap as the form keeps it: a transaction, a record to replace or the record
+ * it is; or the other leg the transaction suggests.
+ */
+function pairOf(operation: Operation, value: ChainClassification | null): string {
+  if (value?.type === 'swap' && 'with' in value)
+    return `${value.with.addressId}|${value.with.txid}`;
+  if (value?.type === 'swap' && 'record' in value)
+    return `replace:${value.record.id}:${value.record.version}`;
+  if (value?.type === 'recorded') return `${value.operation.kind}:${value.operation.id}`;
+  const together = suggestedType(operation) === 'swap' ? operation.chain?.swapWith : undefined;
+  return together ? `${together.addressId}|${together.txid}` : '';
+}
+
+function draftOf(operation: Operation): Draft {
+  const saved = operation.classification;
+  const value = saved?.value ?? null;
+  const valued =
+    value && value.type !== 'buy' && value.type !== 'sell' && 'valueUsd' in value ? value : null;
+  const moved = value?.type === 'transfer' ? value : null;
+  const returned = value?.type === 'pool-withdrawal' ? value : null;
+  const offered = value ? '' : suggestedValue(operation);
+  return {
+    type: value?.type === 'recorded' ? 'swap' : (value?.type ?? suggestedType(operation)),
+    ...pricedFields(value),
     value: valued?.valueUsd ?? '',
     suggested: offered,
     offered: offered !== '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     partner:
       moved?.partner && moved.partner.txid === operation.chain?.txid ? moved.partner.addressId : '',
-    pair: swapped
-      ? `${swapped.with.addressId}|${swapped.with.txid}`
-      : replaced
-        ? `replace:${replaced.id}:${replaced.version}`
-        : recorded
-          ? `${recorded.kind}:${recorded.id}`
-          : together
-            ? `${together.addressId}|${together.txid}`
-            : '',
+    pair: pairOf(operation, value),
     deposit: returned ? `${returned.deposit.addressId}|${returned.deposit.txid}` : '',
     partial: returned?.partial === true,
     comment: saved?.comment ?? '',
@@ -555,37 +566,55 @@ export function poolCandidates(operation: Operation, operations: Operation[]): [
 
 type Problem = 'amount' | 'rate' | 'value' | 'account' | 'partner' | 'pair' | 'deposit' | 'comment';
 
-function problems(draft: Draft, choosesAddress = false): Set<Problem> {
-  const found = new Set<Problem>();
-  if (draft.type === 'transfer') {
-    if (!draft.account) found.add('account');
-    else if (choosesAddress && !draft.partner) found.add('partner');
-  } else if (draft.type === 'swap') {
-    if (!draft.pair) found.add('pair');
-    if (!recordKey.test(draft.pair) && shownValue(draft).trim() && !positive(shownValue(draft)))
-      found.add('value');
-  } else if (draft.type === 'pool-withdrawal') {
-    if (!draft.deposit) found.add('deposit');
-    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
-  } else if (draft.type === 'pool-deposit') {
+/** A value that may be left empty, but not filled with anything but an amount above zero. */
+const badValue = (draft: Draft) =>
+  Boolean(shownValue(draft).trim()) && !positive(shownValue(draft));
+const optionalValue = (draft: Draft): Problem[] => (badValue(draft) ? ['value'] : []);
+const requiredValue = (draft: Draft): Problem[] => (positive(shownValue(draft)) ? [] : ['value']);
+
+function priceProblems(draft: Draft): Problem[] {
+  const found: Problem[] = positive(draft.amount) ? [] : ['amount'];
+  const rated = (draft.currency === 'EUR' || draft.currency === 'RUB') && draft.rate.trim();
+  if (rated && !positive(draft.rate)) found.push('rate');
+  return found;
+}
+
+/** What each answer needs filled in; a type without an entry needs a value above zero. */
+const typeChecks: Partial<Record<ChainType, (draft: Draft, choosesAddress: boolean) => Problem[]>> =
+  {
+    transfer: (draft, choosesAddress) => {
+      if (!draft.account) return ['account'];
+      return choosesAddress && !draft.partner ? ['partner'] : [];
+    },
+    swap: (draft) => [
+      ...(draft.pair ? [] : ['pair' as const]),
+      ...(!recordKey.test(draft.pair) && badValue(draft) ? ['value' as const] : []),
+    ],
+    'pool-withdrawal': (draft) => [
+      ...(draft.deposit ? [] : ['deposit' as const]),
+      ...optionalValue(draft),
+    ],
     // Nothing to enter: the coins stay the owner's.
-  } else if (draft.type === 'buy' || draft.type === 'sell') {
-    if (!positive(draft.amount)) found.add('amount');
-    if ((draft.currency === 'EUR' || draft.currency === 'RUB') && draft.rate.trim())
-      if (!positive(draft.rate)) found.add('rate');
-  } else if (
-    draft.type === 'reward' ||
-    draft.type === 'staking-reward' ||
-    draft.type === 'pool-reward' ||
-    draft.type === 'airdrop' ||
-    draft.type === 'fee'
-  ) {
-    if (shownValue(draft).trim() && !positive(shownValue(draft))) found.add('value');
-  } else if (draft.type && draft.type !== 'other' && !positive(shownValue(draft)))
-    found.add('value');
+    'pool-deposit': () => [],
+    buy: priceProblems,
+    sell: priceProblems,
+    reward: optionalValue,
+    'staking-reward': optionalValue,
+    'pool-reward': optionalValue,
+    airdrop: optionalValue,
+    fee: optionalValue,
+    other: () => [],
+  };
+
+function problems(draft: Draft, choosesAddress = false): Set<Problem> {
+  const check = draft.type === null ? null : (typeChecks[draft.type] ?? requiredValue);
+  const found = new Set<Problem>(check ? check(draft, choosesAddress) : []);
   if ([...draft.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
 }
+
+/** A value that may be left empty, as sent: null when empty. */
+const sentValue = (draft: Draft) => (shownValue(draft).trim() ? decimal(shownValue(draft)) : null);
 
 function answer(draft: Draft, txid: string): ChainClassification | null {
   switch (draft.type) {
@@ -603,7 +632,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
         return {
           type: 'swap',
           record: { kind: 'trade', id: replaced[1], version: Number(replaced[2]) },
-          valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+          valueUsd: sentValue(draft),
         };
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -615,7 +644,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'swap',
         with: { addressId, txid },
-        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+        valueUsd: sentValue(draft),
       };
     }
     case 'buy':
@@ -638,7 +667,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
     case 'fee':
       return {
         type: draft.type,
-        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+        valueUsd: sentValue(draft),
       };
     case 'other':
       return { type: 'other' };
@@ -649,7 +678,7 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
       return {
         type: 'pool-withdrawal',
         deposit: { addressId, txid },
-        valueUsd: shownValue(draft).trim() ? decimal(shownValue(draft)) : null,
+        valueUsd: sentValue(draft),
         ...(draft.partial ? { partial: true as const } : {}),
       };
     }
@@ -664,6 +693,70 @@ function answer(draft: Draft, txid: string): ChainClassification | null {
 /** POOL-UNDO: the deposit a withdrawal returns cannot change or be hidden first. */
 export const POOL_DEPOSIT_NAMED =
   'A pool withdrawal names this deposit; change the withdrawal first';
+
+/** The server's refusals of an answer (422) by message, as the form says them. */
+const refusals: Record<string, string> = {
+  'Choose the account of the other wallet first':
+    'The address on the other side is not in a wallet yet. Choose its wallet first.',
+  'Choose a transaction that moved coins the other way':
+    'The other transaction moved coins the same way. Choose one that moved them the other way.',
+  'A swap needs two different coins':
+    'Both transactions moved the same coin. Choose a transaction in another coin.',
+  'Choose the other side of the swap': 'Choose the transaction on the other side.',
+  // CLS-SWAP-RECORD: the record the swap would replace.
+  'Choose a record that moved coins the other way':
+    'That record moved coins the same way as this transaction. Choose another one.',
+  'That record is too far from this transaction':
+    'That record is more than a week from this transaction. Choose another one.',
+  'That record cannot be replaced by a swap':
+    'That record has a fee, an amount stated in RUB or EUR, or a purpose, which a swap cannot keep. Edit it or choose another one.',
+  'The books would not hold the coins without that record; change the entries that depend on it first':
+    'Later entries depend on that record, so it cannot be replaced now. Change those entries first.',
+  'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first':
+    'The records of this wallet do not hold those coins at that time. Classify its earlier transactions first.',
+  // CLS-RECORDED: the record this transaction would be.
+  'Choose an operation you added or imported':
+    'That record was deleted or was not added by you. Reload and choose another one.',
+  'Choose an operation of this wallet':
+    'That record is in another wallet. Choose one of the wallet of this address.',
+  'That operation did not move this coin this way':
+    'That record did not move this coin this way. Choose another one.',
+  // POOL-*: the deposit a withdrawal returns.
+  'Choose a pool deposit': 'Choose the pool deposit this withdrawal returns.',
+  'A pool withdrawal returns the coin of its deposit':
+    'That deposit was in another coin. Choose a deposit of the coin that came back.',
+  'Choose a pool deposit of this wallet':
+    'That deposit was made from another wallet. Choose a deposit of this wallet.',
+  'Choose a pool deposit made before this withdrawal':
+    'That deposit was made after this withdrawal. Choose an earlier one.',
+  'That pool deposit was already withdrawn':
+    'Another withdrawal already returns that deposit. Choose another one, or change that withdrawal first.',
+  [POOL_DEPOSIT_NAMED]: 'A pool withdrawal returns this deposit. Change that withdrawal first.',
+  // XFER-*: the other wallet of a transfer.
+  'Choose an account other than the one of this wallet':
+    'Choose a wallet other than the one of this address.',
+  'The other wallet did not receive what this one sent, less the network fee':
+    'The other wallet did not receive what this one sent, less the network fee. Choose another wallet or another type.',
+  'Several addresses of that account took part in this transaction':
+    'Several addresses of that wallet took part in this transaction. Choose the address that took the coins; if it is not offered, reload the page.',
+  'No stored price for this coin at that time':
+    'There is no stored price for this coin at that time. Enter the value in USD.',
+};
+
+/** What the form says of a refusal (422) with this message. */
+function refusalText(message: unknown): ReactNode {
+  if (message === 'Choose the account of this wallet first')
+    return (
+      <>
+        This wallet is not in an account yet. <Link to="/wallets">Choose its account</Link>, then
+        classify the transaction.
+      </>
+    );
+  if (typeof message === 'string' && refusals[message]) return refusals[message];
+  if (message?.toString().startsWith('That transaction is not the other side'))
+    return 'That address did not take part in this transfer: it must have moved the same coin the other way, less the network fee. Choose another address or another type.';
+  return 'This type does not fit the direction of the transaction.';
+}
 
 function failure(
   error: unknown,
@@ -688,75 +781,9 @@ function failure(
     return 'Could not reach the server. The answer may have been saved; saving it again is safe.';
   const status = error.response.status;
   const message = (error.response.data as { message?: unknown } | undefined)?.message;
-  if (status === 422 && message === 'Choose the account of this wallet first')
-    return (
-      <>
-        This wallet is not in an account yet. <Link to="/wallets">Choose its account</Link>, then
-        classify the transaction.
-      </>
-    );
-  if (status === 422 && message === 'Choose the account of the other wallet first')
-    return 'The address on the other side is not in a wallet yet. Choose its wallet first.';
-  if (status === 422 && message === 'Choose a transaction that moved coins the other way')
-    return 'The other transaction moved coins the same way. Choose one that moved them the other way.';
-  if (status === 422 && message === 'A swap needs two different coins')
-    return 'Both transactions moved the same coin. Choose a transaction in another coin.';
-  if (status === 422 && message === 'Choose the other side of the swap')
-    return 'Choose the transaction on the other side.';
-  const replaced: Record<string, string> = {
-    'Choose a record that moved coins the other way':
-      'That record moved coins the same way as this transaction. Choose another one.',
-    'That record is too far from this transaction':
-      'That record is more than a week from this transaction. Choose another one.',
-    'That record cannot be replaced by a swap':
-      'That record has a fee, an amount stated in RUB or EUR, or a purpose, which a swap cannot keep. Edit it or choose another one.',
-    'The books would not hold the coins without that record; change the entries that depend on it first':
-      'Later entries depend on that record, so it cannot be replaced now. Change those entries first.',
-    'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first':
-      'The records of this wallet do not hold those coins at that time. Classify its earlier transactions first.',
-  };
-  if (status === 422 && typeof message === 'string' && replaced[message]) return replaced[message];
+  if (status === 422) return refusalText(message);
   if (status === 409 && message === 'That record changed; reload and try again')
     return 'That record changed or was already used. Close this window, reload and try again.';
-  const records: Record<string, string> = {
-    'Choose an operation you added or imported':
-      'That record was deleted or was not added by you. Reload and choose another one.',
-    'Choose an operation of this wallet':
-      'That record is in another wallet. Choose one of the wallet of this address.',
-    'That operation did not move this coin this way':
-      'That record did not move this coin this way. Choose another one.',
-  };
-  if (status === 422 && typeof message === 'string' && records[message]) return records[message];
-  const pools: Record<string, string> = {
-    'Choose a pool deposit': 'Choose the pool deposit this withdrawal returns.',
-    'A pool withdrawal returns the coin of its deposit':
-      'That deposit was in another coin. Choose a deposit of the coin that came back.',
-    'Choose a pool deposit of this wallet':
-      'That deposit was made from another wallet. Choose a deposit of this wallet.',
-    'Choose a pool deposit made before this withdrawal':
-      'That deposit was made after this withdrawal. Choose an earlier one.',
-    'That pool deposit was already withdrawn':
-      'Another withdrawal already returns that deposit. Choose another one, or change that withdrawal first.',
-    [POOL_DEPOSIT_NAMED]: 'A pool withdrawal returns this deposit. Change that withdrawal first.',
-  };
-  if (status === 422 && typeof message === 'string' && pools[message]) return pools[message];
-  if (status === 422 && message === 'Choose an account other than the one of this wallet')
-    return 'Choose a wallet other than the one of this address.';
-  if (
-    status === 422 &&
-    message === 'The other wallet did not receive what this one sent, less the network fee'
-  )
-    return 'The other wallet did not receive what this one sent, less the network fee. Choose another wallet or another type.';
-  if (
-    status === 422 &&
-    message === 'Several addresses of that account took part in this transaction'
-  )
-    return 'Several addresses of that wallet took part in this transaction. Choose the address that took the coins; if it is not offered, reload the page.';
-  if (status === 422 && message?.toString().startsWith('That transaction is not the other side'))
-    return 'That address did not take part in this transfer: it must have moved the same coin the other way, less the network fee. Choose another address or another type.';
-  if (status === 422 && message === 'No stored price for this coin at that time')
-    return 'There is no stored price for this coin at that time. Enter the value in USD.';
-  if (status === 422) return 'This type does not fit the direction of the transaction.';
   if (status === 409)
     return 'This could not be saved: it was changed elsewhere, or the account would not hold enough on that date. Close this window, reload and try again.';
   return 'Could not save the classification. Try again.';
