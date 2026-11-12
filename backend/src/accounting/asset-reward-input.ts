@@ -1,6 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
-import { strictInteger, strictRecord } from '../shared/strict-input';
 import type { RewardCategory } from './asset-reward-types';
+import { bad, integer, journalPins, object } from './command-input';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { parseTradePageQuery } from './trade-input';
 
@@ -30,21 +29,6 @@ export interface RewardVoidInput extends RewardPins {
   expectedVersion: number;
 }
 
-const bad = (): never => {
-  throw new BadRequestException('Invalid accounting input');
-};
-function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
-  return strictRecord(raw, keys) ?? bad();
-}
-function integer(raw: unknown, minimum: number, maximum: number): number {
-  return strictInteger(raw, minimum, maximum) ?? bad();
-}
-function pins(row: Record<string, unknown>): RewardPins {
-  return {
-    requestId: parseUuid(row.requestId),
-    expectedJournalRevision: integer(row.expectedJournalRevision, 0, 10000),
-  };
-}
 function fields(row: Record<string, unknown>): RewardFields {
   if (row.assertReward !== true) return bad();
   if (
@@ -81,12 +65,12 @@ const pinKeys = ['requestId', 'expectedJournalRevision'] as const;
 
 export function parseRewardCreate(raw: unknown): RewardCreateInput {
   const row = object(raw, [...pinKeys, ...fieldKeys]);
-  return { ...pins(row), ...fields(row) };
+  return { ...journalPins(row), ...fields(row) };
 }
 export function parseRewardCorrection(raw: unknown): RewardCorrectionInput {
   const row = object(raw, [...pinKeys, 'expectedVersion', ...fieldKeys]);
   return {
-    ...pins(row),
+    ...journalPins(row),
     expectedVersion: integer(row.expectedVersion, 1, 10000),
     ...fields(row),
   };
@@ -94,7 +78,7 @@ export function parseRewardCorrection(raw: unknown): RewardCorrectionInput {
 export function parseRewardVoid(raw: unknown): RewardVoidInput {
   const row = object(raw, [...pinKeys, 'expectedVersion']);
   return {
-    ...pins(row),
+    ...journalPins(row),
     expectedVersion: integer(row.expectedVersion, 1, 10000),
   };
 }
