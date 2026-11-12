@@ -29,6 +29,7 @@ import {
   calculateOwnedTransfers,
   OwnedTransferCapacityError,
 } from '../accounting/owned-transfer-fifo';
+import type { OwnedAccountInput } from '../accounting/owned-transfer-types';
 import { readSplits } from '../accounting/share-split.store';
 import type { FifoSplit } from '../accounting/share-split-types';
 import { findOrCreateInstrument } from '../accounting/trade.service';
@@ -59,6 +60,7 @@ import type { TBankOperation, TBankPosition } from './tbank-client';
 import {
   type CashCurrency,
   type ImportInstrument,
+  type ImportInstruments,
   type JournalEntry,
   journalEntries,
   recordOf,
@@ -506,6 +508,7 @@ export class BrokerImportService {
     const accountHasEntries = await this.holdsEntries(manager, owner, account);
     const problems: ImportProblem[] = [];
     const cashGaps = new Map<string, string>();
+    const reported = history.positions ?? [];
     // Anything left out that moved money or shares would leave the records better off than the
     // account really is, so it stops the import; an operation that moved nothing does not.
     const left = plan.skipped.filter((item) => item.reason !== 'no-amount');
@@ -531,16 +534,7 @@ export class BrokerImportService {
         ),
       );
     const available = openingAssets(history.operations, history.positions);
-    if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
-      throw new BadRequestException('An opening holding is not in this broker history');
-    if (
-      splits.some(
-        (split) => !available.some((asset) => asset.asset === split.asset && splittable(asset)),
-      )
-    )
-      throw new BadRequestException(
-        'A split security is not a share or fund in this broker history',
-      );
+    assertInHistory(opening, splits, available);
     const instruments = await this.instruments(
       manager,
       owner,
@@ -549,46 +543,17 @@ export class BrokerImportService {
       created,
       opening,
       available,
-      [...history.operations, ...(history.positions ?? []).filter((row) => !row.virtual)],
+      [...history.operations, ...reported.filter((row) => !row.virtual)],
     );
     // SPLIT: the owner's saved splits and those declared now replay with the history; a declared
     // one already saved for the security on that instant is not a second split.
     const saved = await readSplits(manager, owner);
-    const declaredSplits = splits.map((split) => {
-      const instrument = instruments.securities.get(split.asset);
-      if (!instrument)
-        throw new BadRequestException('A split security is not in this broker history');
-      if (
-        saved.some(
-          (row) => row.instrumentId === instrument.id && row.effectiveAt === split.effectiveAt,
-        )
-      )
-        throw new BadRequestException('This split is already recorded');
-      return { instrumentId: instrument.id, effectiveAt: split.effectiveAt, ratio: split.ratio };
-    });
+    const declaredSplits = declaredSplitsOf(splits, instruments, saved);
     const replaySplits: FifoSplit[] = [
       ...saved,
       ...declaredSplits.map((split, index) => ({ splitId: `declared-${index}`, ...split })),
     ];
-    const openingLots = (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
-      const instrument = lot.asset.startsWith('cash:')
-        ? instruments.cash[lot.asset.slice(5) as CashCurrency]
-        : instruments.securities.get(lot.asset);
-      if (!instrument) throw new BadRequestException('Opening instrument is unavailable');
-      return {
-        lotId: `opening-${index}`,
-        openingRevision: 1,
-        ordinal: index + 1,
-        instrumentId: instrument.id,
-        instrumentName: instrument.name,
-        instrumentSymbol: instrument.symbol,
-        acquiredAt: lot.acquiredAt,
-        orderWithinTimestamp: index,
-        originalQuantity: lot.quantity,
-        originalCostUsd: lot.costUsd,
-        carriedQuantity: lot.quantity,
-      };
-    });
+    const openingLots = openingLotsOf(opening, instruments);
     const positions = openingPositions(
       openingLots.map((lot) => ({
         instrumentId: lot.instrumentId,
@@ -599,202 +564,67 @@ export class BrokerImportService {
     const built = journalEntries(plan.entries, instruments, await readFxRates(manager));
     for (const problem of built.problems) problems.push({ ...problem, ticker: '' });
     const entries = built.entries;
-    const trades = entries.flatMap((entry) => (entry.trade ? [entry.trade] : []));
-    const rewards = entries.flatMap((entry) => (entry.reward ? [entry.reward] : []));
-    const capitalReturns = entries.flatMap((entry) =>
-      entry.capitalReturn ? [entry.capitalReturn] : [],
-    );
     const journal = await readJournal(manager, owner, account);
     const coverageFrom =
       opening?.asOf ?? journal?.coverageFrom.toISOString() ?? AUTOMATIC_COVERAGE_FROM;
     const early = entries.find((entry) => recordOf(entry).occurredAt < coverageFrom);
     if (early) problems.push(problemOf('before-records', early));
     // The reward journal's caps hold across all the owner's accounts, not only this one.
-    const counts = await readRewardCounts(manager, owner);
-    const fitsRewardLimit =
-      plan.fitsRewardLimit &&
-      counts.activeCount + plan.rewards <= REWARD_LIMITS.activeRewards &&
-      counts.versionCount + plan.rewards <= REWARD_LIMITS.versions;
-    if (!fitsRewardLimit)
-      problems.push({ reason: 'too-many-rewards', occurredAt: null, ticker: '', operationIds: [] });
+    const fitsRewardLimit = fitsCaps(
+      plan.fitsRewardLimit,
+      plan.rewards,
+      await readRewardCounts(manager, owner),
+      REWARD_LIMITS.activeRewards,
+      REWARD_LIMITS.versions,
+    );
+    if (!fitsRewardLimit) problems.push(listed('too-many-rewards', []));
     // The same holds for capital returns.
-    const returned = await readCapitalReturnCounts(manager, owner);
-    const fitsCapitalReturnLimit =
-      plan.fitsCapitalReturnLimit &&
-      returned.activeCount + plan.capitalReturns <= CAPITAL_RETURN_LIMITS.activeReturns &&
-      returned.versionCount + plan.capitalReturns <= CAPITAL_RETURN_LIMITS.versions;
-    if (!fitsCapitalReturnLimit)
-      problems.push({
-        reason: 'too-many-capital-returns',
-        occurredAt: null,
-        ticker: '',
-        operationIds: [],
-      });
+    const fitsCapitalReturnLimit = fitsCaps(
+      plan.fitsCapitalReturnLimit,
+      plan.capitalReturns,
+      await readCapitalReturnCounts(manager, owner),
+      CAPITAL_RETURN_LIMITS.activeReturns,
+      CAPITAL_RETURN_LIMITS.versions,
+    );
+    if (!fitsCapitalReturnLimit) problems.push(listed('too-many-capital-returns', []));
     if ((journal?.currentRevision ?? 0) + entries.length > 10000)
-      problems.push({ reason: 'too-many-entries', occurredAt: null, ticker: '', operationIds: [] });
+      problems.push(listed('too-many-entries', []));
     // Past a cap the replay cannot run; that cap is already listed as the problem.
     if (plan.fitsTradeLimit && fitsRewardLimit && fitsCapitalReturnLimit && entries.length > 0) {
       const replayed = {
         accountId: account,
         coverageFrom,
-        trades,
-        rewards,
-        capitalReturns,
+        trades: entries.flatMap((entry) => (entry.trade ? [entry.trade] : [])),
+        rewards: entries.flatMap((entry) => (entry.reward ? [entry.reward] : [])),
+        capitalReturns: entries.flatMap((entry) =>
+          entry.capitalReturn ? [entry.capitalReturn] : [],
+        ),
         initialLots: openingLots,
       };
-      try {
-        const result = calculateOwnedTransfers(
-          [replayed],
-          [],
-          undefined,
-          replaySplits,
-        ).accounts.get(account)!;
-        // Both directions, including cash: opening lots cannot invent a current balance.
-        const actual = new Map<string, bigint>();
-        for (const lot of result.lots)
-          actual.set(
-            lot.instrumentId,
-            (actual.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.remainingQuantity),
-          );
-        const reported = new Map<string, { quantity: bigint; invalid: boolean }>();
-        for (const position of history.positions ?? []) {
-          if (position.virtual) continue;
-          const code = cashPositionCurrency(position);
-          const key = code ? `cash:${code}` : position.instrumentUid;
-          const invalid =
-            position.quantity.startsWith('-') ||
-            (position.quantity !== '0' &&
-              !['share', 'bond', 'etf'].includes(position.instrumentType) &&
-              !(position.instrumentType === 'currency' && position.currencyCode));
-          const before = reported.get(key);
-          reported.set(key, {
-            quantity:
-              (before?.quantity ?? 0n) +
-              (invalid ? 0n : canonicalDecimalToAtoms(position.quantity)),
-            invalid: invalid || (before?.invalid ?? false),
-          });
-        }
-        const keys = new Set([
-          ...instruments.securities.keys(),
-          'cash:USD',
-          'cash:EUR',
-          'cash:RUB',
-          ...reported.keys(),
-        ]);
-        for (const key of keys) {
-          const instrument = key.startsWith('cash:')
-            ? instruments.cash[key.slice(5) as CashCurrency]
-            : instruments.securities.get(key);
-          const quantity = instrument ? (actual.get(instrument.id) ?? 0n) : 0n;
-          const expected = reported.get(key);
-          if (quantity === 0n && (!expected || expected.quantity === 0n) && !expected?.invalid)
-            continue;
-          // Only cash T-Bank names an amount for: an absent position is not a reported zero.
-          if (key.startsWith('cash:') && instrument && expected && !expected.invalid)
-            if (quantity > expected.quantity)
-              cashGaps.set(key.slice(5).toLowerCase(), formatAtoms(quantity - expected.quantity));
-          if (!instrument || expected?.invalid || quantity !== (expected?.quantity ?? 0n))
-            problems.push({
-              reason: 'opening-holding',
-              occurredAt: null,
-              ticker: available.find((asset) => asset.asset === key)?.label ?? key,
-              operationIds: [],
-            });
-        }
-      } catch (error) {
-        if (error instanceof OwnedTransferCapacityError || !(error instanceof FifoHistoryError))
-          throw error;
-        // The first entry that spends more than the account holds then, such as a sale of
-        // shares that came in by a transfer the import leaves out.
-        const shortfall = firstShortfall({
-          accounts: new Map([[account, replayed]]),
-          transfers: [],
-          splits: replaySplits,
-        });
-        const id = shortfall?.operationId.replace(/^(trade|reward|capital-return):/, '');
-        const entry = entries.find(
-          (item) =>
-            (item.trade?.tradeId ??
-              item.reward?.rewardId ??
-              item.capitalReturn?.capitalReturnId) === id,
-        );
-        const deficient =
-          shortfall &&
-          [...Object.values(instruments.cash), ...instruments.securities.values()].find(
-            (instrument) => instrument.id === shortfall.instrumentId,
-          );
-        problems.push(
-          entry && shortfall
-            ? {
-                ...problemOf('not-held', entry),
-                ticker: deficient?.symbol ?? deficient?.name ?? entry.source.ticker,
-                availableQuantity: shortfall.availableQuantity,
-                requiredQuantity: shortfall.requiredQuantity,
-                missingQuantity: shortfall.missingQuantity,
-              }
-            : { reason: 'not-held', occurredAt: null, ticker: '', operationIds: [] },
-        );
-      }
+      checkReplay(
+        replayed,
+        replaySplits,
+        { positions: reported, entries, instruments, available },
+        { problems, cashGaps },
+      );
     }
     // The hash pins what the owner reviewed: the plan, the amounts it becomes at the rates stored
     // then, the saved instrument each linked UID or asset resolves to (new ones aside, since the
     // preview only names the ones it would create) and what stood in the way, so a rate or link
     // that arrives later cannot slip an unreviewed entry in.
-    const derived = entries.map((entry) => {
-      const { trade, reward, capitalReturn } = entry;
-      if (trade)
-        return [
-          trade.side,
-          trade.quantity,
-          trade.grossUsd,
-          trade.feeUsd,
-          trade.paid ?? null,
-          trade.purpose ?? null,
-          trade.settlement?.quantity ?? null,
-        ];
-      if (capitalReturn)
-        return [
-          'capital-return',
-          capitalReturn.amount,
-          capitalReturn.amountUsd,
-          capitalReturn.paidCurrency,
-          entry.rate,
-        ];
-      return [reward.quantity, reward.acquisitionBasisUsd, reward.incomeValueUsd];
-    });
     const previewHash = createHash('sha256')
       .update(
         JSON.stringify([
           'tbank-import-v4',
           opening ?? null,
           splits,
-          history.operations
-            .map((operation) => [
-              operation.id,
-              operation.instrumentUid,
-              operation.positionUid ?? '',
-              operation.providerInstrumentUid ?? operation.instrumentUid,
-              operation.assetUid ?? '',
-            ])
-            .sort((a, b) => a[0].localeCompare(b[0])),
-          (history.positions ?? [])
-            .filter((position) => !position.virtual)
-            .map((position) => [
-              position.instrumentUid,
-              position.positionUid ?? '',
-              position.providerInstrumentUid ?? position.instrumentUid,
-              position.instrumentType,
-              position.quantity,
-              position.currentPriceCurrency,
-              position.averagePriceCurrency,
-              position.currencyCode ?? '',
-            ])
-            .sort((a, b) => a[0].localeCompare(b[0])),
+          hashedOperations(history.operations),
+          hashedPositions(reported),
           instruments.linked,
           account,
           plan.grouping,
           plan.entries,
-          derived,
+          entries.map(derivedAmounts),
           problems,
         ]),
       )
@@ -991,6 +821,285 @@ function problemOf(reason: ImportProblem['reason'], entry: JournalEntry): Import
     operationIds: entry.source.operationIds,
   };
 }
+
+/** The instrument of an asset key: `cash:<code>` names cash, any other key a security's UID. */
+const instrumentOf = (instruments: ImportInstruments, key: string) =>
+  key.startsWith('cash:')
+    ? instruments.cash[key.slice(5) as CashCurrency]
+    : instruments.securities.get(key);
+
+/** Refuses opening holdings and splits of assets this history does not hold. */
+function assertInHistory(
+  opening: BrokerOpening | undefined,
+  splits: readonly BrokerSplit[],
+  available: ReturnType<typeof openingAssets>,
+) {
+  if (opening?.lots.some((lot) => !available.some((asset) => asset.asset === lot.asset)))
+    throw new BadRequestException('An opening holding is not in this broker history');
+  if (
+    splits.some(
+      (split) => !available.some((asset) => asset.asset === split.asset && splittable(asset)),
+    )
+  )
+    throw new BadRequestException('A split security is not a share or fund in this broker history');
+}
+
+/** The declared splits by their accounting instrument; one already saved is refused. */
+function declaredSplitsOf(
+  splits: readonly BrokerSplit[],
+  instruments: ImportInstruments,
+  saved: readonly FifoSplit[],
+) {
+  return splits.map((split) => {
+    const instrument = instruments.securities.get(split.asset);
+    if (!instrument)
+      throw new BadRequestException('A split security is not in this broker history');
+    if (
+      saved.some(
+        (row) => row.instrumentId === instrument.id && row.effectiveAt === split.effectiveAt,
+      )
+    )
+      throw new BadRequestException('This split is already recorded');
+    return { instrumentId: instrument.id, effectiveAt: split.effectiveAt, ratio: split.ratio };
+  });
+}
+
+/** The opening holdings as the carried-in lots the import saves. */
+function openingLotsOf(
+  opening: BrokerOpening | undefined,
+  instruments: ImportInstruments,
+): FifoCarryInInput[] {
+  return (opening?.lots ?? []).map((lot, index): FifoCarryInInput => {
+    const instrument = instrumentOf(instruments, lot.asset);
+    if (!instrument) throw new BadRequestException('Opening instrument is unavailable');
+    return {
+      lotId: `opening-${index}`,
+      openingRevision: 1,
+      ordinal: index + 1,
+      instrumentId: instrument.id,
+      instrumentName: instrument.name,
+      instrumentSymbol: instrument.symbol,
+      acquiredAt: lot.acquiredAt,
+      orderWithinTimestamp: index,
+      originalQuantity: lot.quantity,
+      originalCostUsd: lot.costUsd,
+      carriedQuantity: lot.quantity,
+    };
+  });
+}
+
+/** Whether a journal still keeps the plan's `added` entries under its caps across the owner. */
+const fitsCaps = (
+  planFits: boolean,
+  added: number,
+  counts: { activeCount: number; versionCount: number },
+  active: number,
+  versions: number,
+) => planFits && counts.activeCount + added <= active && counts.versionCount + added <= versions;
+
+/** The units each instrument holds after the replay. */
+function replayedQuantities(lots: readonly { instrumentId: string; remainingQuantity: string }[]) {
+  const actual = new Map<string, bigint>();
+  for (const lot of lots)
+    actual.set(
+      lot.instrumentId,
+      (actual.get(lot.instrumentId) ?? 0n) + canonicalDecimalToAtoms(lot.remainingQuantity),
+    );
+  return actual;
+}
+
+/**
+ * The units T-Bank reports for each security UID or `cash:<code>`; a negative quantity or one of
+ * a kind the import does not keep makes the holding invalid.
+ */
+function reportedQuantities(positions: readonly TBankPosition[]) {
+  const reported = new Map<string, { quantity: bigint; invalid: boolean }>();
+  for (const position of positions) {
+    if (position.virtual) continue;
+    const code = cashPositionCurrency(position);
+    const key = code ? `cash:${code}` : position.instrumentUid;
+    const invalid =
+      position.quantity.startsWith('-') ||
+      (position.quantity !== '0' &&
+        !['share', 'bond', 'etf'].includes(position.instrumentType) &&
+        !(position.instrumentType === 'currency' && position.currencyCode));
+    const before = reported.get(key);
+    reported.set(key, {
+      quantity:
+        (before?.quantity ?? 0n) + (invalid ? 0n : canonicalDecimalToAtoms(position.quantity)),
+      invalid: invalid || (before?.invalid ?? false),
+    });
+  }
+  return reported;
+}
+
+/**
+ * The replayed holdings against what T-Bank reports, in both directions and including cash:
+ * opening lots cannot invent a current balance. Each that differs is a problem; cash above what
+ * T-Bank reports is also a BROKER-CASH-GAP, by lower-case currency code.
+ */
+function compareHoldings(
+  lots: readonly { instrumentId: string; remainingQuantity: string }[],
+  positions: readonly TBankPosition[],
+  instruments: ImportInstruments,
+  available: ReturnType<typeof openingAssets>,
+  found: { problems: ImportProblem[]; cashGaps: Map<string, string> },
+) {
+  const actual = replayedQuantities(lots);
+  const reported = reportedQuantities(positions);
+  const keys = new Set([
+    ...instruments.securities.keys(),
+    'cash:USD',
+    'cash:EUR',
+    'cash:RUB',
+    ...reported.keys(),
+  ]);
+  for (const key of keys) {
+    const instrument = instrumentOf(instruments, key);
+    const quantity = instrument ? (actual.get(instrument.id) ?? 0n) : 0n;
+    const expected = reported.get(key);
+    if (noneEitherWay(quantity, expected)) continue;
+    // Only cash T-Bank names an amount for: an absent position is not a reported zero.
+    if (
+      key.startsWith('cash:') &&
+      instrument &&
+      expected &&
+      !expected.invalid &&
+      quantity > expected.quantity
+    )
+      found.cashGaps.set(key.slice(5).toLowerCase(), formatAtoms(quantity - expected.quantity));
+    if (!instrument || expected?.invalid || quantity !== (expected?.quantity ?? 0n))
+      found.problems.push({
+        reason: 'opening-holding',
+        occurredAt: null,
+        ticker: available.find((asset) => asset.asset === key)?.label ?? key,
+        operationIds: [],
+      });
+  }
+}
+
+/** Neither the replay nor T-Bank holds any of it, and T-Bank reports nothing invalid. */
+const noneEitherWay = (quantity: bigint, expected?: { quantity: bigint; invalid: boolean }) =>
+  quantity === 0n && (!expected || expected.quantity === 0n) && !expected?.invalid;
+
+/**
+ * Replays the account as its journal will. A holding that then differs from what T-Bank reports,
+ * cash above it, or else the first entry that spends more than is held goes to `found`.
+ */
+function checkReplay(
+  replayed: OwnedAccountInput,
+  replaySplits: readonly FifoSplit[],
+  review: {
+    positions: readonly TBankPosition[];
+    entries: readonly JournalEntry[];
+    instruments: ImportInstruments;
+    available: ReturnType<typeof openingAssets>;
+  },
+  found: { problems: ImportProblem[]; cashGaps: Map<string, string> },
+) {
+  const account = replayed.accountId;
+  try {
+    const result = calculateOwnedTransfers([replayed], [], undefined, replaySplits).accounts.get(
+      account,
+    )!;
+    compareHoldings(result.lots, review.positions, review.instruments, review.available, found);
+  } catch (error) {
+    if (error instanceof OwnedTransferCapacityError || !(error instanceof FifoHistoryError))
+      throw error;
+    found.problems.push(
+      shortfallProblem(account, replayed, replaySplits, review.entries, review.instruments),
+    );
+  }
+}
+
+/**
+ * The first entry that spends more than the account holds then, such as a sale of shares that
+ * came in by a transfer the import leaves out.
+ */
+function shortfallProblem(
+  account: string,
+  replayed: OwnedAccountInput,
+  replaySplits: readonly FifoSplit[],
+  entries: readonly JournalEntry[],
+  instruments: ImportInstruments,
+): ImportProblem {
+  const shortfall = firstShortfall({
+    accounts: new Map([[account, replayed]]),
+    transfers: [],
+    splits: replaySplits,
+  });
+  const id = shortfall?.operationId.replace(/^(trade|reward|capital-return):/, '');
+  const entry = entries.find(
+    (item) =>
+      (item.trade?.tradeId ?? item.reward?.rewardId ?? item.capitalReturn?.capitalReturnId) === id,
+  );
+  const deficient =
+    shortfall &&
+    [...Object.values(instruments.cash), ...instruments.securities.values()].find(
+      (instrument) => instrument.id === shortfall.instrumentId,
+    );
+  return entry && shortfall
+    ? {
+        ...problemOf('not-held', entry),
+        ticker: deficient?.symbol ?? deficient?.name ?? entry.source.ticker,
+        availableQuantity: shortfall.availableQuantity,
+        requiredQuantity: shortfall.requiredQuantity,
+        missingQuantity: shortfall.missingQuantity,
+      }
+    : { reason: 'not-held', occurredAt: null, ticker: '', operationIds: [] };
+}
+
+/** The amounts an entry becomes at the rates stored now, as the preview hash pins them. */
+function derivedAmounts(entry: JournalEntry) {
+  const { trade, reward, capitalReturn } = entry;
+  if (trade)
+    return [
+      trade.side,
+      trade.quantity,
+      trade.grossUsd,
+      trade.feeUsd,
+      trade.paid ?? null,
+      trade.purpose ?? null,
+      trade.settlement?.quantity ?? null,
+    ];
+  if (capitalReturn)
+    return [
+      'capital-return',
+      capitalReturn.amount,
+      capitalReturn.amountUsd,
+      capitalReturn.paidCurrency,
+      entry.rate,
+    ];
+  return [reward.quantity, reward.acquisitionBasisUsd, reward.incomeValueUsd];
+}
+
+/** Each operation's identities, as the preview hash pins them. */
+const hashedOperations = (operations: readonly TBankOperation[]) =>
+  operations
+    .map((operation) => [
+      operation.id,
+      operation.instrumentUid,
+      operation.positionUid ?? '',
+      operation.providerInstrumentUid ?? operation.instrumentUid,
+      operation.assetUid ?? '',
+    ])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+
+/** Each held position's identities and holding, as the preview hash pins them. */
+const hashedPositions = (positions: readonly TBankPosition[]) =>
+  positions
+    .filter((position) => !position.virtual)
+    .map((position) => [
+      position.instrumentUid,
+      position.positionUid ?? '',
+      position.providerInstrumentUid ?? position.instrumentUid,
+      position.instrumentType,
+      position.quantity,
+      position.currentPriceCurrency,
+      position.averagePriceCurrency,
+      position.currencyCode ?? '',
+    ])
+    .sort((a, b) => a[0].localeCompare(b[0]));
 
 /**
  * Saved splits of the securities earlier imports linked, by this history's own UIDs, for the
