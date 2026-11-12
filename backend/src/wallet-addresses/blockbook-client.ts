@@ -1,9 +1,8 @@
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
 import type { Direction } from './esplora-client';
+import { boundedRequest, errorCode, loggedDetail, newConnectionAgents } from './provider-client';
 
 // Blockbook (ZCASH-SYNC), the open-source indexer behind Trezor Suite. Trezor's public Zcash
 // instances answer 403 to a server, so the app reads them only as a fallback without a key; a
@@ -17,7 +16,6 @@ export const BLOCKBOOK_PAGE_SIZE = 10;
 const TREZOR_BASE_URLS = ['https://zec1.trezor.io', 'https://zec5.trezor.io'];
 const NOWNODES_BASE_URLS = ['https://zecbook.nownodes.io'];
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
-const LOGGED_CHARS = 160;
 const ADDRESS_OR_HASH = /\bt[13][1-9A-HJ-NP-Za-km-z]{33}\b|\b[0-9a-fA-F]{64}\b/g;
 const MAX_HEIGHT = 2 ** 31 - 1;
 const MAX_UNIX_SECONDS = 253402300799;
@@ -228,10 +226,7 @@ export class BlockbookClient {
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
-  private readonly agents = {
-    httpAgent: new HttpAgent({ keepAlive: false }),
-    httpsAgent: new HttpsAgent({ keepAlive: false }),
-  };
+  private readonly agents = newConnectionAgents();
 
   constructor(
     options: {
@@ -304,15 +299,8 @@ export class BlockbookClient {
     try {
       response = await axios.get<string>(`${baseUrl}${path}`, {
         params,
-        // axios' timeout is an idle timeout; the signal bounds the whole response.
-        timeout: this.timeoutMs,
-        signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
+        ...boundedRequest(this.timeoutMs, MAX_BODY_BYTES),
         ...this.agents,
-        maxContentLength: MAX_BODY_BYTES,
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-        validateStatus: () => true,
         headers: { Accept: 'application/json', ...(this.apiKey ? { 'api-key': this.apiKey } : {}) },
       });
     } catch (error) {
@@ -347,17 +335,7 @@ export class BlockbookClient {
       this.secrets
         .reduce((safe, secret) => safe.split(secret).join('<key>'), text)
         .replace(ADDRESS_OR_HASH, '<id>');
-    const said = redact(detail.slice(0, LOGGED_CHARS + 100))
-      .slice(0, LOGGED_CHARS)
-      .replace(/\s+/g, ' ')
-      .trim();
+    const said = loggedDetail(detail, redact);
     this.logger.warn(`Blockbook ${redact(path)} ${outcome}${said ? `: ${said}` : ''}`);
   }
-}
-
-function errorCode(error: unknown): string {
-  const failure = error as { code?: unknown; name?: unknown; cause?: { code?: unknown } };
-  for (const value of [failure?.code, failure?.cause?.code, failure?.name])
-    if (typeof value === 'string' && value) return value;
-  return 'unknown error';
 }

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { boundedRequest, integer, invalid, list, record } from './provider-client';
 
 // Esplora returns confirmed address history newest first, 25 transactions per page.
 export const PAGE_SIZE = 25;
@@ -25,25 +26,8 @@ export type PageResult =
   | { ok: false; reason: ProviderFailure };
 export type CountResult = { ok: true; count: number } | { ok: false; reason: ProviderFailure };
 
-class InvalidResponse extends Error {}
-
 const hash = /^[0-9a-f]{64}$/;
-function invalid(): never {
-  throw new InvalidResponse();
-}
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : invalid();
-}
-function amount(value: unknown, maximum = Number.MAX_SAFE_INTEGER): number {
-  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum
-    ? (value as number)
-    : invalid();
-}
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : invalid();
-}
+const amount = (value: unknown, maximum = Number.MAX_SAFE_INTEGER) => integer(value, maximum);
 function owner(value: Record<string, unknown>): string | null {
   const address = value.scriptpubkey_address;
   if (address === undefined) return null;
@@ -171,14 +155,7 @@ export class EsploraClient {
     let response: { status: number; data: string };
     try {
       response = await axios.get<string>(`${this.baseUrl}${path}`, {
-        // axios' timeout is an idle timeout; the signal bounds the whole response.
-        timeout: this.timeoutMs,
-        signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
-        maxContentLength: MAX_BODY_BYTES,
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-        validateStatus: () => true,
+        ...boundedRequest(this.timeoutMs, MAX_BODY_BYTES),
         headers: { Accept: 'application/json' },
       });
     } catch {
