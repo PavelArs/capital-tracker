@@ -1,8 +1,15 @@
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
+import {
+  boundedRequest,
+  errorCode,
+  invalid,
+  list,
+  loggedDetail,
+  newConnectionAgents,
+  record,
+} from './provider-client';
 import { isStellarAddress } from './stellar-address';
 
 // Horizon (STELLAR-SYNC), the Stellar Development Foundation's free public API, no key. Every
@@ -16,7 +23,6 @@ export const HORIZON_TRANSACTION_PAGE_SIZE = 5;
 export const HORIZON_PAYMENT_PAGE_SIZE = 10;
 const DEFAULT_BASE_URL = 'https://horizon.stellar.org';
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
-const LOGGED_CHARS = 160;
 const ADDRESS_OR_HASH = /\b[GM][A-Z2-7]{55,68}\b|\b[0-9a-fA-F]{64}\b/g;
 const MAX_LEDGER = 2 ** 31 - 1;
 // A total order ID (TOID): the ledger in the high 32 bits, then the transaction's place in it
@@ -60,19 +66,6 @@ type Failure = { ok: false; reason: StepFailure };
 export type PageResult<T> = { ok: true; items: T[] } | Failure;
 export type UnitsResult = { ok: true; units: bigint } | Failure;
 
-class InvalidResponse extends Error {}
-
-function invalid(): never {
-  throw new InvalidResponse();
-}
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : invalid();
-}
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : invalid();
-}
 function hash(value: unknown): string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value) ? value : invalid();
 }
@@ -242,10 +235,7 @@ export class HorizonClient {
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
-  private readonly agents = {
-    httpAgent: new HttpAgent({ keepAlive: false }),
-    httpsAgent: new HttpsAgent({ keepAlive: false }),
-  };
+  private readonly agents = newConnectionAgents();
 
   constructor(options: { baseUrl?: string; timeoutMs?: number; pauseMs?: number } = {}) {
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
@@ -327,15 +317,8 @@ export class HorizonClient {
     try {
       response = await axios.get<string>(`${this.baseUrl}${path}`, {
         params,
-        // axios' timeout is an idle timeout; the signal bounds the whole response.
-        timeout: this.timeoutMs,
-        signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
+        ...boundedRequest(this.timeoutMs, MAX_BODY_BYTES),
         ...this.agents,
-        maxContentLength: MAX_BODY_BYTES,
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-        validateStatus: () => true,
         headers: { Accept: 'application/hal+json, application/json' },
       });
     } catch (error) {
@@ -359,19 +342,9 @@ export class HorizonClient {
   /** The sync status shows only a summary; the log keeps what Horizon said, never an ID. */
   private logRefusal(path: string, outcome: string, detail: string) {
     const redact = (text: string) => text.replace(ADDRESS_OR_HASH, '<id>');
-    const said = redact(detail.slice(0, LOGGED_CHARS + 100))
-      .slice(0, LOGGED_CHARS)
-      .replace(/\s+/g, ' ')
-      .trim();
+    const said = loggedDetail(detail, redact);
     this.logger.warn(
       `Horizon ${redact(path).replace(/\/\d+\//, '/<id>/')} ${outcome}${said ? `: ${said}` : ''}`,
     );
   }
-}
-
-function errorCode(error: unknown): string {
-  const failure = error as { code?: unknown; name?: unknown; cause?: { code?: unknown } };
-  for (const value of [failure?.code, failure?.cause?.code, failure?.name])
-    if (typeof value === 'string' && value) return value;
-  return 'unknown error';
 }

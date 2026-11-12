@@ -1,8 +1,16 @@
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
+import {
+  boundedRequest,
+  errorCode,
+  integer,
+  invalid,
+  list,
+  loggedDetail,
+  newConnectionAgents,
+  record,
+} from './provider-client';
 import { tronHex } from './tron-address';
 
 // TronGrid (TRON-SYNC), Tron's free public API: the account lists of its v1 index and the
@@ -22,7 +30,6 @@ const DEFAULT_TRONSCAN_URL = 'https://apilist.tronscanapi.com';
 export const TRONSCAN_PAGE_SIZE = 10;
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 // A refusal is logged with its first characters, never an address, a hash or the key.
-const LOGGED_CHARS = 160;
 const ADDRESS_OR_HASH = /\bT[1-9A-HJ-NP-Za-km-z]{33}\b|\b[0-9a-fA-F]{40,64}\b/g;
 // Milliseconds since 1970 up to year 9999.
 const MAX_TIME_MS = 253402300799999;
@@ -130,24 +137,6 @@ export interface TronscanInternal {
   to: string | null;
 }
 
-class InvalidResponse extends Error {}
-
-function invalid(): never {
-  throw new InvalidResponse();
-}
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : invalid();
-}
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : invalid();
-}
-function integer(value: unknown, maximum: number): number {
-  return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum
-    ? (value as number)
-    : invalid();
-}
 /** A non-negative amount; Tron's JSON omits zero, and writes amounts as numbers. */
 function amount(value: unknown): bigint {
   if (value === undefined) return 0n;
@@ -349,10 +338,7 @@ export class TronGridClient {
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
-  private readonly agents = {
-    httpAgent: new HttpAgent({ keepAlive: false }),
-    httpsAgent: new HttpsAgent({ keepAlive: false }),
-  };
+  private readonly agents = newConnectionAgents();
 
   constructor(
     options: {
@@ -477,15 +463,8 @@ export class TronGridClient {
     try {
       response = await axios.get<string>(`${tronscan ? this.tronscanUrl : this.baseUrl}${path}`, {
         params,
-        // axios' timeout is an idle timeout; the signal bounds the whole response.
-        timeout: this.timeoutMs,
-        signal: AbortSignal.timeout(this.timeoutMs),
-        maxRedirects: 0,
+        ...boundedRequest(this.timeoutMs, MAX_BODY_BYTES),
         ...this.agents,
-        maxContentLength: MAX_BODY_BYTES,
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-        validateStatus: () => true,
         headers: {
           Accept: 'application/json',
           // The TronGrid key is TronGrid's alone; Tronscan is asked without one.
@@ -522,18 +501,7 @@ export class TronGridClient {
   private logRefusal(provider: string, path: string, outcome: string, detail: string) {
     const redact = (text: string) =>
       (this.apiKey ? text.split(this.apiKey).join('<key>') : text).replace(ADDRESS_OR_HASH, '<id>');
-    // Redacted before the cut, so no identifier is left half-shown at the end.
-    const said = redact(detail.slice(0, LOGGED_CHARS + 100))
-      .slice(0, LOGGED_CHARS)
-      .replace(/\s+/g, ' ')
-      .trim();
+    const said = loggedDetail(detail, redact);
     this.logger.warn(`${provider} ${redact(path)} ${outcome}${said ? `: ${said}` : ''}`);
   }
-}
-
-function errorCode(error: unknown): string {
-  const failure = error as { code?: unknown; name?: unknown; cause?: { code?: unknown } };
-  for (const value of [failure?.code, failure?.cause?.code, failure?.name])
-    if (typeof value === 'string' && value) return value;
-  return 'unknown error';
 }
