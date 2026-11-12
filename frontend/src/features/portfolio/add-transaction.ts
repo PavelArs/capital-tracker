@@ -176,13 +176,18 @@ export function problems(
   if (positive(entry.amount) === null) found.add('amount');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date) || entry.date > today) found.add('date');
   if (entry.time && !/^\d{2}:\d{2}$/.test(entry.time)) found.add('time');
-  if (kind !== 'transfer' && positive(entry.total) === null)
-    if (!valueOptional(kind) || entry.total.trim()) found.add('total');
+  if (totalMissing(entry, kind)) found.add('total');
   if (priced && needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
   if ((priced || kind === 'transfer') && entry.fee && decimal(entry.fee) === null) found.add('fee');
   if (carriesComment(kind) && [...entry.comment.trim()].length > MAX_COMMENT_LENGTH)
     found.add('comment');
   return found;
+}
+
+/** A transfer has no total; a reward or airdrop may leave it empty, but not unreadable. */
+function totalMissing(entry: TransactionEntry, kind: EntryKind): boolean {
+  if (kind === 'transfer' || positive(entry.total) !== null) return false;
+  return !valueOptional(kind) || entry.total.trim() !== '';
 }
 
 /** The instant the entry stands for: its date at the time given, or at 00:00 UTC. */
