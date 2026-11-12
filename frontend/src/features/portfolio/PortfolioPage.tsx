@@ -9,7 +9,16 @@ import type {
 } from '@api/portfolio-valuation.api';
 import { useToast } from '@contexts/ToastContext';
 import { sumDecimals } from '@utils/decimal';
-import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  type Dispatch,
+  Fragment,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRowsLayout } from '@/ui/useMediaQuery';
 import AddBrokerAccountDialog from '../broker/AddBrokerAccountDialog';
@@ -28,7 +37,7 @@ import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useAccountClasses } from '../shell/useAccountClasses';
 import { useCachedRead } from '../shell/useCachedRead';
-import { useValueView } from '../shell/value-view';
+import { useValueView, type ValueView } from '../shell/value-view';
 import AddAssetDialog from './AddAssetDialog';
 import AddToPortfolioDialog, { type AddChoice } from './AddToPortfolioDialog';
 import { shareText } from './Allocation';
@@ -242,7 +251,7 @@ function BankAsset({
 function BankInterest({ deposit }: { deposit: Deposit }) {
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  const shown = shownInterest(deposit, view === 'real' ? basis : null);
+  const shown = shownInterest(deposit, viewBasis(view, basis));
   if (shown.amount === null) return <>{DASH}</>;
   return (
     <>
@@ -1134,6 +1143,171 @@ function AssetsList({
   });
 }
 
+/** What Add opens: the kind picker, then the kind's own form. */
+type Adding = 'pick' | Exclude<AddChoice, 'crypto'>;
+
+/** The inflation basis the page reads under Real, or null under Nominal. */
+const viewBasis = (view: ValueView, basis: InflationBasis) => (view === 'real' ? basis : null);
+
+/**
+ * Under Real the profit column is the profit after inflation on the chosen basis. An answer saved
+ * before real figures existed has none to show, so it stays nominal until a fresh one.
+ */
+const realBasis = (view: ValueView, portfolio: PortfolioValuation | null, basis: InflationBasis) =>
+  view === 'real' && portfolio?.real !== undefined ? basis : null;
+
+/** A class with no assets gets no chip; a chosen class that no longer has any shows them all. */
+const activeFilter = (filter: Filter, count: (value: Filter) => number): Filter =>
+  filter !== 'all' && count(filter) === 0 ? 'all' : filter;
+
+/** No asset, bank product or deposit value to list, and the bank products were read. */
+const nothingToList = (
+  assets: readonly AssetValuation[],
+  deposits: readonly Deposit[],
+  portfolio: PortfolioValuation,
+  bankError: unknown,
+  banksStale: boolean,
+) =>
+  assets.length === 0 &&
+  deposits.length === 0 &&
+  !hasDeposits(portfolio) &&
+  !bankError &&
+  !banksStale;
+
+/** The assets as phone rows with their own Sort by, or as the table sorted by its headers. */
+function AssetsView({
+  phone,
+  groups,
+  onToggle,
+  currency,
+  asked,
+  now,
+  chains,
+  sort,
+  shown,
+  onSort,
+  real,
+}: {
+  phone: boolean;
+  groups: AssetGroup[];
+  onToggle: (key: AssetClassFilter) => void;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  now: Date;
+  chains: TokenChains;
+  /** The order chosen; a phone shows `shown`, the orders its Sort by can name. */
+  sort: AssetSort;
+  shown: AssetSort;
+  onSort: Dispatch<SetStateAction<AssetSort>>;
+  real: InflationBasis | null;
+}) {
+  if (!phone)
+    return (
+      <AssetsTable
+        groups={groups}
+        onToggle={onToggle}
+        currency={currency}
+        asked={asked}
+        now={now}
+        chains={chains}
+        sort={sort}
+        onSort={(key) => onSort((current) => nextSort(current, key))}
+        real={real}
+      />
+    );
+  return (
+    <>
+      <label className="portfolio-sort">
+        Sort by
+        <Select
+          size="sm"
+          value={shown.key}
+          onChange={(event) => {
+            const key = event.target.value as SortKey;
+            onSort({ key, direction: firstDirection(key) });
+          }}
+        >
+          {phoneSorts(real !== null).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <AssetsList
+        groups={groups}
+        onToggle={onToggle}
+        currency={currency}
+        asked={asked}
+        chains={chains}
+        real={real}
+      />
+    </>
+  );
+}
+
+/** Shows or hides the assets no longer held; a search lists them anyway. */
+function SoldToggle({
+  count,
+  search,
+  shown,
+  onToggle,
+}: {
+  count: number;
+  search: string;
+  shown: boolean;
+  onToggle: () => void;
+}) {
+  if (count === 0 || search.trim()) return null;
+  return (
+    <Button size="sm" variant="ghost" onClick={onToggle}>
+      {shown
+        ? 'Hide assets no longer held'
+        : `Show ${count} ${count === 1 ? 'asset' : 'assets'} no longer held`}
+    </Button>
+  );
+}
+
+/** The bank products could not be read: the last rows stay, or their value in the summary. */
+function BanksBanner({
+  error,
+  stale,
+  kept,
+  onRetry,
+}: {
+  error: unknown;
+  stale: boolean;
+  kept: boolean;
+  onRetry: () => void;
+}) {
+  if (!error && !stale) return null;
+  return (
+    <Banner
+      tone="warn"
+      role="alert"
+      action={
+        <Button size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    >
+      {kept
+        ? 'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.'
+        : 'Could not load bank products. Their value remains in the portfolio summary.'}
+    </Banner>
+  );
+}
+
+/** Why the list is empty: nothing matches the search, or the class holds nothing. */
+function NoneMatch({ rows, search }: { rows: number; search: string }) {
+  if (rows > 0) return null;
+  return (
+    <p className="ui-none">
+      {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this class.'}
+    </p>
+  );
+}
+
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
 export default function PortfolioPage() {
   const [asked] = useAskedCurrency();
@@ -1163,11 +1337,9 @@ export default function PortfolioPage() {
   const phone = useRowsLayout();
   const [view] = useValueView();
   const [basis] = useInflationBasis();
-  // Under Real the profit column is the profit after inflation on the chosen basis. An answer
-  // saved before real figures existed has none to show, so it stays nominal until a fresh one.
-  const real = view === 'real' && portfolio?.real !== undefined ? basis : null;
+  const real = realBasis(view, portfolio, basis);
   // Add opens the kind picker; the kind then opens its own form, or the page it is added on.
-  const [adding, setAdding] = useState<'pick' | Exclude<AddChoice, 'crypto'> | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
   const navigate = useNavigate();
   const [refreshFailed, setRefreshFailed] = useState(false);
   const chains = useTokenChains();
@@ -1211,8 +1383,7 @@ export default function PortfolioPage() {
   const count = (value: Filter) =>
     assets.filter((asset) => inFilter(asset, value)).length +
     (value === 'bank' || value === 'all' ? deposits.length : 0);
-  // A class with no assets gets no chip; a chosen class that no longer has any shows them all.
-  const active: Filter = filter !== 'all' && count(filter) === 0 ? 'all' : filter;
+  const active = activeFilter(filter, count);
   const visible = assets.filter((asset) => inFilter(asset, active) && matchesSearch(asset, search));
   // PAGES: each class starts with five assets; its disclosure keeps the chosen sorted order.
   // The table and the phone list share one order, Value largest first until another is chosen;
@@ -1229,7 +1400,7 @@ export default function PortfolioPage() {
     ),
     shown,
     portfolio?.currency ?? 'USD',
-    view === 'real' ? basis : null,
+    viewBasis(view, basis),
   );
   // What every share is of: the net worth, or its known part as an estimate.
   const base = portfolio && shareBase(portfolio);
@@ -1255,6 +1426,46 @@ export default function PortfolioPage() {
       Add
     </Button>
   );
+  const addDialog = (choice: Adding) => {
+    switch (choice) {
+      case 'pick':
+        return (
+          <AddToPortfolioDialog
+            onClose={() => setAdding(null)}
+            onChoose={(choice) =>
+              choice === 'crypto'
+                ? navigate(withCurrency('/wallets', asked), { state: { addWallet: true } })
+                : setAdding(choice)
+            }
+          />
+        );
+      case 'other':
+        return <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />;
+      case 'broker':
+        return (
+          <AddBrokerAccountDialog
+            onClose={() => setAdding(null)}
+            onAdded={(account) =>
+              navigate(withCurrency('/brokers', asked), { state: { focusAccount: account } })
+            }
+          />
+        );
+      case 'property':
+        return (
+          <AddPropertyDialog
+            onClose={() => setAdding(null)}
+            onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
+          />
+        );
+      case 'bank':
+        return (
+          <AddDepositDialog
+            onClose={() => setAdding(null)}
+            onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
+          />
+        );
+    }
+  };
   const now = new Date();
   const groups = classOrder.flatMap((key): AssetGroup[] => {
     const rows = sorted.filter((asset) => classOf(asset) === key);
@@ -1303,11 +1514,7 @@ export default function PortfolioPage() {
         <ErrorState what="your portfolio" onRetry={() => void load()} />
       ) : portfolio === null ? (
         <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
-      ) : assets.length === 0 &&
-        deposits.length === 0 &&
-        !hasDeposits(portfolio) &&
-        !bankError &&
-        !banksStale ? (
+      ) : nothingToList(assets, deposits, portfolio, bankError, banksStale) ? (
         <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
           Add a wallet, a bank deposit, a coin or anything else you want to track.
         </EmptyState>
@@ -1327,160 +1534,76 @@ export default function PortfolioPage() {
             </Banner>
           )}
           <Summary portfolio={portfolio} asked={asked} real={real !== null} basis={basis} />
-          {assets.length === 0 &&
-          deposits.length === 0 &&
-          !hasDeposits(portfolio) &&
-          !bankError &&
-          !banksStale ? (
-            <EmptyState id="portfolio-empty" title="No assets yet" actions={addButton(true)}>
-              Add a wallet, a bank deposit, a coin or anything else you want to track.
-            </EmptyState>
-          ) : (
-            <Card labelledBy="portfolio-assets">
-              <div className="ui-toolbar">
-                <h2 id="portfolio-assets" className="ui-sr">
-                  Assets
-                </h2>
-                <ChipGroup label="Filter assets">
-                  {filters
-                    .filter(([value]) => value === 'all' || count(value) > 0)
-                    .map(([value, label]) => (
-                      <Chip
-                        key={value}
-                        pressed={active === value}
-                        count={count(value)}
-                        countTone="muted"
-                        onClick={() => setFilter(value)}
-                      >
-                        {label}
-                      </Chip>
-                    ))}
-                </ChipGroup>
-                <div className="portfolio-tools">
-                  <Input
-                    type="search"
-                    size="sm"
-                    className="ui-search"
-                    placeholder="Search assets"
-                    aria-label="Search assets"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                  {addButton(false)}
-                </div>
-              </div>
-              {phone ? (
-                <>
-                  <label className="portfolio-sort">
-                    Sort by
-                    <Select
-                      size="sm"
-                      value={shown.key}
-                      onChange={(event) => {
-                        const key = event.target.value as SortKey;
-                        setSort({ key, direction: firstDirection(key) });
-                      }}
+          <Card labelledBy="portfolio-assets">
+            <div className="ui-toolbar">
+              <h2 id="portfolio-assets" className="ui-sr">
+                Assets
+              </h2>
+              <ChipGroup label="Filter assets">
+                {filters
+                  .filter(([value]) => value === 'all' || count(value) > 0)
+                  .map(([value, label]) => (
+                    <Chip
+                      key={value}
+                      pressed={active === value}
+                      count={count(value)}
+                      countTone="muted"
+                      onClick={() => setFilter(value)}
                     >
-                      {phoneSorts(real !== null).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <AssetsList
-                    groups={groups}
-                    onToggle={toggle}
-                    currency={portfolio.currency}
-                    asked={asked}
-                    chains={chains}
-                    real={real}
-                  />
-                </>
-              ) : (
-                <AssetsTable
-                  groups={groups}
-                  onToggle={toggle}
-                  currency={portfolio.currency}
-                  asked={asked}
-                  now={now}
-                  chains={chains}
-                  sort={sort}
-                  onSort={(key) => setSort((current) => nextSort(current, key))}
-                  real={real}
+                      {label}
+                    </Chip>
+                  ))}
+              </ChipGroup>
+              <div className="portfolio-tools">
+                <Input
+                  type="search"
+                  size="sm"
+                  className="ui-search"
+                  placeholder="Search assets"
+                  aria-label="Search assets"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
                 />
-              )}
-              {soldCount > 0 && !search.trim() && (
-                <Button size="sm" variant="ghost" onClick={() => setShowSold((shown) => !shown)}>
-                  {showSold
-                    ? 'Hide assets no longer held'
-                    : `Show ${soldCount} ${soldCount === 1 ? 'asset' : 'assets'} no longer held`}
-                </Button>
-              )}
-              {(!!bankError || banksStale) && (
-                <Banner
-                  tone="warn"
-                  role="alert"
-                  action={
-                    <Button size="sm" onClick={() => reloadBanks()}>
-                      Retry
-                    </Button>
-                  }
-                >
-                  {bankList
-                    ? 'Could not refresh bank products; showing the last loaded rows. The summary uses the portfolio valuation.'
-                    : 'Could not load bank products. Their value remains in the portfolio summary.'}
-                </Banner>
-              )}
-              {visible.length === 0 && bankRows.length === 0 && (
-                <p className="ui-none">
-                  {search.trim()
-                    ? `No assets match "${search.trim()}".`
-                    : 'No assets of this class.'}
-                </p>
-              )}
-              <p className="ui-sub portfolio-card-note">
-                {ratesNote(portfolio)} Holdings come from your{' '}
-                <Link className="ui-link" to="/wallets">
-                  wallets
-                </Link>{' '}
-                and the transactions you add.
-              </p>
-            </Card>
-          )}
+                {addButton(false)}
+              </div>
+            </div>
+            <AssetsView
+              phone={phone}
+              groups={groups}
+              onToggle={toggle}
+              currency={portfolio.currency}
+              asked={asked}
+              now={now}
+              chains={chains}
+              sort={sort}
+              shown={shown}
+              onSort={setSort}
+              real={real}
+            />
+            <SoldToggle
+              count={soldCount}
+              search={search}
+              shown={showSold}
+              onToggle={() => setShowSold((shown) => !shown)}
+            />
+            <BanksBanner
+              error={bankError}
+              stale={banksStale}
+              kept={Boolean(bankList)}
+              onRetry={() => reloadBanks()}
+            />
+            <NoneMatch rows={visible.length + bankRows.length} search={search} />
+            <p className="ui-sub portfolio-card-note">
+              {ratesNote(portfolio)} Holdings come from your{' '}
+              <Link className="ui-link" to="/wallets">
+                wallets
+              </Link>{' '}
+              and the transactions you add.
+            </p>
+          </Card>
         </>
       )}
-      {adding === 'pick' && (
-        <AddToPortfolioDialog
-          onClose={() => setAdding(null)}
-          onChoose={(choice) =>
-            choice === 'crypto'
-              ? navigate(withCurrency('/wallets', asked), { state: { addWallet: true } })
-              : setAdding(choice)
-          }
-        />
-      )}
-      {adding === 'other' && <AddAssetDialog onClose={() => setAdding(null)} onAdded={added} />}
-      {adding === 'broker' && (
-        <AddBrokerAccountDialog
-          onClose={() => setAdding(null)}
-          onAdded={(account) =>
-            navigate(withCurrency('/brokers', asked), { state: { focusAccount: account } })
-          }
-        />
-      )}
-      {adding === 'property' && (
-        <AddPropertyDialog
-          onClose={() => setAdding(null)}
-          onAdded={(asset) => navigate(withCurrency(`/portfolio/${asset.id}`, asked))}
-        />
-      )}
-      {adding === 'bank' && (
-        <AddDepositDialog
-          onClose={() => setAdding(null)}
-          onSaved={(created) => navigate(withCurrency(`/deposits/${created.id}`, asked))}
-        />
-      )}
+      {adding && addDialog(adding)}
     </div>
   );
 }
