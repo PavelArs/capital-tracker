@@ -83,136 +83,199 @@ export function journalEntries(
     const currency = cashCurrency[source.currency];
     if (!currency) throw new Error('The plan holds a currency the app does not keep');
     const occurredAt = journalTime(source.occurredAt);
-    const cash = instruments.cash[currency];
     const amount = canonicalDecimalToAtoms(source.amount);
     const fee = canonicalDecimalToAtoms(source.fee);
-    // USD amounts as entered by hand: given in USD, else derived from the amounts as paid.
-    const amounts = (gross: string, paidFee: string) => {
-      if (currency === 'USD') return { grossUsd: gross, feeUsd: paidFee };
-      return derivePaidAmounts({ currency, gross, fee: paidFee }, rates, occurredAt);
-    };
-    let priced: ReturnType<typeof amounts>;
-    try {
-      priced = amounts(source.amount, source.fee);
-    } catch (error) {
-      if (!(error instanceof BadRequestException)) throw error;
-      problems.push({ reason: 'amount', occurredAt, operationIds: source.operationIds });
-      continue;
-    }
-    if (!priced) {
-      problems.push({ reason: 'no-rate', occurredAt, operationIds: source.operationIds });
+    const priced = pricedAmounts(source, currency, rates, occurredAt);
+    if (typeof priced === 'string') {
+      problems.push({ reason: priced, occurredAt, operationIds: source.operationIds });
       continue;
     }
     const orderWithinTimestamp = orderAt.get(occurredAt) ?? 0;
     orderAt.set(occurredAt, orderWithinTimestamp + 1);
-    const id = `import-${entries.length}`;
-    const at = { occurredAt, orderWithinTimestamp };
-    if (source.record === 'capital-return') {
-      // The bond's cost drops by the returned amount, and the cash comes in as a lot of its own,
-      // with its USD worth at the date it came in (CUR-PAID-RUB for rubles and euros).
-      const security = instruments.securities.get(source.instrumentUid);
-      if (!security) throw new Error('The plan holds an instrument without an owner instrument');
-      const paid = 'paid' in priced ? priced.paid : null;
-      entries.push({
-        source,
-        rate: paid
-          ? { rateDate: paid.rateDate, perUsd: paid.perUsd, rateSource: paid.rateSource }
-          : null,
-        capitalReturn: {
-          capitalReturnId: id,
-          version: 1,
-          instrumentId: security.id,
-          instrumentName: security.name,
-          instrumentSymbol: security.symbol,
-          cashInstrumentId: cash.id,
-          cashInstrumentName: cash.name,
-          cashInstrumentSymbol: cash.symbol,
-          ...at,
-          amount: source.amount,
-          amountUsd: priced.grossUsd,
-          paidCurrency: paid?.currency ?? null,
-        },
-      });
+    const made = {
+      source,
+      id: `import-${entries.length}`,
+      at: { occurredAt, orderWithinTimestamp },
+      cash: instruments.cash[currency],
+      amount,
+      fee,
+      priced,
+    };
+    const entry =
+      source.record === 'capital-return'
+        ? capitalReturnEntry(made, instruments)
+        : source.record === 'reward'
+          ? rewardEntry(made)
+          : tradeEntry(made, instruments);
+    if (entry === 'fee-above-proceeds') {
+      problems.push({ reason: entry, occurredAt, operationIds: source.operationIds });
       continue;
     }
-    if (source.record === 'reward') {
-      entries.push({
-        source,
-        reward: {
-          rewardId: id,
-          version: 1,
-          instrumentId: cash.id,
-          instrumentName: cash.name,
-          instrumentSymbol: cash.symbol,
-          category: 'other',
-          ...at,
-          quantity: source.amount,
-          acquisitionBasisUsd: priced.grossUsd,
-          incomeValueUsd: priced.grossUsd,
-        },
-      });
-      continue;
-    }
-    const base = { tradeId: id, version: 1, ...at };
-    const onCash = {
-      ...base,
+    entries.push(entry);
+  }
+  return { entries, problems };
+}
+
+type Priced =
+  | NonNullable<ReturnType<typeof derivePaidAmounts>>
+  | { grossUsd: string; feeUsd: string };
+
+/**
+ * USD amounts as entered by hand: given in USD, else derived from the amounts as paid; or why
+ * they cannot be: out of the range the app stores, or no rate for the date.
+ */
+function pricedAmounts(
+  source: PlanEntry,
+  currency: CashCurrency,
+  rates: FxRates,
+  occurredAt: string,
+): Priced | 'amount' | 'no-rate' {
+  if (currency === 'USD') return { grossUsd: source.amount, feeUsd: source.fee };
+  try {
+    return (
+      derivePaidAmounts({ currency, gross: source.amount, fee: source.fee }, rates, occurredAt) ??
+      'no-rate'
+    );
+  } catch (error) {
+    if (!(error instanceof BadRequestException)) throw error;
+    return 'amount';
+  }
+}
+
+/** What every journal entry of a plan entry is made from. */
+interface EntryParts {
+  source: PlanEntry;
+  id: string;
+  at: { occurredAt: string; orderWithinTimestamp: number };
+  /** The cash instrument of the entry's currency. */
+  cash: ImportInstrument;
+  /** The amount and fee as paid, in atoms. */
+  amount: bigint;
+  fee: bigint;
+  priced: Priced;
+}
+
+/**
+ * The bond's cost drops by the returned amount, and the cash comes in as a lot of its own, with
+ * its USD worth at the date it came in (CUR-PAID-RUB for rubles and euros).
+ */
+function capitalReturnEntry(
+  { source, id, at, cash, priced }: EntryParts,
+  instruments: ImportInstruments,
+): JournalEntry {
+  const security = instruments.securities.get(source.instrumentUid);
+  if (!security) throw new Error('The plan holds an instrument without an owner instrument');
+  const paid = 'paid' in priced ? priced.paid : null;
+  return {
+    source,
+    rate: paid
+      ? { rateDate: paid.rateDate, perUsd: paid.perUsd, rateSource: paid.rateSource }
+      : null,
+    capitalReturn: {
+      capitalReturnId: id,
+      version: 1,
+      instrumentId: security.id,
+      instrumentName: security.name,
+      instrumentSymbol: security.symbol,
+      cashInstrumentId: cash.id,
+      cashInstrumentName: cash.name,
+      cashInstrumentSymbol: cash.symbol,
+      ...at,
+      amount: source.amount,
+      amountUsd: priced.grossUsd,
+      paidCurrency: paid?.currency ?? null,
+    },
+  };
+}
+
+function rewardEntry({ source, id, at, cash, priced }: EntryParts): JournalEntry {
+  return {
+    source,
+    reward: {
+      rewardId: id,
+      version: 1,
       instrumentId: cash.id,
       instrumentName: cash.name,
       instrumentSymbol: cash.symbol,
+      category: 'other',
+      ...at,
       quantity: source.amount,
-    };
-    let trade: FifoTrade;
-    if (source.action === 'deposit' || source.action === 'withdrawal') {
-      const side: 'buy' | 'sell' = source.action === 'deposit' ? 'buy' : 'sell';
-      trade = { ...onCash, side, ...priced };
-    } else if (source.action === 'fee' || source.action === 'tax') {
-      // A fee is all fee, its value in USD given as both amounts (PR-OPS-6).
-      trade = {
+      acquisitionBasisUsd: priced.grossUsd,
+      incomeValueUsd: priced.grossUsd,
+    },
+  };
+}
+
+function tradeEntry(
+  parts: EntryParts,
+  instruments: ImportInstruments,
+): JournalEntry | 'fee-above-proceeds' {
+  const { source, id, at, cash, priced } = parts;
+  const onCash = {
+    tradeId: id,
+    version: 1,
+    ...at,
+    instrumentId: cash.id,
+    instrumentName: cash.name,
+    instrumentSymbol: cash.symbol,
+    quantity: source.amount,
+  };
+  if (source.action === 'deposit' || source.action === 'withdrawal') {
+    const side: 'buy' | 'sell' = source.action === 'deposit' ? 'buy' : 'sell';
+    return { source, trade: { ...onCash, side, ...priced } };
+  }
+  if (source.action === 'fee' || source.action === 'tax')
+    // A fee is all fee, its value in USD given as both amounts (PR-OPS-6).
+    return {
+      source,
+      trade: {
         ...onCash,
         side: 'sell',
         grossUsd: priced.grossUsd,
         feeUsd: priced.grossUsd,
         purpose: 'fee',
-      };
-    } else if (source.action === 'buy' || source.action === 'sell') {
-      // Dollars or euros bought on the exchange are that currency's cash, bought with this one.
-      const moved = source.cash ? cashCurrency[source.cash] : undefined;
-      const security = moved
-        ? instruments.cash[moved]
-        : instruments.securities.get(source.instrumentUid);
-      if (!security) throw new Error('The plan holds an instrument without an owner instrument');
-      // A buy spends all it cost from cash and a sale keeps its proceeds net of fee: the history
-      // holds every payment in, so cash short of a buy is a shortfall the journal check refuses.
-      if (source.action === 'sell' && fee > amount) {
-        problems.push({
-          reason: 'fee-above-proceeds',
-          occurredAt,
-          operationIds: source.operationIds,
-        });
-        continue;
-      }
-      const settled = source.action === 'buy' ? amount + fee : amount - fee;
-      trade = {
-        ...base,
-        instrumentId: security.id,
-        instrumentName: security.name,
-        instrumentSymbol: security.symbol,
-        side: source.action,
-        quantity: source.quantity,
-        ...priced,
-        ...(settled > 0n && !source.externalCash
-          ? {
-              settlement: {
-                instrumentId: cash.id,
-                instrumentName: cash.name,
-                instrumentSymbol: cash.symbol,
-                quantity: formatAtoms(settled),
-              },
-            }
-          : {}),
-      };
-    } else throw new Error(`A trade cannot record the action ${source.action}`);
-    entries.push({ source, trade });
-  }
-  return { entries, problems };
+      },
+    };
+  return securityTradeEntry(parts, instruments);
+}
+
+/** A buy or sale of a security, or of dollars or euros on the exchange, settled with cash. */
+function securityTradeEntry(
+  { source, id, at, cash, amount, fee, priced }: EntryParts,
+  instruments: ImportInstruments,
+): JournalEntry | 'fee-above-proceeds' {
+  if (source.action !== 'buy' && source.action !== 'sell')
+    throw new Error(`A trade cannot record the action ${source.action}`);
+  // Dollars or euros bought on the exchange are that currency's cash, bought with this one.
+  const moved = source.cash ? cashCurrency[source.cash] : undefined;
+  const security = moved
+    ? instruments.cash[moved]
+    : instruments.securities.get(source.instrumentUid);
+  if (!security) throw new Error('The plan holds an instrument without an owner instrument');
+  // A buy spends all it cost from cash and a sale keeps its proceeds net of fee: the history
+  // holds every payment in, so cash short of a buy is a shortfall the journal check refuses.
+  if (source.action === 'sell' && fee > amount) return 'fee-above-proceeds';
+  const settled = source.action === 'buy' ? amount + fee : amount - fee;
+  const trade: FifoTrade = {
+    tradeId: id,
+    version: 1,
+    ...at,
+    instrumentId: security.id,
+    instrumentName: security.name,
+    instrumentSymbol: security.symbol,
+    side: source.action,
+    quantity: source.quantity,
+    ...priced,
+    ...(settled > 0n && !source.externalCash
+      ? {
+          settlement: {
+            instrumentId: cash.id,
+            instrumentName: cash.name,
+            instrumentSymbol: cash.symbol,
+            quantity: formatAtoms(settled),
+          },
+        }
+      : {}),
+  };
+  return { source, trade };
 }
