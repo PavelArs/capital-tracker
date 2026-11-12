@@ -10,6 +10,7 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { lockAccountingOwner } from './accounting-lock';
+import { readAccountingSnapshot } from './accounting-read';
 import { classifyAsset, instrumentPayload } from './asset-classification';
 import type { RewardSummary } from './asset-reward-types';
 import type { SwapSummary } from './asset-swap-types';
@@ -611,7 +612,7 @@ export class TradeService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const query = parseAvailableQuery(rawQuery);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const journal = await readJournal(manager, owner, id);
       let quantity = '0';
@@ -643,7 +644,7 @@ export class TradeService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const target = parseUuid(tradeId);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await refuseProducedEntry(manager, owner, 'tradeId', target);
       await readOwnedAccount(manager, owner, id);
       const journal = await readJournal(manager, owner, id);
@@ -666,7 +667,7 @@ export class TradeService {
   async getJournal(ownerId: string, accountId: string): Promise<JournalState> {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       const account = await readOwnedAccount(manager, owner, id);
       const journal = await readJournal(manager, owner, id);
       if (!journal) {
@@ -739,7 +740,7 @@ export class TradeService {
     const id = parseUuid(accountId);
     const target = parseUuid(tradeId);
     const query = parseTradeHistoryQuery(rawQuery);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       if (!(await readJournal(manager, owner, id))) throw conflict();
       const [trade] = await manager.query(
@@ -769,7 +770,7 @@ export class TradeService {
   ): Promise<T> {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const journal = await readJournal(manager, owner, id);
       if (
@@ -781,12 +782,6 @@ export class TradeService {
       const ledger = await readConnectedLedger(manager, owner, [id]);
       const fifo = connectedResult(ledger, id, projectConnectedLedger(ledger).accounts.get(id)!);
       return project({ journal, heads, fifo });
-    });
-  }
-  private read<T>(run: (manager: EntityManager) => Promise<T>): Promise<T> {
-    return this.source.transaction('REPEATABLE READ', async (manager) => {
-      await manager.query('SET TRANSACTION READ ONLY');
-      return run(manager).catch(rethrowAccountingHistory);
     });
   }
   private async hasOpening(manager: EntityManager, owner: string, id: string): Promise<boolean> {

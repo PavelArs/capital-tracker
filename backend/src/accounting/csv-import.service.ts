@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import { readAccountingSnapshot } from './accounting-read';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
@@ -347,7 +348,7 @@ export class CsvImportService {
     const id = parseUuid(accountId);
     const target = parseUuid(batchId);
     const input = parseCsvInspect(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const batch = await this.batch(manager, owner, id, target, true);
       return { batchId: target, ...parseCsvSource(sourceBytes(batch), input.delimiter) };
@@ -359,7 +360,7 @@ export class CsvImportService {
     const id = parseUuid(accountId);
     const target = parseUuid(batchId);
     const settings = parseCsvPreview(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const journal = await this.journal(manager, owner, id);
       const batch = await this.batch(manager, owner, id, target, true);
@@ -515,7 +516,7 @@ export class CsvImportService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const query = parseCsvListQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       await this.journal(manager, owner, id);
       const rows: BatchRow[] = await manager.query(
@@ -534,7 +535,7 @@ export class CsvImportService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const target = parseUuid(batchId);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const journal = await this.journal(manager, owner, id);
       const batch = await this.batch(manager, owner, id, target);
@@ -562,7 +563,7 @@ export class CsvImportService {
     const id = parseUuid(accountId);
     const target = parseUuid(batchId);
     const query = parseCsvRowsQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       await readOwnedAccount(manager, owner, id);
       const batch = await this.batch(manager, owner, id, target);
       if (query.batchState !== undefined && query.batchState !== batch.state) throw conflict();
@@ -735,12 +736,6 @@ export class CsvImportService {
       summaryBefore,
       summaryAfter,
     };
-  }
-  private read<T>(run: (manager: EntityManager) => Promise<T>): Promise<T> {
-    return this.source.transaction('REPEATABLE READ', async (manager) => {
-      await manager.query('SET TRANSACTION READ ONLY');
-      return run(manager).catch(rethrowAccountingHistory);
-    });
   }
   private async journal(manager: EntityManager, owner: string, id: string) {
     const value = await readJournal(manager, owner, id);

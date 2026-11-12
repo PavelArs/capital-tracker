@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import { readAccountingSnapshot } from './accounting-read';
 import { firstShortfall, type Shortfall } from './available-quantity';
 import {
   advanceConnectedJournals,
@@ -293,21 +294,10 @@ export class OwnedTransferService {
     };
   }
 
-  private read<T>(work: (manager: EntityManager) => Promise<T>) {
-    return this.source.transaction('REPEATABLE READ', async (manager) => {
-      await manager.query('SET TRANSACTION READ ONLY');
-      try {
-        return await work(manager);
-      } catch (error) {
-        return rethrowAccountingHistory(error);
-      }
-    });
-  }
-
   async list(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const query = parseTransferListQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       const journalRevision = await readTransferRevision(manager, owner);
       if (query.journalRevision !== undefined && query.journalRevision !== journalRevision)
         throw conflict();
@@ -337,7 +327,7 @@ export class OwnedTransferService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(transferId);
     const query = parseTransferHistoryQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       if (!(await readTransferHead(manager, owner, id))) throw new NotFoundException();
       const rows: TransferVersionRow[] = await manager.query(
         `${transferVersionSelect} WHERE v."ownerId"=$1 AND v."transferId"=$2 AND v.version<$3
@@ -356,7 +346,7 @@ export class OwnedTransferService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(transferId);
     const query = parseTransferAllocationQuery(raw);
-    return this.read(async (manager) => {
+    return readAccountingSnapshot(this.source, async (manager) => {
       const row = await readTransferHead(manager, owner, id);
       if (!row) throw new NotFoundException();
       const [from, to] = await Promise.all([
