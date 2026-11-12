@@ -1,6 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
 import type { Goal, GoalForecast, ScenarioKey } from '@api/goals.api';
-import type { HistoryPoint } from '@api/portfolio-history.api';
+import type { HistoryPoint, PortfolioHistory } from '@api/portfolio-history.api';
 import { type KeyboardEvent, useEffect, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
@@ -110,6 +110,54 @@ function aheadOf(forecast: GoalForecast): Ahead[] {
   );
 }
 
+/**
+ * The points to plot: the history, then the forecast while it is in the goal's currency, with
+ * the day the forecast is dated by and the point it starts from. Chart coordinates only: every
+ * amount written out comes from the server's decimal strings.
+ */
+function pointsOf(
+  goal: Goal,
+  known: boolean,
+  history: PortfolioHistory | null,
+  forecast: GoalForecast | null,
+) {
+  const past = pastOf(history?.points ?? []);
+  const ahead = known && forecast?.currency === goal.currency ? aheadOf(forecast) : [];
+  const plotted: (Past | Ahead)[] = [...past, ...ahead];
+  // The drawn forecast is dated by its own day, which is later if it was read after midnight.
+  const today = dayTime(ahead.length > 0 && forecast ? forecast.asOf : goal.asOf);
+  // The forecast starts at the portfolio now, the same figure the history ends on.
+  const first = ahead.length > 0 ? forecast?.points[0] : undefined;
+  return { past, ahead, plotted, today, first };
+}
+
+/** The card while there is nothing to draw, and why. */
+function EmptyGoalChart({
+  label,
+  goal,
+  historyError,
+  loaded,
+}: {
+  label: string;
+  goal: Goal;
+  historyError: unknown;
+  loaded: boolean;
+}) {
+  return (
+    <Card variant="chart" label={label}>
+      <CardHeader title="Progress and forecast" />
+      <p className="goal-chart__empty" role="note">
+        {emptyText(historyError, loaded, goal.currency)}
+      </p>
+      {!goal.progress.complete && (
+        <Banner tone="info">
+          Estimated from priced assets only. Assets without a price or rate are excluded.
+        </Banner>
+      )}
+    </Card>
+  );
+}
+
 /** Why there is nothing to draw yet. */
 function emptyText(historyError: unknown, loaded: boolean, currency: string): string {
   if (loaded) return `No portfolio figures in ${currency} yet.`;
@@ -196,13 +244,13 @@ function historyShapes(points: readonly HistoryPoint[], x: Scale, y: Scale, floo
  */
 function originOf(
   first: GoalForecast['points'][number] | undefined,
-  now: number | null,
+  now: string | null,
   today: number,
   x: Scale,
   y: Scale,
 ): Point | null {
   if (first?.base != null) return [x(dayTime(first.on)), y(Number(first.base))];
-  return now === null ? null : [x(today), y(now)];
+  return now === null ? null : [x(today), y(Number(now))];
 }
 
 /** Each case's line from the origin, and the band between the optimistic and pessimistic ones. */
@@ -259,6 +307,68 @@ const tickAnchor = (index: number, count: number) =>
 
 /** The tip sits right of the point, or left of it where it would run out of the box. */
 const tipLeftOf = (at: number, width: number) => (at + 14 + 210 > width ? at - 224 : at + 14);
+
+/** The portfolio, the money put in and its area, then the band and the cases of a forecast. */
+function ChartLines({
+  area,
+  fan,
+  investedPath,
+  valuePath,
+  scenarioPath,
+}: {
+  area: string;
+  fan: string;
+  investedPath: string;
+  valuePath: string;
+  /** Null while no forecast is drawn. */
+  scenarioPath: ((key: ScenarioKey) => string) | null;
+}) {
+  return (
+    <>
+      {area && <path d={area} fill="url(#goal-chart-area)" />}
+      {fan && <path d={fan} className="goal-chart__band" />}
+      {investedPath && <path d={investedPath} className="goal-chart__invested" />}
+      {valuePath && <path d={valuePath} className="goal-chart__line" />}
+      {scenarioPath && (
+        <>
+          <path d={scenarioPath('pessimistic')} className="goal-chart__case" />
+          <path d={scenarioPath('optimistic')} className="goal-chart__case" />
+          <path d={scenarioPath('base')} className="goal-chart__forecast" />
+        </>
+      )}
+    </>
+  );
+}
+
+/** Today's line, labelled on the side where the label fits. */
+function TodayMark({ at, width, floor }: { at: number; width: number; floor: number }) {
+  const late = at > width - 140;
+  return (
+    <>
+      <line x1={at} x2={at} y1={PAD.top - 8} y2={floor} className="goal-chart__today" />
+      <text
+        x={at + (late ? -4 : 4)}
+        y={PAD.top - 10}
+        textAnchor={late ? 'end' : 'start'}
+        className="goal-chart__tick"
+      >
+        Today
+      </text>
+    </>
+  );
+}
+
+/** The goal's date, labelled with its month. */
+function DeadlineMark({ at, date, floor }: { at: number; date: string; floor: number }) {
+  return (
+    <>
+      <line x1={at} x2={at} y1={PAD.top - 8} y2={floor} className="goal-chart__deadline" />
+      <text x={at - 4} y={PAD.top - 10} textAnchor="end" className="goal-chart__deadline-label">
+        {monthYear(date)}
+      </text>
+    </>
+  );
+}
 
 /** What the tip says of one point: the portfolio that day, or the forecast for that month. */
 function TipBody({
@@ -435,27 +545,16 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const target = Number(goal.targetAmount);
   const label = `${goal.name}: the portfolio so far and the forecast against the sum to reach`;
 
-  // Chart coordinates only: every amount written out comes from the server's decimal strings.
-  const past = pastOf(history?.points ?? []);
-  const ahead = known && forecast?.currency === goal.currency ? aheadOf(forecast) : [];
-  const plotted: (Past | Ahead)[] = [...past, ...ahead];
-  // The drawn forecast is dated by its own day, which is later if it was read after midnight.
-  const today = dayTime(ahead.length > 0 && forecast ? forecast.asOf : goal.asOf);
-  const now = goal.progress.current === null ? null : Number(goal.progress.current);
+  const { past, ahead, plotted, today, first } = pointsOf(goal, known, history, forecast);
 
   if (plotted.length === 0)
     return (
-      <Card variant="chart" label={label}>
-        <CardHeader title="Progress and forecast" />
-        <p className="goal-chart__empty" role="note">
-          {emptyText(historyError, history !== null, goal.currency)}
-        </p>
-        {!goal.progress.complete && (
-          <Banner tone="info">
-            Estimated from priced assets only. Assets without a price or rate are excluded.
-          </Banner>
-        )}
-      </Card>
+      <EmptyGoalChart
+        label={label}
+        goal={goal}
+        historyError={historyError}
+        loaded={history !== null}
+      />
     );
 
   const band = ahead;
@@ -470,11 +569,8 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const { valuePath, investedPath, area } = historyShapes(history?.points ?? [], x, y, floor);
   // 'Now' names the final history point only; a missing value there leaves no point called Now.
   const latestAt = history?.points.at(-1)?.at;
-  // The forecast starts at the portfolio now, the same figure the history ends on.
-  const first = ahead.length > 0 ? forecast?.points[0] : undefined;
-  const origin = originOf(first, now, today, x, y);
+  const origin = originOf(first, goal.progress.current, today, x, y);
   const { scenarioPath, fan } = forecastShapes(band, origin, x, y);
-  const deadline = goal.deadline && band.length > 0 ? x(dayTime(goal.deadline)) : null;
   const tickCount = chartDateTicks(width, plotted.length);
   const xTicks = [
     ...new Set(
@@ -575,17 +671,13 @@ export default function GoalChart({ goal }: { goal: Goal }) {
             </text>
           ))}
           <g clipPath="url(#goal-chart-box)">
-            {area && <path d={area} fill="url(#goal-chart-area)" />}
-            {fan && <path d={fan} className="goal-chart__band" />}
-            {investedPath && <path d={investedPath} className="goal-chart__invested" />}
-            {valuePath && <path d={valuePath} className="goal-chart__line" />}
-            {band.length > 0 && (
-              <>
-                <path d={scenarioPath('pessimistic')} className="goal-chart__case" />
-                <path d={scenarioPath('optimistic')} className="goal-chart__case" />
-                <path d={scenarioPath('base')} className="goal-chart__forecast" />
-              </>
-            )}
+            <ChartLines
+              area={area}
+              fan={fan}
+              investedPath={investedPath}
+              valuePath={valuePath}
+              scenarioPath={band.length > 0 ? scenarioPath : null}
+            />
           </g>
           <line
             x1={PAD.left}
@@ -597,43 +689,9 @@ export default function GoalChart({ goal }: { goal: Goal }) {
           <text x={PAD.left + 6} y={y(target) - 6} className="goal-chart__target-label">
             Sum {compact(target, goal.currency)}
           </text>
-          {band.length > 0 && (
-            <>
-              <line
-                x1={x(today)}
-                x2={x(today)}
-                y1={PAD.top - 8}
-                y2={floor}
-                className="goal-chart__today"
-              />
-              <text
-                x={x(today) + (x(today) > width - 140 ? -4 : 4)}
-                y={PAD.top - 10}
-                textAnchor={x(today) > width - 140 ? 'end' : 'start'}
-                className="goal-chart__tick"
-              >
-                Today
-              </text>
-            </>
-          )}
-          {deadline !== null && goal.deadline && (
-            <>
-              <line
-                x1={deadline}
-                x2={deadline}
-                y1={PAD.top - 8}
-                y2={floor}
-                className="goal-chart__deadline"
-              />
-              <text
-                x={deadline - 4}
-                y={PAD.top - 10}
-                textAnchor="end"
-                className="goal-chart__deadline-label"
-              >
-                {monthYear(goal.deadline)}
-              </text>
-            </>
+          {band.length > 0 && <TodayMark at={x(today)} width={width} floor={floor} />}
+          {goal.deadline && band.length > 0 && (
+            <DeadlineMark at={x(dayTime(goal.deadline))} date={goal.deadline} floor={floor} />
           )}
           {past
             .filter((entry) => !entry.complete)
