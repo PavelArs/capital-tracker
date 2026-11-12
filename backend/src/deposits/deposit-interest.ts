@@ -124,7 +124,7 @@ const monthsPerPayout: Record<PayoutSchedule, number> = {
 function monthlyPayoutDates(terms: DepositTerms, last: string): string[] {
   const dates: string[] = [];
   const every = monthsPerPayout[terms.payout];
-  if (every === 0) return dates;
+  if (!(every > 0)) return dates;
   for (let step = 1; ; step += 1) {
     const date = addMonths(terms.startDate, step * every);
     if (date > last || !beforeEnd(terms, date)) break;

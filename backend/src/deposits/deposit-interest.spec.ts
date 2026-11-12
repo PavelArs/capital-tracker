@@ -572,3 +572,13 @@ describe('DEP-ACCRUAL: closing a deposit and refusing a movement', () => {
     ).toBe(1);
   });
 });
+
+describe('payoutDates for a schedule this build does not know', () => {
+  it('gives only the end date, as for a deposit that pays at the end', () => {
+    for (const payout of ['weekly', 'constructor']) {
+      expect(
+        payoutDates(terms({ payout: payout as DepositTerms['payout'] }), '2026-12-31'),
+      ).toEqual(['2026-04-01']);
+    }
+  });
+});
