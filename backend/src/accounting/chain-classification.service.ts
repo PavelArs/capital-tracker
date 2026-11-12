@@ -316,6 +316,17 @@ const operationKey = (
     comment: value?.type === 'transfer' || value?.type === 'swap' ? null : comment,
   });
 
+/**
+ * CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one, nor by a
+ * swap against a record.
+ */
+function checkReplaces(input: ClassificationInput) {
+  if (input.replaces && (input.hidden || input.classification === null))
+    throw new BadRequestException('Invalid accounting input');
+  if (input.replaces && input.classification?.type === 'swap' && 'record' in input.classification)
+    throw new BadRequestException('Invalid accounting input');
+}
+
 /** The status an answer is stored with: hidden, or classified unless it was cleared. */
 const answerStatus = (input: ClassificationInput): ClassificationRow['status'] =>
   input.hidden ? 'hidden' : input.classification ? 'classified' : 'unclassified';
@@ -465,11 +476,7 @@ export class ChainClassificationService {
     const address = parseUuid(addressId);
     if (!chainTxid.test(txid)) throw new NotFoundException();
     const input = parseClassification(raw);
-    // CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one.
-    if (input.replaces && (input.hidden || input.classification === null))
-      throw new BadRequestException('Invalid accounting input');
-    if (input.replaces && input.classification?.type === 'swap' && 'record' in input.classification)
-      throw new BadRequestException('Invalid accounting input');
+    checkReplaces(input);
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
     // malformed amount is a 400 here, not a conflict inside the journal.
@@ -504,42 +511,10 @@ export class ChainClassificationService {
         const row = await this.readLeg(manager, owner, address, txid);
         const version = await this.lockHead(manager, address, txid);
         if (version !== input.expectedVersion) throw conflict();
-        // BYBIT-GAP-DELETE: a deleted record is gone for every answer.
-        if (
-          version > 0 &&
-          (await this.version(manager, address, txid, version)).status === 'deleted'
-        )
-          throw new NotFoundException();
-        // BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that
-        // coin, as for the automatic answer. Otherwise the shortfall would be entered as new
-        // money while the unanswered receipts that supplied the coin still count (D1).
-        if (
-          value?.type === 'buy' &&
-          row.network === 'bybit' &&
-          row.quoteAsset === value.currency &&
-          !(await this.journalHolds(manager, owner, row, value))
-        )
-          throw new ConflictException(
-            `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
-          );
-        // CLS-DUPLICATE: a record the answer replaces goes in the same transaction. A priced
-        // entry settles in the account's cash, which the record has spent, so it goes first;
-        // otherwise coins are added before the record goes and spent ones are freed first.
-        const replaced = input.replaces
-          ? await this.replacedRecord(manager, owner, { address, txid, row, version }, input)
-          : null;
-        const priced = replaced?.answer.type === 'buy' || replaced?.answer.type === 'sell';
-        const voidFirst = replaced !== null && (priced || !inbound(row));
-        if (replaced && voidFirst) await this.voidRecord(manager, owner, replaced);
-        const saved = await this.record(
-          manager,
-          owner,
-          { address, txid, row, version },
-          input,
-          payload,
-          false,
-        );
-        if (replaced && !voidFirst) await this.voidRecord(manager, owner, replaced);
+        await this.checkNotDeleted(manager, address, txid, version);
+        await this.checkQuoteHeld(manager, owner, row, value);
+        const target = { address, txid, row, version };
+        const saved = await this.recordReplacing(manager, owner, target, input, payload);
         return { created: true, value: classificationView(saved) };
       });
     } catch (error) {
@@ -548,6 +523,62 @@ export class ChainClassificationService {
     // An answer can make an earlier transfer possible: the sender now holds the coins.
     if (result.created) await this.linkQuietly(owner);
     return result;
+  }
+
+  /** BYBIT-GAP-DELETE: a deleted record is gone for every answer. */
+  private async checkNotDeleted(
+    manager: EntityManager,
+    address: string,
+    txid: string,
+    version: number,
+  ) {
+    if (version > 0 && (await this.version(manager, address, txid, version)).status === 'deleted')
+      throw new NotFoundException();
+  }
+
+  /**
+   * BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that coin,
+   * as for the automatic answer. Otherwise the shortfall would be entered as new money while
+   * the unanswered receipts that supplied the coin still count (D1).
+   */
+  private async checkQuoteHeld(
+    manager: EntityManager,
+    owner: string,
+    row: LegRow,
+    value: ClassificationInput['classification'],
+  ) {
+    if (
+      value?.type === 'buy' &&
+      row.network === 'bybit' &&
+      row.quoteAsset === value.currency &&
+      !(await this.journalHolds(manager, owner, row, value))
+    )
+      throw new ConflictException(
+        `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
+      );
+  }
+
+  /**
+   * CLS-DUPLICATE: a record the answer replaces goes in the same transaction. A priced entry
+   * settles in the account's cash, which the record has spent, so it goes first; otherwise coins
+   * are added before the record goes and spent ones are freed first.
+   */
+  private async recordReplacing(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+    payload: string,
+  ): Promise<ClassificationRow> {
+    const replaced = input.replaces
+      ? await this.replacedRecord(manager, owner, target, input)
+      : null;
+    const priced = replaced?.answer.type === 'buy' || replaced?.answer.type === 'sell';
+    const voidFirst = replaced !== null && (priced || !inbound(target.row));
+    if (replaced && voidFirst) await this.voidRecord(manager, owner, replaced);
+    const saved = await this.record(manager, owner, target, input, payload, false);
+    if (replaced && !voidFirst) await this.voidRecord(manager, owner, replaced);
+    return saved;
   }
 
   /**
