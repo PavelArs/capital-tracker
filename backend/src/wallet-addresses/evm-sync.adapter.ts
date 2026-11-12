@@ -50,6 +50,11 @@ interface RangeLists {
   tokens: TokenTransfer[];
 }
 
+/** A token range up to `end` and its transfers, or why it stopped; `state` after any staging. */
+type TokenRange =
+  | { ok: true; state: ScanRow; end: number; transfers: readonly TokenTransfer[] }
+  | { ok: false; state: ScanRow; reason: StepFailure | null };
+
 /** Whether a pass has read its share of ranges or used up its time. */
 function budgetSpent(ranges: number, started: number): boolean {
   return ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS;
@@ -316,67 +321,89 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     while (state.tokenBackfillTo !== null) {
       const to = state.tokenBackfillTo;
       const from = (state.tokenBackfillAt ?? -1) + 1;
-      let end = to;
-      let transfers: Parameters<typeof ethereumLegs>[3] = [];
+      let range: TokenRange = { ok: true, state, end: to, transfers: [] };
       if (from <= to) {
-        if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
-          return result();
+        if (budgetSpent(ranges, started)) return result();
         ranges++;
-        const read = state.evmSync
-          ? { ok: true as const, items: [] as Parameters<typeof ethereumLegs>[3] }
-          : await this.etherscan.tokens(state.address, from, to);
-        if (!read.ok) return result(read.reason);
-        const last = rangeEnd(from, to, [read.items]);
-        if (last === null || state.evmSync) {
-          const staged = await readEvmBlock(this.source, this.etherscan, state, 'tokens', started);
-          if (!staged.ok) return result(staged.reason);
-          state = staged.state;
-          if (!staged.complete) return result();
-          end = staged.end;
-          transfers = staged.tokens;
-        } else {
-          end = last;
-          transfers = read.items.filter(
-            (item) => item.blockNumber >= from && item.blockNumber <= end,
-          );
+        range = await this.readTokenRange(state, from, to, started);
+        if (!range.ok) {
+          state = range.state;
+          return result(range.reason);
         }
       }
-      const expected = state;
-      const committed = await this.source.transaction('READ COMMITTED', async (manager) => {
-        const [current]: ScanRow[] = await manager.query(
-          `SELECT ${scanColumns} FROM wallet_addresses
-            WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
-          [expected.ownerId, expected.id],
-        );
-        if (!sameEvmScan(current, expected))
-          throw new ConflictException('Another sync advanced this address');
-        const legs = ethereumLegs(current.address, [], [], transfers, this.network);
-        const inserted = await this.insertLegs(
-          manager,
-          current,
-          legs,
-          ethereumTokenFacts(transfers, this.network),
-        );
-        const done = end === to;
-        await manager.query(
-          `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4, "evmSync" = NULL
-            WHERE "ownerId" = $1 AND id = $2`,
-          [current.ownerId, current.id, done ? null : to, done ? null : end],
-        );
-        return {
-          inserted,
-          state: {
-            ...current,
-            tokenBackfillTo: done ? null : to,
-            tokenBackfillAt: done ? null : end,
-            evmSync: null,
-          },
-        };
-      });
+      const committed = await this.commitTokenRange(range.state, range.transfers, range.end, to);
       imported += committed.inserted;
       state = committed.state;
     }
     return result();
+  }
+
+  /**
+   * One token range from `from` up to the last block the list returned whole. A block that alone
+   * fills a page, or one already staged, is read page by page; a null reason means it is staged
+   * only in part.
+   */
+  private async readTokenRange(
+    state: ScanRow,
+    from: number,
+    to: number,
+    started: number,
+  ): Promise<TokenRange> {
+    if (!state.evmSync) {
+      const read = await this.etherscan.tokens(state.address, from, to);
+      if (!read.ok) return { ok: false, state, reason: read.reason };
+      const last = rangeEnd(from, to, [read.items]);
+      if (last !== null) {
+        const transfers = read.items.filter(
+          (item) => item.blockNumber >= from && item.blockNumber <= last,
+        );
+        return { ok: true, state, end: last, transfers };
+      }
+    }
+    const staged = await readEvmBlock(this.source, this.etherscan, state, 'tokens', started);
+    if (!staged.ok) return { ok: false, state, reason: staged.reason };
+    if (!staged.complete) return { ok: false, state: staged.state, reason: null };
+    return { ok: true, state: staged.state, end: staged.end, transfers: staged.tokens };
+  }
+
+  /** Stores a token range's legs and moves the backfill past it; done once it reaches `to`. */
+  private commitTokenRange(
+    expected: ScanRow,
+    transfers: readonly TokenTransfer[],
+    end: number,
+    to: number,
+  ) {
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      const [current]: ScanRow[] = await manager.query(
+        `SELECT ${scanColumns} FROM wallet_addresses
+            WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
+        [expected.ownerId, expected.id],
+      );
+      if (!sameEvmScan(current, expected))
+        throw new ConflictException('Another sync advanced this address');
+      const legs = ethereumLegs(current.address, [], [], transfers, this.network);
+      const inserted = await this.insertLegs(
+        manager,
+        current,
+        legs,
+        ethereumTokenFacts(transfers, this.network),
+      );
+      const done = end === to;
+      await manager.query(
+        `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4, "evmSync" = NULL
+            WHERE "ownerId" = $1 AND id = $2`,
+        [current.ownerId, current.id, done ? null : to, done ? null : end],
+      );
+      return {
+        inserted,
+        state: {
+          ...current,
+          tokenBackfillTo: done ? null : to,
+          tokenBackfillAt: done ? null : end,
+          evmSync: null,
+        },
+      };
+    });
   }
 
   /**
