@@ -102,6 +102,164 @@ const importFailure = (error: unknown) =>
     fallback: 'Try again.',
   });
 
+/** How many entries of each kind the import would record. */
+const entryCounts = (preview: TBankImportPreview) =>
+  actions
+    .map(([action, label]) => ({
+      label,
+      count: preview.entries.filter((entry) => entry.action === action).length,
+    }))
+    .filter((row) => row.count > 0);
+
+/** How many operations are left out for each reason. */
+function skippedCounts(preview: TBankImportPreview): Map<string, number> {
+  const skipped = new Map<string, number>();
+  for (const item of preview.skipped) skipped.set(item.reason, (skipped.get(item.reason) ?? 0) + 1);
+  return skipped;
+}
+
+/** What stops the import, each as one line. */
+const blockersOf = (preview: TBankImportPreview): string[] => [
+  ...(preview.accountHasEntries
+    ? ['The account already holds records, which the history would count twice']
+    : []),
+  ...(preview.fitsTradeLimit ? [] : ['More trades than the account keeps, even combined by month']),
+  ...(preview.entries.length === 0 ? ['Nothing in this history to record'] : []),
+  ...preview.problems.map(problemLine),
+];
+
+const importLabel = (busy: boolean, count: number) =>
+  busy ? 'Importing…' : `Import ${count === 1 ? '1 entry' : `${count} entries`}`;
+
+/** What the history would become, what is left out and what stops the import. */
+function PreviewSummary({ preview, name }: { preview: TBankImportPreview; name: string }) {
+  const counts = entryCounts(preview);
+  const skipped = skippedCounts(preview);
+  const blockers = blockersOf(preview);
+  return (
+    <>
+      <p className="ui-soft">
+        {`What the T-Bank history of ${name} would become: ${plural(preview.trades, 'trade')} and ${plural(preview.rewards, 'reward')}. Nothing is recorded until you import it.`}
+      </p>
+      {counts.length > 0 && (
+        <KeyValue label="Entries to record" variant="panel">
+          {counts.map((row) => (
+            <KeyValueRow key={row.label} term={row.label}>
+              {row.count}
+            </KeyValueRow>
+          ))}
+        </KeyValue>
+      )}
+      {preview.grouping !== 'operation' && (
+        <Banner tone="info" role="none">
+          {`Trades are combined by Moscow ${preview.grouping} to stay within the account's 1,000 trades.`}
+        </Banner>
+      )}
+      {preview.cashGaps.map((gap) => (
+        <Banner key={gap.currency} tone="info" role="none">
+          {`T-Bank reports ${gap.amount} ${gap.currency.toUpperCase()} less cash than its listed operations leave. It lists no operation that took it, so the import records it as money paid out on ${dayText(moscowDate(gap.occurredAt))}, the earliest day the history allows.`}
+        </Banner>
+      ))}
+      {skipped.size > 0 && (
+        <>
+          <p className="ui-soft">Not included in this broker account:</p>
+          <KeyValue label="Left out">
+            {[...skipped].map(([reason, total]) => (
+              <KeyValueRow key={reason} term={skipText[reason] ?? reason}>
+                {total}
+              </KeyValueRow>
+            ))}
+          </KeyValue>
+        </>
+      )}
+      {blockers.length > 0 && (
+        <Banner tone="warn" role="none" title="Cannot import yet">
+          {preview.problems.some((problem) => problem.reason === 'not-held') && (
+            <p>
+              The imported operations do not establish enough holdings or cash for a sale or
+              payment. This can mean missing earlier records, transfers or corporate actions. Check
+              the broker report before adding opening lots; current holdings alone cannot establish
+              the original purchase dates and costs.
+            </p>
+          )}
+          <ul className="broker-howto" aria-label="Cannot import yet">
+            {blockers.map((line, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: two problems can read alike.
+              <li key={index}>{line}</li>
+            ))}
+          </ul>
+        </Banner>
+      )}
+      {preview.skipped.some((item) => item.reason !== 'no-amount' && item.occurredAt) && (
+        <details>
+          <summary>Operations needing reconciliation</summary>
+          <ul className="broker-howto">
+            {preview.skipped
+              .filter((item) => item.reason !== 'no-amount')
+              .map((item) => (
+                <li key={`${item.operationId}:${item.reason}`}>
+                  {[
+                    item.ticker,
+                    item.occurredAt && `ordered ${dayText(moscowDate(item.occurredAt))}`,
+                    skipText[item.reason] ?? item.reason,
+                    `operation ${item.operationId}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+/** Opening holdings and a share split the owner declares, and what the import adds for them. */
+function DeclaredTools({
+  preview,
+  opening,
+  split,
+  busy,
+  onOpening,
+  onSplit,
+}: {
+  preview: TBankImportPreview;
+  opening: TBankOpening | undefined;
+  split: TBankSplit | undefined;
+  busy: boolean;
+  onOpening: () => void;
+  onSplit: () => void;
+}) {
+  if (preview.accountHasEntries || !((preview.openingAssets?.length ?? 0) > 0)) return null;
+  return (
+    <div className="ui-toolbar">
+      <Button size="sm" disabled={busy} onClick={onOpening}>
+        {opening ? 'Edit opening holdings' : 'Record earlier holdings'}
+      </Button>
+      {preview.openingAssets?.some((asset) => ['share', 'etf'].includes(asset.type)) && (
+        <Button size="sm" disabled={busy} onClick={onSplit}>
+          {split ? 'Edit share split' : 'Record a share split'}
+        </Button>
+      )}
+      {split && (
+        <Banner tone="info">
+          The final import will also save a 1:{split.ratio} split of{' '}
+          {preview.openingAssets?.find((asset) => asset.asset === split?.asset)?.label ??
+            'this security'}{' '}
+          from {dayText(moscowDate(split.effectiveAt))}, for every account that holds it.
+        </Banner>
+      )}
+      {opening && (
+        <Banner tone="info">
+          The final import will also save {opening.lots.length} opening lot(s) with the quantities
+          and USD costs you reviewed.
+        </Banner>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   accountId: string;
   name: string;
@@ -229,29 +387,6 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
     }
   };
 
-  const counts = preview
-    ? actions
-        .map(([action, label]) => ({
-          label,
-          count: preview.entries.filter((entry) => entry.action === action).length,
-        }))
-        .filter((row) => row.count > 0)
-    : [];
-  const skipped = new Map<string, number>();
-  for (const item of preview?.skipped ?? [])
-    skipped.set(item.reason, (skipped.get(item.reason) ?? 0) + 1);
-  const blockers = preview
-    ? [
-        ...(preview.accountHasEntries
-          ? ['The account already holds records, which the history would count twice']
-          : []),
-        ...(preview.fitsTradeLimit
-          ? []
-          : ['More trades than the account keeps, even combined by month']),
-        ...(preview.entries.length === 0 ? ['Nothing in this history to record'] : []),
-        ...preview.problems.map(problemLine),
-      ]
-    : [];
   const count = preview?.entries.length ?? 0;
 
   return (
@@ -279,113 +414,18 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
             Reading the T-Bank history…
           </p>
         ) : (
-          <>
-            <p className="ui-soft">
-              {`What the T-Bank history of ${name} would become: ${plural(preview.trades, 'trade')} and ${plural(preview.rewards, 'reward')}. Nothing is recorded until you import it.`}
-            </p>
-            {counts.length > 0 && (
-              <KeyValue label="Entries to record" variant="panel">
-                {counts.map((row) => (
-                  <KeyValueRow key={row.label} term={row.label}>
-                    {row.count}
-                  </KeyValueRow>
-                ))}
-              </KeyValue>
-            )}
-            {preview.grouping !== 'operation' && (
-              <Banner tone="info" role="none">
-                {`Trades are combined by Moscow ${preview.grouping} to stay within the account's 1,000 trades.`}
-              </Banner>
-            )}
-            {preview.cashGaps.map((gap) => (
-              <Banner key={gap.currency} tone="info" role="none">
-                {`T-Bank reports ${gap.amount} ${gap.currency.toUpperCase()} less cash than its listed operations leave. It lists no operation that took it, so the import records it as money paid out on ${dayText(moscowDate(gap.occurredAt))}, the earliest day the history allows.`}
-              </Banner>
-            ))}
-            {skipped.size > 0 && (
-              <>
-                <p className="ui-soft">Not included in this broker account:</p>
-                <KeyValue label="Left out">
-                  {[...skipped].map(([reason, total]) => (
-                    <KeyValueRow key={reason} term={skipText[reason] ?? reason}>
-                      {total}
-                    </KeyValueRow>
-                  ))}
-                </KeyValue>
-              </>
-            )}
-            {blockers.length > 0 && (
-              <Banner tone="warn" role="none" title="Cannot import yet">
-                {preview.problems.some((problem) => problem.reason === 'not-held') && (
-                  <p>
-                    The imported operations do not establish enough holdings or cash for a sale or
-                    payment. This can mean missing earlier records, transfers or corporate actions.
-                    Check the broker report before adding opening lots; current holdings alone
-                    cannot establish the original purchase dates and costs.
-                  </p>
-                )}
-                <ul className="broker-howto" aria-label="Cannot import yet">
-                  {blockers.map((line, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: two problems can read alike.
-                    <li key={index}>{line}</li>
-                  ))}
-                </ul>
-              </Banner>
-            )}
-            {preview.skipped.some((item) => item.reason !== 'no-amount' && item.occurredAt) && (
-              <details>
-                <summary>Operations needing reconciliation</summary>
-                <ul className="broker-howto">
-                  {preview.skipped
-                    .filter((item) => item.reason !== 'no-amount')
-                    .map((item) => (
-                      <li key={`${item.operationId}:${item.reason}`}>
-                        {[
-                          item.ticker,
-                          item.occurredAt && `ordered ${dayText(moscowDate(item.occurredAt))}`,
-                          skipText[item.reason] ?? item.reason,
-                          `operation ${item.operationId}`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </li>
-                    ))}
-                </ul>
-              </details>
-            )}
-          </>
+          <PreviewSummary preview={preview} name={name} />
         )}
-        {preview &&
-          !preview.accountHasEntries &&
-          (preview.openingAssets?.length ?? 0) > 0 &&
-          !editingOpening &&
-          !editingSplit && (
-            <div className="ui-toolbar">
-              <Button size="sm" disabled={busy} onClick={() => setEditingOpening(true)}>
-                {opening.current ? 'Edit opening holdings' : 'Record earlier holdings'}
-              </Button>
-              {preview.openingAssets?.some((asset) => ['share', 'etf'].includes(asset.type)) && (
-                <Button size="sm" disabled={busy} onClick={() => setEditingSplit(true)}>
-                  {split.current ? 'Edit share split' : 'Record a share split'}
-                </Button>
-              )}
-              {split.current && (
-                <Banner tone="info">
-                  The final import will also save a 1:{split.current.ratio} split of{' '}
-                  {preview.openingAssets?.find((asset) => asset.asset === split.current?.asset)
-                    ?.label ?? 'this security'}{' '}
-                  from {dayText(moscowDate(split.current.effectiveAt))}, for every account that
-                  holds it.
-                </Banner>
-              )}
-              {opening.current && (
-                <Banner tone="info">
-                  The final import will also save {opening.current.lots.length} opening lot(s) with
-                  the quantities and USD costs you reviewed.
-                </Banner>
-              )}
-            </div>
-          )}
+        {preview && !editingOpening && !editingSplit && (
+          <DeclaredTools
+            preview={preview}
+            opening={opening.current}
+            split={split.current}
+            busy={busy}
+            onOpening={() => setEditingOpening(true)}
+            onSplit={() => setEditingSplit(true)}
+          />
+        )}
         {editingOpening && preview?.openingAssets && (
           <BrokerOpeningForm
             assets={preview.openingAssets}
@@ -418,7 +458,7 @@ export default function ImportHistoryDialog({ accountId, name, onClose, onImport
             disabled={!preview.canImport || editingOpening || editingSplit}
             onClick={() => void confirm()}
           >
-            {busy ? 'Importing…' : `Import ${count === 1 ? '1 entry' : `${count} entries`}`}
+            {importLabel(busy, count)}
           </Button>
         )}
       </ModalFooter>
