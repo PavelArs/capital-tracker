@@ -23,6 +23,7 @@ import {
   parseMovement,
   parseRateChange,
   parseUuid,
+  type RateInput,
 } from './deposit-input';
 import {
   bankBalanceOf,
@@ -324,36 +325,7 @@ export class DepositsService {
     const input = parseRateChange(raw);
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
-      if (input.effectiveFrom > moscowDate(new Date()))
-        throw new UnprocessableEntityException('The rate change date is in the future');
-      // A term deposit opens with its rate; an account entered without one may be given its first
-      // rate from its opening day, so that day's interest is not lost.
-      const firstRateOfAccount =
-        stored.deposit.kind === 'account' &&
-        !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
-      if (
-        (firstRateOfAccount
-          ? input.effectiveFrom < stored.deposit.startDate
-          : input.effectiveFrom <= stored.deposit.startDate) ||
-        (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
-      )
-        throw new UnprocessableEntityException('The rate must change inside the term');
-      const next: DepositTerms = {
-        ...termsOf(stored),
-        rates: [
-          ...stored.rates.filter((rate) => rate.effectiveFrom !== input.effectiveFrom),
-          input,
-        ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
-      };
-      const closedOn = projectDeposit(
-        termsOf(stored),
-        movementsOf(stored),
-        stored.deposit.endDate ?? moscowDate(new Date()),
-      ).closedOn;
-      if (closedOn !== null && input.effectiveFrom >= closedOn)
-        throw new UnprocessableEntityException('The deposit was closed before that date');
-      if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
-        throw new ConflictException('A recorded movement depends on the earlier rate');
+      assertRateChange(stored, input);
       // A retry of the same rate (a lost answer) writes nothing, so it adds no History event.
       const changed: unknown[] = await manager.query(
         `INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent")
@@ -501,12 +473,7 @@ export class DepositsService {
     const movements = movementsOf(stored);
     const now = projectDeposit(terms, movements, asOf);
     const ended = terms.endDate !== null && terms.endDate <= asOf;
-    const status =
-      now.closedOn !== null
-        ? ('closed' as const)
-        : ended
-          ? ('matured' as const)
-          : ('active' as const);
+    const status = depositStatus(now.closedOn, ended);
     // A snapshot forecasts from what was known on that day, not from movements saved since.
     const known = movements.filter((movement) => movement.date <= asOf);
     const knownTerms = {
@@ -520,21 +487,13 @@ export class DepositsService {
     // Only checks made by the asked day: a later one says nothing about this day.
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
     const lastCheck = last ? this.checkOf(stored, terms, last) : null;
-    const inForce = [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf);
-    // A term deposit read before its first rate still shows that rate; an account has none until
-    // a rate takes effect, and a missing rate is not stated as 0%.
-    const ratePercent =
-      inForce?.ratePercent ??
-      (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null));
-    // Missing is not zero: the days of an account before its first rate have unknown interest,
-    // and a day with no rate in force has none to state, so those figures are not stated.
-    const interestMissing = accountInterestMissing(stored);
-    const noRate = noRateInForceOn(stored, asOf);
-    // Missing capitalized interest would itself earn interest in every later period.
-    const incompleteInterest = noRate || (interestMissing && terms.capitalized);
-    const periodStart = now.periods.at(-1)?.to ?? terms.startDate;
-    const incompleteAccrual =
-      incompleteInterest || (interestMissing && periodStart < (firstRateDay(stored) ?? asOf));
+    const ratePercent = statedRatePercent(stored, terms, asOf);
+    const { interestMissing, noRate, incompleteInterest, incompleteAccrual } = interestGaps(
+      stored,
+      terms,
+      now,
+      asOf,
+    );
     const afterInflation = (reading: InflationReadings['official'] | undefined) =>
       reading && !noRate
         ? depositReal(
@@ -586,17 +545,7 @@ export class DepositsService {
         status === 'active' && !incompleteInterest
           ? nextPayout(knownTerms, known, asOf, interestMissing ? firstRateDay(stored) : undefined)
           : null,
-      atMaturity: maturity
-        ? {
-            date: terms.endDate as string,
-            balance: maturity.balance,
-            interest: centsText(canonicalDecimalToAtoms(maturity.interestPosted)),
-            // The balance on the end date in the money of the day asked (null past the end).
-            inTodaysMoney: readings
-              ? inTodaysMoney(maturity.balance, asOf, terms.endDate as string, readings)
-              : { official: null, personal: null },
-          }
-        : null,
+      atMaturity: maturityView(maturity, terms, asOf, readings),
       lastCheck,
     };
   }
@@ -713,6 +662,98 @@ export class DepositsService {
         .reverse(),
     };
   }
+}
+
+/** A deposit its movements closed, one past its end date, or one still running. */
+const depositStatus = (closedOn: string | null, ended: boolean) =>
+  closedOn !== null ? ('closed' as const) : ended ? ('matured' as const) : ('active' as const);
+
+/** The rate in force on the day. */
+function statedRatePercent(stored: Stored, terms: DepositTerms, asOf: string) {
+  const inForce = [...terms.rates].reverse().find((rate) => rate.effectiveFrom <= asOf);
+  // A term deposit read before its first rate still shows that rate; an account has none until
+  // a rate takes effect, and a missing rate is not stated as 0%.
+  return (
+    inForce?.ratePercent ??
+    (stored.deposit.kind === 'account' ? null : (terms.rates[0]?.ratePercent ?? null))
+  );
+}
+
+/**
+ * Missing is not zero: the days of an account before its first rate have unknown interest, and a
+ * day with no rate in force has none to state, so those figures are not stated.
+ */
+function interestGaps(
+  stored: Stored,
+  terms: DepositTerms,
+  now: ReturnType<typeof projectDeposit>,
+  asOf: string,
+) {
+  const interestMissing = accountInterestMissing(stored);
+  const noRate = noRateInForceOn(stored, asOf);
+  // Missing capitalized interest would itself earn interest in every later period.
+  const incompleteInterest = noRate || (interestMissing && terms.capitalized);
+  const periodStart = now.periods.at(-1)?.to ?? terms.startDate;
+  const incompleteAccrual =
+    incompleteInterest || (interestMissing && periodStart < (firstRateDay(stored) ?? asOf));
+  return { interestMissing, noRate, incompleteInterest, incompleteAccrual };
+}
+
+/** What a term deposit still running will hold on its end date; null without one. */
+function maturityView(
+  maturity: ReturnType<typeof projectDeposit> | null,
+  terms: DepositTerms,
+  asOf: string,
+  readings: InflationReadings | undefined,
+) {
+  return maturity
+    ? {
+        date: terms.endDate as string,
+        balance: maturity.balance,
+        interest: centsText(canonicalDecimalToAtoms(maturity.interestPosted)),
+        // The balance on the end date in the money of the day asked (null past the end).
+        inTodaysMoney: readings
+          ? inTodaysMoney(maturity.balance, asOf, terms.endDate as string, readings)
+          : { official: null, personal: null },
+      }
+    : null;
+}
+
+/**
+ * DEP-RATE: refuses a rate change dated in the future, outside the term, on or after the day the
+ * deposit closed, or one a recorded movement could not stand.
+ */
+function assertRateChange(stored: Stored, input: RateInput) {
+  if (input.effectiveFrom > moscowDate(new Date()))
+    throw new UnprocessableEntityException('The rate change date is in the future');
+  // A term deposit opens with its rate; an account entered without one may be given its first
+  // rate from its opening day, so that day's interest is not lost.
+  const firstRateOfAccount =
+    stored.deposit.kind === 'account' &&
+    !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
+  if (
+    (firstRateOfAccount
+      ? input.effectiveFrom < stored.deposit.startDate
+      : input.effectiveFrom <= stored.deposit.startDate) ||
+    (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
+  )
+    throw new UnprocessableEntityException('The rate must change inside the term');
+  const next: DepositTerms = {
+    ...termsOf(stored),
+    rates: [
+      ...stored.rates.filter((rate) => rate.effectiveFrom !== input.effectiveFrom),
+      input,
+    ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
+  };
+  const closedOn = projectDeposit(
+    termsOf(stored),
+    movementsOf(stored),
+    stored.deposit.endDate ?? moscowDate(new Date()),
+  ).closedOn;
+  if (closedOn !== null && input.effectiveFrom >= closedOn)
+    throw new UnprocessableEntityException('The deposit was closed before that date');
+  if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
+    throw new ConflictException('A recorded movement depends on the earlier rate');
 }
 
 /** The day the first rate of a deposit takes effect, or undefined when it has none. */

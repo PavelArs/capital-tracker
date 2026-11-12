@@ -45,7 +45,12 @@ import { cashAsset } from '../accounting/trade-settlement';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { parseImport, parseImportPreview, parseUuid } from './broker-connection-input';
 import { BrokerConnectionsService } from './broker-connections.service';
-import { instrumentFacts, resolveLinks, type SavedLink } from './broker-instrument-links';
+import {
+  type InstrumentFacts,
+  instrumentFacts,
+  resolveLinks,
+  type SavedLink,
+} from './broker-instrument-links';
 import {
   type BrokerOpening,
   type BrokerSplit,
@@ -231,42 +236,9 @@ export class BrokerImportService {
         );
         if (!review.canImport || review.previewHash !== input.previewHash) throw conflict();
         // SPLIT: the declared splits hold for every account of the owner, from this import on.
-        for (const split of review.declaredSplits)
-          await manager.query(
-            `INSERT INTO instrument_splits
-              (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
-              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              randomUUID(),
-              owner,
-              split.instrumentId,
-              split.effectiveAt,
-              split.ratio,
-              randomUUID(),
-              JSON.stringify({ importRequestId: input.requestId, ...split }),
-            ],
-          );
-        if (input.opening) {
-          const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
-            requestId: input.requestId,
-            expectedRevision: 0,
-            asOf: input.opening.asOf,
-            positions: review.openingPositions,
-          });
-          await this.carryIn.initializeWithin(manager, owner, account, {
-            requestId: input.requestId,
-            expectedOpeningRevision: opening.value.revision,
-            assertReviewed: true,
-            lots: review.openingLots.map((lot) => ({
-              instrumentId: lot.instrumentId,
-              acquiredAt: lot.acquiredAt,
-              orderWithinTimestamp: lot.orderWithinTimestamp,
-              originalQuantity: lot.originalQuantity,
-              originalCostUsd: lot.originalCostUsd,
-              remainingQuantity: lot.carriedQuantity,
-            })),
-          });
-        }
+        await saveDeclaredSplits(manager, owner, input.requestId, review.declaredSplits);
+        if (input.opening)
+          await this.saveOpening(manager, owner, account, input.requestId, input.opening, review);
         const journal =
           (await readJournal(manager, owner, account)) ??
           (await startEmptyJournal(manager, owner, row, input.requestId));
@@ -301,78 +273,12 @@ export class BrokerImportService {
         const rewards: (string | null)[] = [];
         const returns: (string | null)[] = [];
         for (const [index, entry] of review.entries.entries()) {
-          const revision = first + index;
-          let tradeId: string | null = null;
-          let rewardId: string | null = null;
-          let capitalReturnId: string | null = null;
-          if (entry.trade) {
-            tradeId = randomUUID();
-            const fields = execution(entry.trade);
-            await appendTradeVersion(manager, owner, account, {
-              ...fields,
-              tradeId,
-              version: 1,
-              journalRevision: revision,
-              requestId: randomUUID(),
-              kind: 'create',
-              instrumentName: entry.trade.instrumentName,
-              instrumentSymbol: entry.trade.instrumentSymbol,
-              canonicalPayload: JSON.stringify({
-                kind: 'create',
-                expectedJournalRevision: revision - 1,
-                ...fields,
-              }),
-            });
-          } else if (entry.capitalReturn) {
-            capitalReturnId = randomUUID();
-            const { capitalReturnId: _, version, ...fields } = entry.capitalReturn;
-            const requestId = randomUUID();
-            await appendCapitalReturnVersion(manager, owner, {
-              ...fields,
-              capitalReturnId,
-              version,
-              accountId: account,
-              kind: 'create',
-              requestId,
-              journalRevision: revision,
-              rate: entry.rate,
-              canonicalPayload: capitalReturnPayload('create', {
-                expectedJournalRevision: revision - 1,
-                instrumentId: fields.instrumentId,
-                cashInstrumentId: fields.cashInstrumentId,
-                occurredAt: fields.occurredAt,
-                orderWithinTimestamp: fields.orderWithinTimestamp,
-                amount: fields.amount,
-                amountUsd: fields.amountUsd,
-                paidCurrency: fields.paidCurrency,
-                rate: entry.rate,
-              }),
-            });
-          } else {
-            rewardId = randomUUID();
-            const { rewardId: _, version, ...reward } = entry.reward;
-            const request = {
-              ...reward,
-              assertReward: true as const,
-              requestId: randomUUID(),
-              expectedJournalRevision: revision - 1,
-            };
-            await appendRewardVersion(manager, owner, {
-              ...reward,
-              rewardId,
-              version,
-              accountId: account,
-              kind: 'create',
-              requestId: request.requestId,
-              journalRevision: revision,
-              canonicalPayload: rewardPayload('create', request),
-            });
-          }
+          const ids = await writeEntry(manager, owner, account, entry, first + index);
           for (const operationId of entry.source.operationIds) {
             written.operations.push(operationId);
-            written.trades.push(tradeId);
-            rewards.push(rewardId);
-            returns.push(capitalReturnId);
+            written.trades.push(ids.tradeId);
+            rewards.push(ids.rewardId);
+            returns.push(ids.capitalReturnId);
           }
         }
         await manager.query(
@@ -400,6 +306,36 @@ export class BrokerImportService {
         return { created: true, value: receipt(saved) };
       })
       .catch(rethrowAccountingHistory);
+  }
+
+  /** The reviewed opening holdings, saved as the account's opening and its carried-in lots. */
+  private async saveOpening(
+    manager: EntityManager,
+    owner: string,
+    account: string,
+    requestId: string,
+    declared: BrokerOpening,
+    review: Review,
+  ) {
+    const opening = await this.accounting.saveOpeningWithin(manager, owner, account, {
+      requestId,
+      expectedRevision: 0,
+      asOf: declared.asOf,
+      positions: review.openingPositions,
+    });
+    await this.carryIn.initializeWithin(manager, owner, account, {
+      requestId,
+      expectedOpeningRevision: opening.value.revision,
+      assertReviewed: true,
+      lots: review.openingLots.map((lot) => ({
+        instrumentId: lot.instrumentId,
+        acquiredAt: lot.acquiredAt,
+        orderWithinTimestamp: lot.orderWithinTimestamp,
+        originalQuantity: lot.originalQuantity,
+        originalCostUsd: lot.originalCostUsd,
+        remainingQuantity: lot.carriedQuantity,
+      })),
+    });
   }
 
   private async replay(manager: EntityManager, owner: string, account: string, request: string) {
@@ -690,38 +626,9 @@ export class BrokerImportService {
     available: ReturnType<typeof openingAssets> = [],
     identities: readonly (TBankOperation | TBankPosition)[] = [],
   ) {
-    const cash = {} as Record<CashCurrency, ImportInstrument>;
-    for (const code of ['RUB', 'USD', 'EUR'] as const) {
-      const asset = cashAsset[code];
-      const used =
-        opening?.lots.some((lot) => lot.asset === `cash:${code}`) ||
-        plan.some(
-          (entry) =>
-            cashCurrency[entry.currency] === code ||
-            (entry.cash !== undefined && cashCurrency[entry.cash] === code),
-        );
-      const found = used ? await findOrCreateInstrument(manager, owner, asset, write) : null;
-      cash[code] = found ?? { id: `new-cash-${code}`, name: asset.name, symbol: asset.symbol };
-    }
+    const cash = await cashInstruments(manager, owner, plan, write, opening);
     const securities = new Map<string, ImportInstrument>();
-    const wanted = new Map<string, Pick<PlanEntry, 'ticker' | 'currency'>>();
-    for (const asset of available)
-      if (
-        !asset.asset.startsWith('cash:') &&
-        opening?.lots.some((lot) => lot.asset === asset.asset)
-      )
-        wanted.set(asset.asset, {
-          ticker: asset.label === asset.asset ? '' : asset.label,
-          currency: asset.currency,
-        });
-    for (const entry of plan)
-      if (
-        entry.record === 'trade' &&
-        entry.instrumentUid &&
-        !entry.cash &&
-        !wanted.has(entry.instrumentUid)
-      )
-        wanted.set(entry.instrumentUid, entry);
+    const wanted = wantedSecurities(plan, opening, available);
     if (wanted.size === 0) return { cash, securities, linked: [] };
     // Canonical trading modes may change between imports; resolve every verified original UID,
     // and the asset, which joins one fund's venue UIDs across accounts.
@@ -744,18 +651,7 @@ export class BrokerImportService {
     if (!resolved) throw conflict();
     for (const [uid, row] of resolved) {
       securities.set(uid, { id: row.id, name: row.name, symbol: row.symbol });
-      const fact = facts.get(uid)!;
-      // A link saved before asset UIDs were kept learns them from the import that names it.
-      if (
-        write &&
-        ((!row.assetUid && fact.assetUid) || (!row.instrumentType && fact.instrumentType))
-      )
-        await manager.query(
-          `UPDATE broker_instrument_links
-            SET "assetUid" = COALESCE("assetUid", $3), "instrumentType" = COALESCE("instrumentType", $4)
-            WHERE "ownerId" = $1 AND provider = 'tbank' AND "providerInstrumentId" = $2`,
-          [owner, row.uid, fact.assetUid ?? null, fact.instrumentType ?? null],
-        );
+      if (write) await learnLinkFacts(manager, owner, row, facts.get(uid)!);
     }
     const linked = [...resolved]
       .filter(([uid]) => !created.has(uid))
@@ -763,49 +659,235 @@ export class BrokerImportService {
       .sort();
     for (const [uid, entry] of wanted) {
       if (securities.has(uid)) continue;
-      const name = entry.ticker || `T-Bank ${uid}`;
-      const symbol = entry.ticker || null;
-      if (!write) {
-        securities.set(uid, { id: `new-${uid}`, name, symbol });
-        continue;
-      }
-      const value = {
-        requestId: randomUUID(),
-        name,
-        symbol,
-        assetType: 'manual' as const,
-        valuationCurrency: cashCurrency[entry.currency],
-      };
-      const classification = classifyAsset(value);
-      const [instrument]: ImportInstrument[] = await manager.query(
-        `INSERT INTO accounting_instruments
-          (id, "ownerId", "requestId", "canonicalPayload", name, symbol, "assetType",
-            "valuationCurrency", "priceSource")
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, symbol`,
-        [
-          randomUUID(),
-          owner,
-          value.requestId,
-          instrumentPayload(value, classification),
-          name,
-          symbol,
-          classification.assetType,
-          classification.valuationCurrency,
-          classification.priceSource,
-        ],
+      securities.set(
+        uid,
+        write
+          ? await createSecurity(manager, owner, uid, entry, facts, created)
+          : { id: `new-${uid}`, ...securityName(uid, entry) },
       );
-      const fact = facts.get(uid)!;
-      await manager.query(
-        `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId",
-            "instrumentId", "assetUid", "instrumentType")
-          VALUES ($1, 'tbank', $2, $3, $4, $5)`,
-        [owner, uid, instrument.id, fact.assetUid ?? null, fact.instrumentType ?? null],
-      );
-      created.add(uid);
-      securities.set(uid, instrument);
     }
     return { cash, securities, linked };
   }
+}
+
+/** SPLIT: saves the splits declared with an import for every account of the owner. */
+async function saveDeclaredSplits(
+  manager: EntityManager,
+  owner: string,
+  requestId: string,
+  declaredSplits: Review['declaredSplits'],
+) {
+  for (const split of declaredSplits)
+    await manager.query(
+      `INSERT INTO instrument_splits
+              (id, "ownerId", "instrumentId", "effectiveAt", ratio, "requestId", "canonicalPayload")
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        randomUUID(),
+        owner,
+        split.instrumentId,
+        split.effectiveAt,
+        split.ratio,
+        randomUUID(),
+        JSON.stringify({ importRequestId: requestId, ...split }),
+      ],
+    );
+}
+
+/** Writes one journal entry at its revision; the id of the trade, reward or return it became. */
+async function writeEntry(
+  manager: EntityManager,
+  owner: string,
+  account: string,
+  entry: JournalEntry,
+  revision: number,
+) {
+  let tradeId: string | null = null;
+  let rewardId: string | null = null;
+  let capitalReturnId: string | null = null;
+  if (entry.trade) {
+    tradeId = randomUUID();
+    const fields = execution(entry.trade);
+    await appendTradeVersion(manager, owner, account, {
+      ...fields,
+      tradeId,
+      version: 1,
+      journalRevision: revision,
+      requestId: randomUUID(),
+      kind: 'create',
+      instrumentName: entry.trade.instrumentName,
+      instrumentSymbol: entry.trade.instrumentSymbol,
+      canonicalPayload: JSON.stringify({
+        kind: 'create',
+        expectedJournalRevision: revision - 1,
+        ...fields,
+      }),
+    });
+  } else if (entry.capitalReturn) {
+    capitalReturnId = randomUUID();
+    const { capitalReturnId: _, version, ...fields } = entry.capitalReturn;
+    const requestId = randomUUID();
+    await appendCapitalReturnVersion(manager, owner, {
+      ...fields,
+      capitalReturnId,
+      version,
+      accountId: account,
+      kind: 'create',
+      requestId,
+      journalRevision: revision,
+      rate: entry.rate,
+      canonicalPayload: capitalReturnPayload('create', {
+        expectedJournalRevision: revision - 1,
+        instrumentId: fields.instrumentId,
+        cashInstrumentId: fields.cashInstrumentId,
+        occurredAt: fields.occurredAt,
+        orderWithinTimestamp: fields.orderWithinTimestamp,
+        amount: fields.amount,
+        amountUsd: fields.amountUsd,
+        paidCurrency: fields.paidCurrency,
+        rate: entry.rate,
+      }),
+    });
+  } else {
+    rewardId = randomUUID();
+    const { rewardId: _, version, ...reward } = entry.reward;
+    const request = {
+      ...reward,
+      assertReward: true as const,
+      requestId: randomUUID(),
+      expectedJournalRevision: revision - 1,
+    };
+    await appendRewardVersion(manager, owner, {
+      ...reward,
+      rewardId,
+      version,
+      accountId: account,
+      kind: 'create',
+      requestId: request.requestId,
+      journalRevision: revision,
+      canonicalPayload: rewardPayload('create', request),
+    });
+  }
+  return { tradeId, rewardId, capitalReturnId };
+}
+
+/** The cash asset of each currency the opening or the plan moves; one not used is not read. */
+async function cashInstruments(
+  manager: EntityManager,
+  owner: string,
+  plan: readonly PlanEntry[],
+  write: boolean,
+  opening?: BrokerOpening,
+) {
+  const cash = {} as Record<CashCurrency, ImportInstrument>;
+  for (const code of ['RUB', 'USD', 'EUR'] as const) {
+    const asset = cashAsset[code];
+    const used =
+      opening?.lots.some((lot) => lot.asset === `cash:${code}`) ||
+      plan.some(
+        (entry) =>
+          cashCurrency[entry.currency] === code ||
+          (entry.cash !== undefined && cashCurrency[entry.cash] === code),
+      );
+    const found = used ? await findOrCreateInstrument(manager, owner, asset, write) : null;
+    cash[code] = found ?? { id: `new-cash-${code}`, name: asset.name, symbol: asset.symbol };
+  }
+  return cash;
+}
+
+/**
+ * The securities the import needs an instrument for, by UID: those of the opening holdings this
+ * history holds, then those the plan trades.
+ */
+function wantedSecurities(
+  plan: readonly PlanEntry[],
+  opening: BrokerOpening | undefined,
+  available: ReturnType<typeof openingAssets>,
+) {
+  const wanted = new Map<string, Pick<PlanEntry, 'ticker' | 'currency'>>();
+  for (const asset of available)
+    if (!asset.asset.startsWith('cash:') && opening?.lots.some((lot) => lot.asset === asset.asset))
+      wanted.set(asset.asset, {
+        ticker: asset.label === asset.asset ? '' : asset.label,
+        currency: asset.currency,
+      });
+  for (const entry of plan)
+    if (
+      entry.record === 'trade' &&
+      entry.instrumentUid &&
+      !entry.cash &&
+      !wanted.has(entry.instrumentUid)
+    )
+      wanted.set(entry.instrumentUid, entry);
+  return wanted;
+}
+
+/** A link saved before asset UIDs were kept learns them from the import that names it. */
+async function learnLinkFacts(
+  manager: EntityManager,
+  owner: string,
+  row: SavedLink,
+  fact: InstrumentFacts,
+) {
+  if ((!row.assetUid && fact.assetUid) || (!row.instrumentType && fact.instrumentType))
+    await manager.query(
+      `UPDATE broker_instrument_links
+            SET "assetUid" = COALESCE("assetUid", $3), "instrumentType" = COALESCE("instrumentType", $4)
+            WHERE "ownerId" = $1 AND provider = 'tbank' AND "providerInstrumentId" = $2`,
+      [owner, row.uid, fact.assetUid ?? null, fact.instrumentType ?? null],
+    );
+}
+
+/** A new security's asset is named by its ticker, else by its UID. */
+const securityName = (uid: string, entry: Pick<PlanEntry, 'ticker'>) => ({
+  name: entry.ticker || `T-Bank ${uid}`,
+  symbol: entry.ticker || null,
+});
+
+/** A new asset priced by hand in the security's trade currency, linked to its UID. */
+async function createSecurity(
+  manager: EntityManager,
+  owner: string,
+  uid: string,
+  entry: Pick<PlanEntry, 'ticker' | 'currency'>,
+  facts: ReadonlyMap<string, InstrumentFacts>,
+  created: Set<string>,
+): Promise<ImportInstrument> {
+  const { name, symbol } = securityName(uid, entry);
+  const value = {
+    requestId: randomUUID(),
+    name,
+    symbol,
+    assetType: 'manual' as const,
+    valuationCurrency: cashCurrency[entry.currency],
+  };
+  const classification = classifyAsset(value);
+  const [instrument]: ImportInstrument[] = await manager.query(
+    `INSERT INTO accounting_instruments
+          (id, "ownerId", "requestId", "canonicalPayload", name, symbol, "assetType",
+            "valuationCurrency", "priceSource")
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, symbol`,
+    [
+      randomUUID(),
+      owner,
+      value.requestId,
+      instrumentPayload(value, classification),
+      name,
+      symbol,
+      classification.assetType,
+      classification.valuationCurrency,
+      classification.priceSource,
+    ],
+  );
+  const fact = facts.get(uid)!;
+  await manager.query(
+    `INSERT INTO broker_instrument_links ("ownerId", provider, "providerInstrumentId",
+            "instrumentId", "assetUid", "instrumentType")
+          VALUES ($1, 'tbank', $2, $3, $4, $5)`,
+    [owner, uid, instrument.id, fact.assetUid ?? null, fact.instrumentType ?? null],
+  );
+  created.add(uid);
+  return instrument;
 }
 
 /** A problem with the operations it names; the first 50 are enough to find them. */

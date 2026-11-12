@@ -97,6 +97,40 @@ export async function readPersonalRate(
   return row ? exact(row.annualPercent) : null;
 }
 
+/** One currency of the overview: its official source and series, and the owner's own figures. */
+async function currencyOverview(
+  manager: EntityManager,
+  owner: string,
+  currency: AccountingCurrency,
+) {
+  const { changes, official, manual } = await readEffectiveChanges(manager, owner, currency);
+  const series = buildSeries(changes);
+  const provider = OFFICIAL_SOURCES[currency];
+  const yearly = trailingYearPercent(series);
+  // The published months alone, without the owner's own months laid over them.
+  const publishedYearly = trailingYearPercent(
+    buildSeries(new Map(official.map((row) => [row.month, Number(row.changePercent)]))),
+  );
+  return {
+    currency,
+    officialSource: provider ? PROVIDER_NAMES[provider] : null,
+    officialLastMonth: official.length ? official[official.length - 1].month : null,
+    lastMonth: series.last,
+    // A gap in the middle of the series leaves only the stretch after it comparable.
+    comparableFrom: series.chainStart,
+    trailingYearPercent: yearly === null ? null : yearly.toFixed(4),
+    // True when one of those twelve months is an estimate, not a published or typed figure.
+    trailingYearEstimated: trailingYearEstimated(series),
+    officialTrailingYearPercent: publishedYearly === null ? null : publishedYearly.toFixed(4),
+    estimatedMonthlyPercent: series.last === null ? null : (series.trend * 100).toFixed(6),
+    personalRatePercent: await readPersonalRate(manager, owner, currency),
+    manualMonths: manual.map(({ month, changePercent }) => ({
+      month,
+      changePercent: exact(changePercent),
+    })),
+  };
+}
+
 @Injectable()
 export class InflationService {
   private readonly logger = new Logger(InflationService.name);
@@ -233,34 +267,8 @@ export class InflationService {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
       const currencies = [];
-      for (const currency of accountingCurrencies) {
-        const { changes, official, manual } = await readEffectiveChanges(manager, owner, currency);
-        const series = buildSeries(changes);
-        const provider = OFFICIAL_SOURCES[currency];
-        const yearly = trailingYearPercent(series);
-        // The published months alone, without the owner's own months laid over them.
-        const publishedYearly = trailingYearPercent(
-          buildSeries(new Map(official.map((row) => [row.month, Number(row.changePercent)]))),
-        );
-        currencies.push({
-          currency,
-          officialSource: provider ? PROVIDER_NAMES[provider] : null,
-          officialLastMonth: official.length ? official[official.length - 1].month : null,
-          lastMonth: series.last,
-          // A gap in the middle of the series leaves only the stretch after it comparable.
-          comparableFrom: series.chainStart,
-          trailingYearPercent: yearly === null ? null : yearly.toFixed(4),
-          // True when one of those twelve months is an estimate, not a published or typed figure.
-          trailingYearEstimated: trailingYearEstimated(series),
-          officialTrailingYearPercent: publishedYearly === null ? null : publishedYearly.toFixed(4),
-          estimatedMonthlyPercent: series.last === null ? null : (series.trend * 100).toFixed(6),
-          personalRatePercent: await readPersonalRate(manager, owner, currency),
-          manualMonths: manual.map(({ month, changePercent }) => ({
-            month,
-            changePercent: exact(changePercent),
-          })),
-        });
-      }
+      for (const currency of accountingCurrencies)
+        currencies.push(await currencyOverview(manager, owner, currency));
       const [state]: SourceRow[] = await manager.query(
         'SELECT * FROM sync_sources WHERE key = $1',
         [INFLATION_SOURCE_KEY],
