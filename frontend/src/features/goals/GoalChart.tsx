@@ -1,10 +1,11 @@
 import { cachedReads } from '@api/cached-reads';
-import type { Goal, ScenarioKey } from '@api/goals.api';
+import type { Goal, GoalForecast, ScenarioKey } from '@api/goals.api';
+import type { HistoryPoint } from '@api/portfolio-history.api';
 import { type KeyboardEvent, useEffect, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
-import { Legend } from '@/ui/Legend';
+import { Legend, type LegendItem } from '@/ui/Legend';
 import {
   chartDateTicks,
   chartRightPad,
@@ -70,6 +71,322 @@ function line(points: readonly ([number, number] | null)[]): string {
   return path;
 }
 
+type Point = [number, number];
+type Scale = (value: number) => number;
+
+/** The portfolio's history, leaving out the days with no value. */
+function pastOf(points: readonly HistoryPoint[]): Past[] {
+  return points.flatMap((point) =>
+    point.value === null
+      ? []
+      : [
+          {
+            kind: 'history' as const,
+            time: Date.parse(point.at),
+            at: point.at,
+            value: Number(point.value),
+            text: point.value,
+            invested: point.invested,
+            complete: point.complete,
+          },
+        ],
+  );
+}
+
+/** The forecast after its first point, the portfolio now, where the base case has a figure. */
+function aheadOf(forecast: GoalForecast): Ahead[] {
+  return forecast.points.slice(1).flatMap((point) =>
+    point.base === null
+      ? []
+      : [
+          {
+            kind: 'forecast' as const,
+            time: dayTime(point.on),
+            on: point.on,
+            value: Number(point.base),
+            figures: point,
+          },
+        ],
+  );
+}
+
+/** Why there is nothing to draw yet. */
+function emptyText(historyError: unknown, loaded: boolean, currency: string): string {
+  if (loaded) return `No portfolio figures in ${currency} yet.`;
+  return historyError
+    ? 'Could not load the portfolio history. Try again later.'
+    : 'Loading the chart…';
+}
+
+/**
+ * The box's scale: time across from the first point (or today) to the last, value up from zero
+ * or below to above the sum and every case, in round steps.
+ */
+function scaleOf(
+  width: number,
+  plotted: readonly (Past | Ahead)[],
+  past: readonly Past[],
+  band: readonly Ahead[],
+  today: number,
+  target: number,
+) {
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+  const start = Math.min(plotted[0].time, today);
+  const end = Math.max(plotted[plotted.length - 1].time, today);
+  const span = Math.max(1, end - start);
+  const x = (time: number) => PAD.left + ((time - start) / span) * innerWidth;
+  const topOf = [
+    target,
+    ...past.map((entry) => entry.value),
+    ...past.map((entry) => Number(entry.invested ?? 0)),
+    // Every case, so the optimistic one is not cut off above the box.
+    ...band.flatMap((entry) =>
+      CASES.flatMap((key) => (entry.figures[key] === null ? [] : [Number(entry.figures[key])])),
+    ),
+  ];
+  let top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
+  let bottom = Math.min(
+    0,
+    ...past.map((entry) => entry.value),
+    ...past.map((entry) => Number(entry.invested ?? 0)),
+  );
+  const step = niceStep((top - bottom) / 4);
+  top = Math.ceil(top / step) * step;
+  bottom = Math.floor(bottom / step) * step;
+  const y = (value: number) =>
+    PAD.top + innerHeight - ((value - bottom) / (top - bottom)) * innerHeight;
+  const ticks: number[] = [];
+  for (let value = bottom; value <= top + step / 2; value += step) ticks.push(value);
+  return { innerWidth, innerHeight, start, span, x, y, ticks, floor: PAD.top + innerHeight };
+}
+
+/**
+ * The portfolio line, the money put in as a step line, and the area under the portfolio. A day
+ * without a value (no rate) breaks the portfolio line and its area instead of joining.
+ */
+function historyShapes(points: readonly HistoryPoint[], x: Scale, y: Scale, floor: number) {
+  const valued = points.map((point): Point | null =>
+    point.value === null ? null : [x(Date.parse(point.at)), y(Number(point.value))],
+  );
+  const investedPath = steps(
+    points.map((point): Point | null =>
+      point.invested === null ? null : [x(Date.parse(point.at)), y(Number(point.invested))],
+    ),
+  );
+  const runs: Point[][] = [];
+  valued.forEach((point, index) => {
+    if (point === null) return;
+    if (index > 0 && valued[index - 1] !== null) runs.at(-1)?.push(point);
+    else runs.push([point]);
+  });
+  const area = runs
+    .filter((run) => run.length > 1)
+    .map(
+      (run) =>
+        `${line(run)}L${run.at(-1)?.[0].toFixed(1)} ${floor}L${run[0][0].toFixed(1)} ${floor}Z`,
+    )
+    .join('');
+  return { valuePath: line(valued), investedPath, area };
+}
+
+/**
+ * Where the drawn forecast starts: the value the server forecast from, which can differ from the
+ * goal's own reading if the portfolio was revalued between the two requests, or the portfolio now.
+ */
+function originOf(
+  first: GoalForecast['points'][number] | undefined,
+  now: number | null,
+  today: number,
+  x: Scale,
+  y: Scale,
+): Point | null {
+  if (first?.base != null) return [x(dayTime(first.on)), y(Number(first.base))];
+  return now === null ? null : [x(today), y(now)];
+}
+
+/** Each case's line from the origin, and the band between the optimistic and pessimistic ones. */
+function forecastShapes(band: readonly Ahead[], origin: Point | null, x: Scale, y: Scale) {
+  const scenarioPath = (key: ScenarioKey) =>
+    line([
+      origin,
+      ...band.map((entry): Point | null => {
+        const figure = entry.figures[key];
+        return figure === null ? null : [x(entry.time), y(Number(figure))];
+      }),
+    ]);
+  const fan =
+    band.length > 0 && origin
+      ? `${scenarioPath('optimistic')}${line(
+          [...band].reverse().map((entry): Point | null => {
+            const figure = entry.figures.pessimistic;
+            return figure === null ? null : [x(entry.time), y(Number(figure))];
+          }),
+        ).replace(/^M/, 'L')}L${origin[0].toFixed(1)} ${origin[1].toFixed(1)}Z`
+      : '';
+  return { scenarioPath, fan };
+}
+
+/** The legend: the forecast and its band only while a forecast is drawn. */
+function legendItems(goal: Goal, forecastDrawn: boolean): LegendItem[] {
+  const base = goal.scenarios.find((scenario) => scenario.key === 'base');
+  const low = goal.scenarios.find((scenario) => scenario.key === 'pessimistic');
+  const high = goal.scenarios.find((scenario) => scenario.key === 'optimistic');
+  const rangeText =
+    low && high ? `${rateText(low.returnPercent)}% to ${rateText(high.returnPercent)}%` : null;
+  return [
+    { key: 'value', label: 'Portfolio', swatch: 'line', color: 'var(--accent)' },
+    { key: 'invested', label: 'Money put in', swatch: 'line', color: 'var(--ink-3)' },
+    ...(forecastDrawn && base
+      ? [
+          {
+            key: 'forecast',
+            label: `Forecast at ${rateText(base.returnPercent)}%`,
+            swatch: 'dash' as const,
+            color: 'var(--accent)',
+          },
+        ]
+      : []),
+    ...(forecastDrawn && rangeText
+      ? [{ key: 'band', label: rangeText, swatch: 'area' as const, color: 'var(--accent)' }]
+      : []),
+    { key: 'target', label: 'Sum to reach', swatch: 'dash', color: 'var(--pos)' },
+  ];
+}
+
+const tickAnchor = (index: number, count: number) =>
+  index === 0 ? 'start' : index === count - 1 ? 'end' : 'middle';
+
+/** The tip sits right of the point, or left of it where it would run out of the box. */
+const tipLeftOf = (at: number, width: number) => (at + 14 + 210 > width ? at - 224 : at + 14);
+
+/** What the tip says of one point: the portfolio that day, or the forecast for that month. */
+function TipBody({
+  current,
+  goal,
+  latestAt,
+  share,
+}: {
+  current: Past | Ahead;
+  goal: Goal;
+  latestAt: string | undefined;
+  share: string;
+}) {
+  const money = (value: string | null) => flooredText(value, goal.currency);
+  if (current.kind === 'history')
+    return (
+      <>
+        <div>{pointLabel(current, 'ALL', current.at === latestAt)}</div>
+        <div className="goal-tip__value">{money(current.text)}</div>
+        <div className="goal-tip__row">
+          <span>Money put in</span>
+          <span>{enteredText(current.invested, goal.currency)}</span>
+        </div>
+        <div className="goal-tip__row">
+          <span>Of the sum</span>
+          <span>{share}</span>
+        </div>
+        <div className="goal-tip__note">
+          Money put in leaves out a deposit or withdrawal with no rate on its day.
+        </div>
+        {!current.complete && (
+          <div className="goal-tip__note">Incomplete: an asset had no price or rate</div>
+        )}
+      </>
+    );
+  return (
+    <>
+      <div>
+        {current.on === goal.deadline ? dateText(current.on) : monthYear(current.on)} · forecast
+      </div>
+      <div className="goal-tip__value">{money(current.figures.base)}</div>
+      <div className="goal-tip__row">
+        <span>Pessimistic</span>
+        <span>{money(current.figures.pessimistic)}</span>
+      </div>
+      <div className="goal-tip__row">
+        <span>Optimistic</span>
+        <span>{money(current.figures.optimistic)}</span>
+      </div>
+      <div className="goal-tip__row">
+        <span>Of the sum</span>
+        <span>{share}</span>
+      </div>
+    </>
+  );
+}
+
+/** A refresh that failed, a read that failed, stale prices, and assets left out. */
+function ChartBanners({
+  stale,
+  historyFailed,
+  forecastFailed,
+  staleNote,
+  estimated,
+  onRetry,
+  onRetryHistory,
+  onRetryForecast,
+}: {
+  stale: boolean;
+  historyFailed: boolean;
+  forecastFailed: boolean;
+  staleNote: string | null;
+  estimated: boolean;
+  onRetry: () => void;
+  onRetryHistory: () => void;
+  onRetryForecast: () => void;
+}) {
+  return (
+    <>
+      {stale && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetry}>
+              Try again
+            </Button>
+          }
+        >
+          Could not refresh the chart. The figures below may be out of date.
+        </Banner>
+      )}
+      {historyFailed && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetryHistory}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the portfolio history, so only the forecast is drawn.
+        </Banner>
+      )}
+      {forecastFailed && (
+        <Banner
+          tone="warn"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={onRetryForecast}>
+              Try again
+            </Button>
+          }
+        >
+          Could not load the forecast, so only the portfolio so far is drawn.
+        </Banner>
+      )}
+      {staleNote && <Banner tone="warn">{staleNote}</Banner>}
+      {estimated && (
+        <Banner tone="info">
+          Estimated from priced assets only. Assets without a price or rate are excluded.
+        </Banner>
+      )}
+    </>
+  );
+}
+
 /**
  * GOAL-CHART: the portfolio and the money put in so far, in the goal's currency, then the base
  * case to the deadline (or a year past the month it gets there) inside the band of the
@@ -115,45 +432,12 @@ export default function GoalChart({ goal }: { goal: Goal }) {
   const known = goal.progress.current !== null;
   // The forecast's own valuation, not the goal read's: the two requests can see other prices.
   const staleNote = staleText(forecast?.stalePrices);
-  const base = goal.scenarios.find((scenario) => scenario.key === 'base');
-  const low = goal.scenarios.find((scenario) => scenario.key === 'pessimistic');
-  const high = goal.scenarios.find((scenario) => scenario.key === 'optimistic');
   const target = Number(goal.targetAmount);
-  const money = (value: string | null) => flooredText(value, goal.currency);
   const label = `${goal.name}: the portfolio so far and the forecast against the sum to reach`;
 
   // Chart coordinates only: every amount written out comes from the server's decimal strings.
-  const past: Past[] = (history?.points ?? []).flatMap((point) =>
-    point.value === null
-      ? []
-      : [
-          {
-            kind: 'history' as const,
-            time: Date.parse(point.at),
-            at: point.at,
-            value: Number(point.value),
-            text: point.value,
-            invested: point.invested,
-            complete: point.complete,
-          },
-        ],
-  );
-  const ahead: Ahead[] =
-    known && forecast?.currency === goal.currency
-      ? forecast.points.slice(1).flatMap((point) =>
-          point.base === null
-            ? []
-            : [
-                {
-                  kind: 'forecast' as const,
-                  time: dayTime(point.on),
-                  on: point.on,
-                  value: Number(point.base),
-                  figures: point,
-                },
-              ],
-        )
-      : [];
+  const past = pastOf(history?.points ?? []);
+  const ahead = known && forecast?.currency === goal.currency ? aheadOf(forecast) : [];
   const plotted: (Past | Ahead)[] = [...past, ...ahead];
   // The drawn forecast is dated by its own day, which is later if it was read after midnight.
   const today = dayTime(ahead.length > 0 && forecast ? forecast.asOf : goal.asOf);
@@ -164,11 +448,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
       <Card variant="chart" label={label}>
         <CardHeader title="Progress and forecast" />
         <p className="goal-chart__empty" role="note">
-          {historyError && history === null
-            ? 'Could not load the portfolio history. Try again later.'
-            : history === null
-              ? 'Loading the chart…'
-              : `No portfolio figures in ${goal.currency} yet.`}
+          {emptyText(historyError, history !== null, goal.currency)}
         </p>
         {!goal.progress.complete && (
           <Banner tone="info">
@@ -178,90 +458,22 @@ export default function GoalChart({ goal }: { goal: Goal }) {
       </Card>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
-  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
-  const start = Math.min(plotted[0].time, today);
-  const end = Math.max(plotted[plotted.length - 1].time, today);
-  const span = Math.max(1, end - start);
-  const x = (time: number) => PAD.left + ((time - start) / span) * innerWidth;
   const band = ahead;
-  const topOf = [
+  const { innerWidth, innerHeight, start, span, x, y, ticks, floor } = scaleOf(
+    width,
+    plotted,
+    past,
+    band,
+    today,
     target,
-    ...past.map((entry) => entry.value),
-    ...past.map((entry) => Number(entry.invested ?? 0)),
-    // Every case, so the optimistic one is not cut off above the box.
-    ...band.flatMap((entry) =>
-      CASES.flatMap((key) => (entry.figures[key] === null ? [] : [Number(entry.figures[key])])),
-    ),
-  ];
-  let top = Math.max(...topOf.filter(Number.isFinite)) * 1.1 || 1;
-  let bottom = Math.min(
-    0,
-    ...past.map((entry) => entry.value),
-    ...past.map((entry) => Number(entry.invested ?? 0)),
   );
-  const step = niceStep((top - bottom) / 4);
-  top = Math.ceil(top / step) * step;
-  bottom = Math.floor(bottom / step) * step;
-  const y = (value: number) =>
-    PAD.top + innerHeight - ((value - bottom) / (top - bottom)) * innerHeight;
-  const ticks: number[] = [];
-  for (let value = bottom; value <= top + step / 2; value += step) ticks.push(value);
-  const floor = PAD.top + innerHeight;
-
-  // A day without a value (no rate) breaks the portfolio line and its area instead of joining.
-  const points = history?.points ?? [];
-  const valued = points.map((point): [number, number] | null =>
-    point.value === null ? null : [x(Date.parse(point.at)), y(Number(point.value))],
-  );
-  const valuePath = line(valued);
-  const investedPath = steps(
-    points.map((point): [number, number] | null =>
-      point.invested === null ? null : [x(Date.parse(point.at)), y(Number(point.invested))],
-    ),
-  );
-  const runs: [number, number][][] = [];
-  valued.forEach((point, index) => {
-    if (point === null) return;
-    if (index > 0 && valued[index - 1] !== null) runs.at(-1)?.push(point);
-    else runs.push([point]);
-  });
-  const area = runs
-    .filter((run) => run.length > 1)
-    .map(
-      (run) =>
-        `${line(run)}L${run.at(-1)?.[0].toFixed(1)} ${floor}L${run[0][0].toFixed(1)} ${floor}Z`,
-    )
-    .join('');
+  const { valuePath, investedPath, area } = historyShapes(history?.points ?? [], x, y, floor);
   // 'Now' names the final history point only; a missing value there leaves no point called Now.
   const latestAt = history?.points.at(-1)?.at;
   // The forecast starts at the portfolio now, the same figure the history ends on.
-  // The drawn forecast starts from the value the server forecast from, which can differ from the
-  // goal's own reading if the portfolio was revalued between the two requests.
   const first = ahead.length > 0 ? forecast?.points[0] : undefined;
-  const origin: [number, number] | null =
-    first?.base != null
-      ? [x(dayTime(first.on)), y(Number(first.base))]
-      : now === null
-        ? null
-        : [x(today), y(now)];
-  const scenarioPath = (key: ScenarioKey) =>
-    line([
-      origin,
-      ...band.map((entry): [number, number] | null => {
-        const figure = entry.figures[key];
-        return figure === null ? null : [x(entry.time), y(Number(figure))];
-      }),
-    ]);
-  const fan =
-    band.length > 0 && origin
-      ? `${scenarioPath('optimistic')}${line(
-          [...band].reverse().map((entry): [number, number] | null => {
-            const figure = entry.figures.pessimistic;
-            return figure === null ? null : [x(entry.time), y(Number(figure))];
-          }),
-        ).replace(/^M/, 'L')}L${origin[0].toFixed(1)} ${origin[1].toFixed(1)}Z`
-      : '';
+  const origin = originOf(first, now, today, x, y);
+  const { scenarioPath, fan } = forecastShapes(band, origin, x, y);
   const deadline = goal.deadline && band.length > 0 ? x(dayTime(goal.deadline)) : null;
   const tickCount = chartDateTicks(width, plotted.length);
   const xTicks = [
@@ -301,38 +513,13 @@ export default function GoalChart({ goal }: { goal: Goal }) {
     );
   };
   const share = (value: number) => `${Math.max(0, Math.floor((value / target) * 100))}%`;
-  const tipLeft = current
-    ? x(current.time) + 14 + 210 > width
-      ? x(current.time) - 224
-      : x(current.time) + 14
-    : 0;
-  const rangeText =
-    low && high ? `${rateText(low.returnPercent)}% to ${rateText(high.returnPercent)}%` : null;
+  const tipLeft = current ? tipLeftOf(x(current.time), width) : 0;
 
   return (
     <Card variant="chart" labelledBy="goal-chart">
       <CardHeader id="goal-chart" title="Progress and forecast" sub={goal.currency} />
       <div aria-label="Chart legend" role="group">
-        <Legend
-          items={[
-            { key: 'value', label: 'Portfolio', swatch: 'line', color: 'var(--accent)' },
-            { key: 'invested', label: 'Money put in', swatch: 'line', color: 'var(--ink-3)' },
-            ...(band.length > 0 && base
-              ? [
-                  {
-                    key: 'forecast',
-                    label: `Forecast at ${rateText(base.returnPercent)}%`,
-                    swatch: 'dash' as const,
-                    color: 'var(--accent)',
-                  },
-                ]
-              : []),
-            ...(band.length > 0 && rangeText
-              ? [{ key: 'band', label: rangeText, swatch: 'area' as const, color: 'var(--accent)' }]
-              : []),
-            { key: 'target', label: 'Sum to reach', swatch: 'dash', color: 'var(--pos)' },
-          ]}
-        />
+        <Legend items={legendItems(goal, band.length > 0)} />
       </div>
       <div
         ref={setBox}
@@ -381,7 +568,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               key={time}
               x={x(time)}
               y={HEIGHT - 6}
-              textAnchor={index === 0 ? 'start' : index === xTicks.length - 1 ? 'end' : 'middle'}
+              textAnchor={tickAnchor(index, xTicks.length)}
               className="goal-chart__tick"
             >
               {tickLabel(time, 'ALL')}
@@ -487,101 +674,28 @@ export default function GoalChart({ goal }: { goal: Goal }) {
               top: Math.max(0, Math.min(y(current.value) - 40, HEIGHT - 130)),
             }}
           >
-            {current.kind === 'history' ? (
-              <>
-                <div>{pointLabel(current, 'ALL', current.at === latestAt)}</div>
-                <div className="goal-tip__value">{money(current.text)}</div>
-                <div className="goal-tip__row">
-                  <span>Money put in</span>
-                  <span>{enteredText(current.invested, goal.currency)}</span>
-                </div>
-                <div className="goal-tip__row">
-                  <span>Of the sum</span>
-                  <span>{share(current.value)}</span>
-                </div>
-                <div className="goal-tip__note">
-                  Money put in leaves out a deposit or withdrawal with no rate on its day.
-                </div>
-                {!current.complete && (
-                  <div className="goal-tip__note">Incomplete: an asset had no price or rate</div>
-                )}
-              </>
-            ) : (
-              <>
-                <div>
-                  {current.on === goal.deadline ? dateText(current.on) : monthYear(current.on)} ·
-                  forecast
-                </div>
-                <div className="goal-tip__value">{money(current.figures.base)}</div>
-                <div className="goal-tip__row">
-                  <span>Pessimistic</span>
-                  <span>{money(current.figures.pessimistic)}</span>
-                </div>
-                <div className="goal-tip__row">
-                  <span>Optimistic</span>
-                  <span>{money(current.figures.optimistic)}</span>
-                </div>
-                <div className="goal-tip__row">
-                  <span>Of the sum</span>
-                  <span>{share(current.value)}</span>
-                </div>
-              </>
-            )}
+            <TipBody
+              current={current}
+              goal={goal}
+              latestAt={latestAt}
+              share={share(current.value)}
+            />
           </div>
         )}
       </div>
-      {(historyStale || forecastStale) && (
-        <Banner
-          tone="warn"
-          role="alert"
-          action={
-            <Button
-              size="sm"
-              icon="refresh"
-              onClick={() => {
-                reloadHistory(true);
-                reloadForecast(true);
-              }}
-            >
-              Try again
-            </Button>
-          }
-        >
-          Could not refresh the chart. The figures below may be out of date.
-        </Banner>
-      )}
-      {historyError !== null && history === null && (
-        <Banner
-          tone="warn"
-          role="alert"
-          action={
-            <Button size="sm" icon="refresh" onClick={() => reloadHistory()}>
-              Try again
-            </Button>
-          }
-        >
-          Could not load the portfolio history, so only the forecast is drawn.
-        </Banner>
-      )}
-      {known && forecastError !== null && forecast === null && (
-        <Banner
-          tone="warn"
-          role="alert"
-          action={
-            <Button size="sm" icon="refresh" onClick={() => reloadForecast()}>
-              Try again
-            </Button>
-          }
-        >
-          Could not load the forecast, so only the portfolio so far is drawn.
-        </Banner>
-      )}
-      {staleNote && <Banner tone="warn">{staleNote}</Banner>}
-      {(!goal.progress.complete || forecast?.complete === false) && (
-        <Banner tone="info">
-          Estimated from priced assets only. Assets without a price or rate are excluded.
-        </Banner>
-      )}
+      <ChartBanners
+        stale={historyStale || forecastStale}
+        historyFailed={historyError !== null && history === null}
+        forecastFailed={known && forecastError !== null && forecast === null}
+        staleNote={staleNote}
+        estimated={!goal.progress.complete || forecast?.complete === false}
+        onRetry={() => {
+          reloadHistory(true);
+          reloadForecast(true);
+        }}
+        onRetryHistory={() => reloadHistory()}
+        onRetryForecast={() => reloadForecast()}
+      />
     </Card>
   );
 }
