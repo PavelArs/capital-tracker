@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Card } from '@/ui/Card';
 import {
+  AreaGradient,
   areaPath,
   chartCursor,
   evenTicks,
   linePath,
   observeWidth,
+  PointCursor,
   runsOf,
   tipLeftOf,
+  ValueGrid,
   valueAxis,
 } from '@/ui/chart';
 import { Legend } from '@/ui/Legend';
@@ -244,36 +247,16 @@ export default function DepositChart({
         >
           <svg viewBox={`0 0 ${width} ${HEIGHT}`} role="img" aria-label={label}>
             <defs>
-              <linearGradient id="deposit-area" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="var(--accent)" stopOpacity="0.22" />
-                <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
-              </linearGradient>
+              <AreaGradient id="deposit-area" />
             </defs>
-            {ticks.map((value) => (
-              <g key={value}>
-                <line
-                  x1={PAD.left}
-                  x2={PAD.left + innerWidth}
-                  y1={y(value)}
-                  y2={y(value)}
-                  className="dashboard-chart__grid"
-                />
-                <text
-                  x={width - 4}
-                  y={y(value) + 4}
-                  textAnchor="end"
-                  className="dashboard-chart__tick"
-                >
-                  {compact(value, currency)}
-                </text>
-              </g>
-            ))}
-            <line
-              x1={PAD.left}
-              x2={PAD.left + innerWidth}
-              y1={base}
-              y2={base}
-              className="dashboard-chart__axis"
+            <ValueGrid
+              ticks={ticks}
+              y={y}
+              left={PAD.left}
+              right={PAD.left + innerWidth}
+              base={base}
+              width={width}
+              text={(value) => compact(value, currency)}
             />
             {xTicks.map((time, index) => (
               <text
@@ -299,21 +282,7 @@ export default function DepositChart({
             ))}
             <circle cx={x(last.time)} cy={y(last.value)} r={4.5} className="dashboard-chart__dot" />
             {current && (
-              <g>
-                <line
-                  x1={x(current.time)}
-                  x2={x(current.time)}
-                  y1={PAD.top}
-                  y2={base}
-                  className="dashboard-chart__cursor"
-                />
-                <circle
-                  cx={x(current.time)}
-                  cy={y(current.value)}
-                  r={5}
-                  className="dashboard-chart__dot"
-                />
-              </g>
+              <PointCursor cx={x(current.time)} cy={y(current.value)} top={PAD.top} base={base} />
             )}
           </svg>
           {current && (

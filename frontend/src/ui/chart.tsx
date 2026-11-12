@@ -147,3 +147,73 @@ export function chartCursor({
     onBlur: () => setActive(null),
   };
 }
+
+/** The fill under the value line: the accent fading out downwards. */
+export function AreaGradient({ id }: { id: string }) {
+  return (
+    <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stopColor="var(--accent)" stopOpacity="0.22" />
+      <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
+    </linearGradient>
+  );
+}
+
+/** A grid line and its amount at each tick of the value axis, then the axis at `base`. */
+export function ValueGrid({
+  ticks,
+  y,
+  left,
+  right,
+  base,
+  width,
+  text,
+}: {
+  ticks: readonly number[];
+  y: Scale;
+  /** Where the plot starts and ends across the box, which is `width` wide. */
+  left: number;
+  right: number;
+  base: number;
+  width: number;
+  text: (value: number) => string;
+}) {
+  return (
+    <>
+      {ticks.map((value) => (
+        <g key={value}>
+          <line
+            x1={left}
+            x2={right}
+            y1={y(value)}
+            y2={y(value)}
+            className="dashboard-chart__grid"
+          />
+          <text x={width - 4} y={y(value) + 4} textAnchor="end" className="dashboard-chart__tick">
+            {text(value)}
+          </text>
+        </g>
+      ))}
+      <line x1={left} x2={right} y1={base} y2={base} className="dashboard-chart__axis" />
+    </>
+  );
+}
+
+/** The cursor: a line down the plot at the point read, and a dot on it. */
+export function PointCursor({
+  cx,
+  cy,
+  top,
+  base,
+}: {
+  cx: number;
+  cy: number;
+  top: number;
+  base: number;
+}) {
+  return (
+    <g>
+      <line x1={cx} x2={cx} y1={top} y2={base} className="dashboard-chart__cursor" />
+      <circle cx={cx} cy={cy} r={5} className="dashboard-chart__dot" />
+    </g>
+  );
+}

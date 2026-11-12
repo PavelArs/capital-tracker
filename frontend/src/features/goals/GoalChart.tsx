@@ -5,7 +5,14 @@ import { useEffect, useState } from 'react';
 import { Banner } from '@/ui/Banner';
 import { Button } from '@/ui/Button';
 import { Card, CardHeader } from '@/ui/Card';
-import { chartCursor, evenTicks, observeWidth, tipLeftOf, valueAxis } from '@/ui/chart';
+import {
+  AreaGradient,
+  chartCursor,
+  evenTicks,
+  observeWidth,
+  tipLeftOf,
+  valueAxis,
+} from '@/ui/chart';
 import { Legend, type LegendItem } from '@/ui/Legend';
 import {
   chartDateTicks,
@@ -592,10 +599,7 @@ export default function GoalChart({ goal }: { goal: Goal }) {
             <clipPath id="goal-chart-box">
               <rect x={PAD.left} y={PAD.top - 2} width={innerWidth} height={innerHeight + 2} />
             </clipPath>
-            <linearGradient id="goal-chart-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="var(--accent)" stopOpacity="0.22" />
-              <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
-            </linearGradient>
+            <AreaGradient id="goal-chart-area" />
           </defs>
           {ticks.map((value) => (
             <g key={value}>
