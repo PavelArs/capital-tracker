@@ -18,6 +18,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Restores the profile of the session the server still holds after a reload. `isCurrent` turns
+ * false once the provider unmounts or a newer sign-in, sign-out or refusal overtakes it.
+ */
+async function restoreUser(
+  isCurrent: () => boolean,
+  setUser: (user: User | null) => void,
+  settle: () => void,
+): Promise<void> {
+  try {
+    const userData = await authApi.getCurrentUser();
+    if (!isCurrent()) return;
+    // The answers this browser kept for the owner before the reload are back in memory
+    // before the first page paints, so it can show them at once.
+    await hydrateReads(userData.id);
+    if (isCurrent()) setUser(userData);
+  } catch {
+    if (isCurrent()) {
+      releaseReads();
+      setUser(null);
+    }
+  } finally {
+    settle();
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -35,25 +61,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const version = stateVersion.current;
     localStorage.removeItem('token');
-    const restoreUser = async () => {
-      try {
-        const userData = await authApi.getCurrentUser();
-        if (!active || version !== stateVersion.current) return;
-        // The answers this browser kept for the owner before the reload are back in memory
-        // before the first page paints, so it can show them at once.
-        await hydrateReads(userData.id);
-        if (active && version === stateVersion.current) setUser(userData);
-      } catch {
-        if (active && version === stateVersion.current) {
-          releaseReads();
-          setUser(null);
-        }
-      } finally {
+    restoreUser(
+      () => active && version === stateVersion.current,
+      setUser,
+      () => {
         if (active) setLoading(false);
-      }
-    };
-
-    restoreUser();
+      },
+    );
     return () => {
       active = false;
       stateVersion.current++;
