@@ -137,55 +137,71 @@ export function parseTransaction(value: unknown): StellarTransaction {
 
 const native = (item: Record<string, unknown>, key: string) => item[key] === 'native';
 
+/** XLM paid in, or XLM received out: a path payment can turn one asset into another. */
+function pathMoves(item: Record<string, unknown>): StellarPayment['moves'] {
+  const from = account(item.from);
+  const to = account(item.to);
+  const moves: StellarPayment['moves'] = [];
+  if (native(item, 'source_asset_type'))
+    moves.push({ from, to: '', units: stroops(item.source_amount) });
+  if (native(item, 'asset_type')) moves.push({ from: '', to, units: stroops(item.amount) });
+  return moves;
+}
+
+/** A contract call that moved XLM through its asset contract (Soroban). */
+function contractMoves(item: Record<string, unknown>): StellarPayment['moves'] {
+  const moves: StellarPayment['moves'] = [];
+  for (const change of item.asset_balance_changes === undefined
+    ? []
+    : list(item.asset_balance_changes)) {
+    const entry = record(change);
+    if (!native(entry, 'asset_type') || entry.type !== 'transfer') continue;
+    const accountOrNone = (side: unknown) => (isStellarAddress(side) ? side : '');
+    moves.push({
+      from: accountOrNone(entry.from),
+      to: accountOrNone(entry.to),
+      units: stroops(entry.amount),
+    });
+  }
+  return moves;
+}
+
+/** Each XLM movement of an operation, by its type; an account_merge's is in its effects. */
+function paymentMoves(item: Record<string, unknown>): StellarPayment['moves'] {
+  switch (item.type) {
+    case 'create_account':
+      return [
+        {
+          from: account(item.funder),
+          to: account(item.account),
+          units: stroops(item.starting_balance),
+        },
+      ];
+    case 'payment':
+      return native(item, 'asset_type')
+        ? [{ from: account(item.from), to: account(item.to), units: stroops(item.amount) }]
+        : [];
+    case 'path_payment_strict_send':
+    case 'path_payment_strict_receive':
+      return pathMoves(item);
+    case 'invoke_host_function':
+      return contractMoves(item);
+    default:
+      return [];
+  }
+}
+
 export function parsePayment(value: unknown): StellarPayment {
   const item = record(value);
   const id = toid(item.paging_token);
   if (typeof item.type !== 'string' || !/^[a-z_]{1,64}$/.test(item.type)) invalid();
   // The list leaves failed transactions out; anything else is an answer the sync cannot trust.
   if (item.transaction_successful !== true) invalid();
-  const moves: StellarPayment['moves'] = [];
-  let merge: StellarPayment['merge'] = null;
-  switch (item.type) {
-    case 'create_account':
-      moves.push({
-        from: account(item.funder),
-        to: account(item.account),
-        units: stroops(item.starting_balance),
-      });
-      break;
-    case 'payment':
-      if (native(item, 'asset_type'))
-        moves.push({ from: account(item.from), to: account(item.to), units: stroops(item.amount) });
-      break;
-    case 'path_payment_strict_send':
-    case 'path_payment_strict_receive': {
-      // XLM paid in, or XLM received out: a path payment can turn one asset into another.
-      const from = account(item.from);
-      const to = account(item.to);
-      if (native(item, 'source_asset_type'))
-        moves.push({ from, to: '', units: stroops(item.source_amount) });
-      if (native(item, 'asset_type')) moves.push({ from: '', to, units: stroops(item.amount) });
-      break;
-    }
-    case 'account_merge':
-      merge = { from: account(item.account), into: account(item.into) };
-      break;
-    case 'invoke_host_function':
-      // A contract call that moved XLM through its asset contract (Soroban).
-      for (const change of item.asset_balance_changes === undefined
-        ? []
-        : list(item.asset_balance_changes)) {
-        const entry = record(change);
-        if (!native(entry, 'asset_type') || entry.type !== 'transfer') continue;
-        const accountOrNone = (side: unknown) => (isStellarAddress(side) ? side : '');
-        moves.push({
-          from: accountOrNone(entry.from),
-          to: accountOrNone(entry.to),
-          units: stroops(entry.amount),
-        });
-      }
-      break;
-  }
+  const moves = paymentMoves(item);
+  const merge: StellarPayment['merge'] =
+    item.type === 'account_merge'
+      ? { from: account(item.account), into: account(item.into) }
+      : null;
   return {
     id,
     transaction: id & ~OPERATION_BITS,
