@@ -175,8 +175,9 @@ function KeyOverlap({ alsoTracked }: { alsoTracked: AccountKey['alsoTracked'] })
   );
 }
 
-/** Why no transaction is listed once the history is read. */
-function emptyHistory(failed: boolean, dust: number): string {
+/** Why no transaction is listed: the history is on its way, or it holds none to show. */
+function historyNote(waiting: boolean, failed: boolean, dust: number): string {
+  if (waiting) return 'Loading…';
   if (failed) return 'Could not load them; they are in Transactions.';
   return dust > 0
     ? 'Only dust in the latest transactions.'
@@ -227,6 +228,253 @@ function TransactionItem({
         line
       )}
     </li>
+  );
+}
+
+/** The wallet the address belongs to and its name; the drawer stays open after Save. */
+function WalletForm({
+  address,
+  accounts,
+  exchange,
+  onSaved,
+}: {
+  address: WalletAddress;
+  accounts: readonly WalletAccount[];
+  exchange: boolean;
+  onSaved: (address: WalletAddress, newAccount: boolean) => void;
+}) {
+  const [choice, setChoice] = useState(address.accountId ?? NONE);
+  const [newName, setNewName] = useState('');
+  // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
+  const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
+  const [label, setLabel] = useState(address.label ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const attempt = useRef<{ key: string; requestId: string } | null>(null);
+  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage(null);
+    const name = newName.trim();
+    if (choice === NEW && !name) {
+      setMessage({ error: true, text: 'Enter a name for the new wallet.' });
+      return;
+    }
+    setSaving(true);
+    try {
+      // WAL-INVALID: a new wallet goes with the move in one request, so a refused save leaves
+      // no empty wallet behind.
+      const destination: { accountId: string | null } | { newAccount: NewWalletAccount } =
+        choice === NEW
+          ? { newAccount: newAccountRequest(attempt, name, kind) }
+          : { accountId: choice === NONE ? null : choice };
+      const saved = await walletAddressesApi.update(address.id, {
+        ...destination,
+        label: label.trim() || null,
+      });
+      onSaved(saved, choice === NEW);
+      setChoice(saved.accountId ?? NONE);
+      setNewName('');
+      setMessage({ error: false, text: 'Saved.' });
+    } catch (caught) {
+      setMessage({ error: true, text: saveFailure(caught) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form className="wallets-edit" onSubmit={save} aria-labelledby="address-wallet">
+      <h3 id="address-wallet" className="ui-section-t">
+        Wallet and name
+      </h3>
+      <Field id="address-account" label="Wallet">
+        {(control) => (
+          <Select {...control} value={choice} onChange={(event) => setChoice(event.target.value)}>
+            <option value={NONE}>Not chosen</option>
+            {accounts.map((account) => (
+              <option key={account.accountId} value={account.accountId}>
+                {account.name}
+              </option>
+            ))}
+            <option value={NEW}>New wallet…</option>
+          </Select>
+        )}
+      </Field>
+      {choice === NEW && (
+        <>
+          <Field id="address-new-wallet" label="New wallet name">
+            {(control) => (
+              <Input
+                {...control}
+                maxLength={120}
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+              />
+            )}
+          </Field>
+          <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
+        </>
+      )}
+      <Field
+        id="address-label"
+        label={
+          <>
+            {exchange ? 'Account name' : 'Address name'}{' '}
+            <span className="ui-muted">(optional)</span>
+          </>
+        }
+      >
+        {(control) => (
+          <Input
+            {...control}
+            maxLength={40}
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+          />
+        )}
+      </Field>
+      {/* The drawer stays open after Save, so its result is said here (plan 1.5: a toast is
+          for a command whose drawer closed). */}
+      {message && <Banner tone={message.error ? 'neg' : 'pos'}>{message.text}</Banner>}
+      <Button type="submit" className="wallets-edit__save" disabled={saving}>
+        {saving ? 'Saving…' : 'Save'}
+      </Button>
+    </form>
+  );
+}
+
+/** The newest transactions of the address, newest first, with dust left out until asked for. */
+function AddressHistory({ address, exchange }: { address: WalletAddress; exchange: boolean }) {
+  // The history read so far, newest first; undefined while loading, null when the read failed.
+  const [history, setHistory] = useState<
+    { items: AddressTransaction[]; next: number | null } | null | undefined
+  >(undefined);
+  const [showDust, setShowDust] = useState(false);
+  // INFINITE: how many of the transactions below are on screen, twenty more each time the end
+  // of the list is reached.
+  const [shownCount, setShownCount] = useState(PAGE_SIZE);
+  // The Transactions list says which of them are dust and where each one opens; undefined while
+  // it loads, null when it cannot be read (every row then shows, none opens).
+  const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
+    const kept = cachedReads.operations.last();
+    return kept ? operationsOf(kept.operations, address.id) : undefined;
+  });
+  const reading = useRef(false);
+
+  const count = address.transactionCount;
+  // A sync that stores new transactions changes the count; the newest are read again.
+  useEffect(() => {
+    if (count === 0) {
+      setHistory({ items: [], next: null });
+      return;
+    }
+    let live = true;
+    walletAddressesApi
+      .transactions(address.id)
+      .then((page) => live && setHistory({ items: page.items, next: page.nextOffset }))
+      .catch(() => live && setHistory(null));
+    return () => {
+      live = false;
+    };
+  }, [address.id, count]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a sync that stores transactions changes what is dust, so the list is asked again.
+  useEffect(() => {
+    let live = true;
+    cachedReads.operations
+      .load()
+      .then((list) => live && setListed(operationsOf(list.operations, address.id)))
+      .catch(() => live && setListed((kept) => kept ?? null));
+    return () => {
+      live = false;
+    };
+  }, [address.id, count]);
+
+  const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
+  const rows = history?.items ?? [];
+  const listedRows = showDust ? rows : rows.filter((item) => !isDust(item));
+  const shown = listedRows.slice(0, shownCount);
+  // Whether rows wait beyond those on screen: older pages are read until some do, or until
+  // the history, or the number of pages read for one list, runs out.
+  const more = listedRows.length > shownCount;
+  const exhausted = history?.next === null || rows.length >= MAX_PAGES * 50;
+  const dust = rows.filter(isDust).length;
+  const waiting =
+    history === undefined || (history !== null && rows.length > 0 && listed === undefined);
+  // Dust takes no place in the list, so older pages are read until the page and the one after
+  // it are known.
+  useEffect(() => {
+    if (!history || history.next === null || listed === undefined || reading.current) return;
+    if (more || rows.length >= MAX_PAGES * 50) return;
+    reading.current = true;
+    const offset = history.next;
+    walletAddressesApi
+      .transactions(address.id, offset)
+      .then((page) =>
+        setHistory((kept) =>
+          kept && kept.next === offset
+            ? { items: [...kept.items, ...page.items], next: page.nextOffset }
+            : kept,
+        ),
+      )
+      .catch(() => undefined)
+      .finally(() => {
+        reading.current = false;
+      });
+  }, [history, listed, more, rows.length, address.id]);
+
+  return (
+    <section aria-labelledby="address-transactions">
+      <h3 id="address-transactions" className="ui-section-t">
+        {exchange ? 'Bybit records' : 'Blockchain transactions'}
+      </h3>
+      {waiting || shown.length === 0 ? (
+        <p className="ui-muted wallets-small">{historyNote(waiting, history === null, dust)}</p>
+      ) : (
+        <ul className="wallets-list wallets-recent">
+          {shown.map((item) => (
+            <TransactionItem
+              key={item.txid}
+              item={item}
+              operation={listed?.get(item.txid)}
+              exchange={exchange}
+            />
+          ))}
+        </ul>
+      )}
+      {(more || !exhausted) && !waiting && shown.length > 0 && (
+        <LoadMore
+          shown={shown.length}
+          total={history?.next === null ? listedRows.length : undefined}
+          busy={!more && !exhausted}
+          onMore={() => setShownCount((current) => current + PAGE_SIZE)}
+          label="transactions"
+        />
+      )}
+      <div className="wallets-recent__more">
+        {dust > 0 && (
+          <Button
+            variant="link"
+            aria-expanded={showDust}
+            onClick={() => {
+              setShowDust((current) => !current);
+              setShownCount(PAGE_SIZE);
+            }}
+          >
+            {showDust ? 'Hide dust' : `Show ${dustLabel(dust, Boolean(history?.next))}`}
+          </Button>
+        )}
+        {count > 0 && (
+          <Link
+            className="ui-link"
+            to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
+          >
+            All in Transactions
+          </Link>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -306,134 +554,19 @@ export default function AddressDrawer({
   };
   const offNote = syncOffNote(address);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const [choice, setChoice] = useState(address.accountId ?? NONE);
-  const [newName, setNewName] = useState('');
-  // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
-  const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
-  const [label, setLabel] = useState(address.label ?? '');
-  const [saving, setSaving] = useState(false);
   const [allCoins, setAllCoins] = useState(false);
-  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
-  // The history read so far, newest first; undefined while loading, null when the read failed.
-  const [history, setHistory] = useState<
-    { items: AddressTransaction[]; next: number | null } | null | undefined
-  >(undefined);
-  const [showDust, setShowDust] = useState(false);
-  // INFINITE: how many of the transactions below are on screen, twenty more each time the end
-  // of the list is reached.
-  const [shownCount, setShownCount] = useState(PAGE_SIZE);
-  // The Transactions list says which of them are dust and where each one opens; undefined while
-  // it loads, null when it cannot be read (every row then shows, none opens).
-  const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
-    const kept = cachedReads.operations.last();
-    return kept ? operationsOf(kept.operations, address.id) : undefined;
-  });
-  const reading = useRef(false);
-  const attempt = useRef<{ key: string; requestId: string } | null>(null);
-
   const count = address.transactionCount;
-  // A sync that stores new transactions changes the count; the newest are read again.
-  useEffect(() => {
-    if (count === 0) {
-      setHistory({ items: [], next: null });
-      return;
-    }
-    let live = true;
-    walletAddressesApi
-      .transactions(address.id)
-      .then((page) => live && setHistory({ items: page.items, next: page.nextOffset }))
-      .catch(() => live && setHistory(null));
-    return () => {
-      live = false;
-    };
-  }, [address.id, count]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a sync that stores transactions changes what is dust, so the list is asked again.
-  useEffect(() => {
-    let live = true;
-    cachedReads.operations
-      .load()
-      .then((list) => live && setListed(operationsOf(list.operations, address.id)))
-      .catch(() => live && setListed((kept) => kept ?? null));
-    return () => {
-      live = false;
-    };
-  }, [address.id, count]);
-
-  const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
-  const rows = history?.items ?? [];
-  const listedRows = showDust ? rows : rows.filter((item) => !isDust(item));
-  const shown = listedRows.slice(0, shownCount);
-  // Whether rows wait beyond those on screen: older pages are read until some do, or until
-  // the history, or the number of pages read for one list, runs out.
-  const more = listedRows.length > shownCount;
-  const exhausted = history?.next === null || rows.length >= MAX_PAGES * 50;
-  const dust = rows.filter(isDust).length;
-  const waiting =
-    history === undefined || (history !== null && rows.length > 0 && listed === undefined);
-  // Dust takes no place in the list, so older pages are read until the page and the one after
-  // it are known.
-  useEffect(() => {
-    if (!history || history.next === null || listed === undefined || reading.current) return;
-    if (more || rows.length >= MAX_PAGES * 50) return;
-    reading.current = true;
-    const offset = history.next;
-    walletAddressesApi
-      .transactions(address.id, offset)
-      .then((page) =>
-        setHistory((kept) =>
-          kept && kept.next === offset
-            ? { items: [...kept.items, ...page.items], next: page.nextOffset }
-            : kept,
-        ),
-      )
-      .catch(() => undefined)
-      .finally(() => {
-        reading.current = false;
-      });
-  }, [history, listed, more, rows.length, address.id]);
 
   const wallet = accounts.find((account) => account.accountId === address.accountId);
   // M21: a Bitcoin account public key and the addresses it derives.
   const key = address.accountKey ?? null;
   // M22: a Bybit account, its balances as Bybit reports them.
   const exchange = address.exchange ?? null;
-  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
   const pieces = chainPieces(address);
   const named = identity(key, exchange);
-
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    setMessage(null);
-    const name = newName.trim();
-    if (choice === NEW && !name) {
-      setMessage({ error: true, text: 'Enter a name for the new wallet.' });
-      return;
-    }
-    setSaving(true);
-    try {
-      // WAL-INVALID: a new wallet goes with the move in one request, so a refused save leaves
-      // no empty wallet behind.
-      const destination: { accountId: string | null } | { newAccount: NewWalletAccount } =
-        choice === NEW
-          ? { newAccount: newAccountRequest(attempt, name, kind) }
-          : { accountId: choice === NONE ? null : choice };
-      const saved = await walletAddressesApi.update(address.id, {
-        ...destination,
-        label: label.trim() || null,
-      });
-      onSaved(saved, choice === NEW);
-      setChoice(saved.accountId ?? NONE);
-      setNewName('');
-      setMessage({ error: false, text: 'Saved.' });
-    } catch (caught) {
-      setMessage({ error: true, text: saveFailure(caught) });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const running = run?.state === 'running';
   return (
@@ -522,119 +655,8 @@ export default function AddressDrawer({
             {syncProblem(address, run)}
           </Banner>
         )}
-        <form className="wallets-edit" onSubmit={save} aria-labelledby="address-wallet">
-          <h3 id="address-wallet" className="ui-section-t">
-            Wallet and name
-          </h3>
-          <Field id="address-account" label="Wallet">
-            {(control) => (
-              <Select
-                {...control}
-                value={choice}
-                onChange={(event) => setChoice(event.target.value)}
-              >
-                <option value={NONE}>Not chosen</option>
-                {accounts.map((account) => (
-                  <option key={account.accountId} value={account.accountId}>
-                    {account.name}
-                  </option>
-                ))}
-                <option value={NEW}>New wallet…</option>
-              </Select>
-            )}
-          </Field>
-          {choice === NEW && (
-            <>
-              <Field id="address-new-wallet" label="New wallet name">
-                {(control) => (
-                  <Input
-                    {...control}
-                    maxLength={120}
-                    value={newName}
-                    onChange={(event) => setNewName(event.target.value)}
-                  />
-                )}
-              </Field>
-              <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
-            </>
-          )}
-          <Field
-            id="address-label"
-            label={
-              <>
-                {exchange ? 'Account name' : 'Address name'}{' '}
-                <span className="ui-muted">(optional)</span>
-              </>
-            }
-          >
-            {(control) => (
-              <Input
-                {...control}
-                maxLength={40}
-                value={label}
-                onChange={(event) => setLabel(event.target.value)}
-              />
-            )}
-          </Field>
-          {/* The drawer stays open after Save, so its result is said here (plan 1.5: a toast is
-              for a command whose drawer closed). */}
-          {message && <Banner tone={message.error ? 'neg' : 'pos'}>{message.text}</Banner>}
-          <Button type="submit" className="wallets-edit__save" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </form>
-        <section aria-labelledby="address-transactions">
-          <h3 id="address-transactions" className="ui-section-t">
-            {exchange ? 'Bybit records' : 'Blockchain transactions'}
-          </h3>
-          {waiting ? (
-            <p className="ui-muted wallets-small">Loading…</p>
-          ) : shown.length === 0 ? (
-            <p className="ui-muted wallets-small">{emptyHistory(history === null, dust)}</p>
-          ) : (
-            <ul className="wallets-list wallets-recent">
-              {shown.map((item) => (
-                <TransactionItem
-                  key={item.txid}
-                  item={item}
-                  operation={listed?.get(item.txid)}
-                  exchange={!!exchange}
-                />
-              ))}
-            </ul>
-          )}
-          {(more || !exhausted) && !waiting && shown.length > 0 && (
-            <LoadMore
-              shown={shown.length}
-              total={history?.next === null ? listedRows.length : undefined}
-              busy={!more && !exhausted}
-              onMore={() => setShownCount((current) => current + PAGE_SIZE)}
-              label="transactions"
-            />
-          )}
-          <div className="wallets-recent__more">
-            {dust > 0 && (
-              <Button
-                variant="link"
-                aria-expanded={showDust}
-                onClick={() => {
-                  setShowDust((current) => !current);
-                  setShownCount(PAGE_SIZE);
-                }}
-              >
-                {showDust ? 'Hide dust' : `Show ${dustLabel(dust, Boolean(history?.next))}`}
-              </Button>
-            )}
-            {count > 0 && (
-              <Link
-                className="ui-link"
-                to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
-              >
-                All in Transactions
-              </Link>
-            )}
-          </div>
-        </section>
+        <WalletForm address={address} accounts={accounts} exchange={!!exchange} onSaved={onSaved} />
+        <AddressHistory address={address} exchange={!!exchange} />
         <SyncJournal address={address} run={run} />
         <RemoveAddress id={address.id} exchange={!!exchange} onRemoved={() => onRemoved(address)} />
       </div>
