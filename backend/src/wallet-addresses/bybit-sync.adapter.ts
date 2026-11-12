@@ -117,6 +117,70 @@ class OutOfBudget extends Error {}
 /** Bybit refused the request for the key: for Earn, the key lacks its permission. */
 const refused = (error: unknown) => error instanceof Failed && error.reason === 'key_rejected';
 
+/** How a pass an error stopped ends: out of budget, refused, or with an amount it cannot read. */
+function stopped(error: unknown): {
+  outcome: StepResult['outcome'];
+  reason: StepFailure | null;
+  detail: string | null;
+} {
+  if (error instanceof OutOfBudget) return { outcome: 'partial', reason: null, detail: null };
+  if (error instanceof Failed)
+    return { outcome: 'provider_error', reason: error.reason, detail: error.detail };
+  if (error instanceof UnreadableAmount)
+    return { outcome: 'provider_error', reason: 'invalid_response', detail: null };
+  throw error;
+}
+
+/** One request within the pass's budget; a refusal is thrown as Failed. */
+type Call = <T>(request: () => Promise<BybitResult<T>>) => Promise<T>;
+
+/** The requests of one pass that began at `started`: past the budget, OutOfBudget is thrown. */
+function budgeted(started: number): Call {
+  let requests = 0;
+  return async <T>(request: () => Promise<BybitResult<T>>): Promise<T> => {
+    if (requests >= MAX_REQUESTS_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
+      throw new OutOfBudget();
+    requests += 1;
+    const result = await request();
+    if (!result.ok) throw new Failed(result.reason, result.detail);
+    return result.value;
+  };
+}
+
+/** Every page of one window of a list; a window that never ends its pages is refused. */
+async function readWindow(
+  key: BybitCredentials,
+  stream: Stream<unknown>,
+  start: number,
+  end: number,
+  call: Call,
+): Promise<unknown[]> {
+  const items: unknown[] = [];
+  let page: string | null = null;
+  for (let pages = 0; ; pages++) {
+    if (pages >= MAX_PAGES_PER_WINDOW) throw new Failed('invalid_response', null);
+    const at = page;
+    const read: BybitPage<unknown> = await call(() => stream.read(key, start, end, at));
+    items.push(...read.items);
+    page = read.cursor;
+    if (page === null || read.items.length === 0) break;
+  }
+  return items;
+}
+
+/**
+ * The earliest time a record still to settle holds the list back: it is read again from its
+ * time on, unless it has waited a week (then a late completion shows as a gap).
+ */
+function holdFrom(stream: Stream<unknown>, items: readonly unknown[], start: number, now: number) {
+  let held = Number.POSITIVE_INFINITY;
+  for (const item of items) {
+    const at = stream.pendingAt(item, start);
+    if (at !== null && at >= now - PENDING_HOLD_MS) held = Math.min(held, at);
+  }
+  return held;
+}
+
 // sync-bybit-account (M22, PR-EXC-1): the account's spot trades, deposits, withdrawals, Earn
 // yield and converts as raw legs, then the balances Bybit reports, all read with the owner's
 // read-only key.
@@ -177,27 +241,18 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   }
 
   async step(ownerId: string, addressId: string): Promise<StepResult> {
-    let imported = 0;
+    const pass = { imported: 0 };
     const finish = (
       outcome: StepResult['outcome'],
       reason: StepFailure | null,
       detail: string | null = null,
-    ): StepResult => ({ outcome, reason, imported, detail });
+    ): StepResult => ({ outcome, reason, imported: pass.imported, detail });
     const account = await this.account(ownerId, addressId);
     const key = account && this.box.open(account.credentials, ownerId, addressId);
     if (!account || !key) return finish('provider_error', 'not_configured');
     if (account.everyCoinAt === null) await this.countEveryCoin(account);
     const now = Date.now();
-    const started = now;
-    let requests = 0;
-    const call = async <T>(request: () => Promise<BybitResult<T>>): Promise<T> => {
-      if (requests >= MAX_REQUESTS_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
-        throw new OutOfBudget();
-      requests += 1;
-      const result = await request();
-      if (!result.ok) throw new Failed(result.reason, result.detail);
-      return result.value;
-    };
+    const call = budgeted(now);
     try {
       // BYBIT-EARN: whether the key may read Earn now, asked on every pass, so turning the
       // permission on in Bybit counts from the next sync without adding the account again.
@@ -215,94 +270,119 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
           'The key can now trade or withdraw, so the app deleted it',
         );
       }
-      let earn = await this.keyFacts(account, info, now);
-      for (const stream of this.streams) {
-        if (stream.earn && !earn) continue;
-        const cursor = account[stream.column];
-        if (cursor === null) continue;
-        // Bybit lists the last three months of yield only.
-        let start = stream.earn
-          ? Math.max(cursor.getTime(), now - EARN_HISTORY_DAYS * DAY_MS)
-          : cursor.getTime();
-        let held = Number.POSITIVE_INFINITY;
-        try {
-          for (;;) {
-            const end = Math.min(start + stream.window, now);
-            const items: unknown[] = [];
-            let page: string | null = null;
-            for (let pages = 0; ; pages++) {
-              if (pages >= MAX_PAGES_PER_WINDOW) throw new Failed('invalid_response', null);
-              const from = start;
-              const at = page;
-              const read: BybitPage<unknown> = await call(() => stream.read(key, from, end, at));
-              items.push(...read.items);
-              page = read.cursor;
-              if (page === null || read.items.length === 0) break;
-            }
-            const legs = items.flatMap((item) => stream.leg(item) ?? []);
-            // A record still to settle is read again from its time on, unless it has waited a
-            // week: then it no longer holds the list back (a late completion shows as a gap).
-            for (const item of items) {
-              const at = stream.pendingAt(item, start);
-              if (at !== null && at >= now - PENDING_HOLD_MS) held = Math.min(held, at);
-            }
-            // The cursor never passes a record still to settle, nor the last hour.
-            const next = Math.max(cursor.getTime(), Math.min(end, now - REREAD_MS, held));
-            imported += await this.commit(account, stream.column, legs, new Date(next));
-            account[stream.column] = new Date(next);
-            if (end >= now) break;
-            start = end;
-          }
-        } catch (error) {
-          if (!(stream.earn && refused(error))) throw error;
-          earn = await this.denyEarn(account);
-        }
-      }
+      const allowed = await this.keyFacts(account, info, now);
+      const earn = await this.readStreams(account, key, allowed, now, call, pass);
       // BYBIT-CONVERT: every convert again on each pass: the lists have no time range to resume.
-      if (info.convert) {
-        try {
-          imported += await this.insertConverts(account, await this.converts(key, call));
-        } catch (error) {
-          if (!refused(error)) throw error;
-          await this.source.query(
-            `UPDATE bybit_accounts SET "convertAllowed" = false WHERE "walletId" = $1`,
-            [account.id],
-          );
-        }
-      }
+      if (info.convert) await this.readConverts(account, key, call, pass);
       const balances = [
         ...(await call(() => this.client.balances(key, 'FUND'))),
         ...(await call(() => this.client.balances(key, 'UNIFIED'))),
       ];
-      let holdings: EarnHolding[] | null = null;
-      if (earn) {
-        try {
-          holdings = [
-            ...(await call(() => this.client.earnPositions(key, 'FlexibleSaving'))).map((item) => ({
-              ...item,
-              product: 'flexible' as const,
-            })),
-            ...(await call(() => this.client.earnPositions(key, 'OnChain'))).map((item) => ({
-              ...item,
-              product: 'onchain' as const,
-            })),
-            ...(await call(() => this.client.fixedTermPositions(key))).map((item) => ({
-              ...item,
-              product: 'fixed' as const,
-            })),
-          ];
-        } catch (error) {
-          if (!refused(error)) throw error;
-          await this.denyEarn(account);
-        }
-      }
+      const holdings = earn ? await this.earnHoldings(account, key, call) : null;
       await this.complete(account, balances, holdings);
       return finish('complete', null);
     } catch (error) {
-      if (error instanceof OutOfBudget) return finish('partial', null);
-      if (error instanceof Failed) return finish('provider_error', error.reason, error.detail);
-      if (error instanceof UnreadableAmount) return finish('provider_error', 'invalid_response');
-      throw error;
+      const end = stopped(error);
+      return finish(end.outcome, end.reason, end.detail);
+    }
+  }
+
+  /** Each record list in turn; whether Earn may still be read once they are read. */
+  private async readStreams(
+    account: AccountRow,
+    key: BybitCredentials,
+    earn: boolean,
+    now: number,
+    call: Call,
+    pass: { imported: number },
+  ): Promise<boolean> {
+    let allowed = earn;
+    for (const stream of this.streams) {
+      if (stream.earn && !allowed) continue;
+      const cursor = account[stream.column];
+      if (cursor === null) continue;
+      try {
+        await this.readStream(account, key, stream, cursor, now, call, pass);
+      } catch (error) {
+        if (!(stream.earn && refused(error))) throw error;
+        allowed = await this.denyEarn(account);
+      }
+    }
+    return allowed;
+  }
+
+  /** One record list from `cursor` to now, window by window, each committed with its cursor. */
+  private async readStream(
+    account: AccountRow,
+    key: BybitCredentials,
+    stream: Stream<unknown>,
+    cursor: Date,
+    now: number,
+    call: Call,
+    pass: { imported: number },
+  ) {
+    // Bybit lists the last three months of yield only.
+    let start = stream.earn
+      ? Math.max(cursor.getTime(), now - EARN_HISTORY_DAYS * DAY_MS)
+      : cursor.getTime();
+    let held = Number.POSITIVE_INFINITY;
+    for (;;) {
+      const end = Math.min(start + stream.window, now);
+      const items = await readWindow(key, stream, start, end, call);
+      const legs = items.flatMap((item) => stream.leg(item) ?? []);
+      held = Math.min(held, holdFrom(stream, items, start, now));
+      // The cursor never passes a record still to settle, nor the last hour.
+      const next = Math.max(cursor.getTime(), Math.min(end, now - REREAD_MS, held));
+      pass.imported += await this.commit(account, stream.column, legs, new Date(next));
+      account[stream.column] = new Date(next);
+      if (end >= now) break;
+      start = end;
+    }
+  }
+
+  /** BYBIT-CONVERT: stores the converts; a key refused them marks converts unreadable. */
+  private async readConverts(
+    account: AccountRow,
+    key: BybitCredentials,
+    call: Call,
+    pass: { imported: number },
+  ) {
+    try {
+      pass.imported += await this.insertConverts(account, await this.converts(key, call));
+    } catch (error) {
+      if (!refused(error)) throw error;
+      await this.source.query(
+        `UPDATE bybit_accounts SET "convertAllowed" = false WHERE "walletId" = $1`,
+        [account.id],
+      );
+    }
+  }
+
+  /** BYBIT-EARN: what each Earn product holds; null when Bybit refuses the key Earn now. */
+  private async earnHoldings(
+    account: AccountRow,
+    key: BybitCredentials,
+    call: Call,
+  ): Promise<EarnHolding[] | null> {
+    try {
+      return [
+        ...(await call(() => this.client.earnPositions(key, 'FlexibleSaving'))).map((item) => ({
+          ...item,
+          product: 'flexible' as const,
+        })),
+        ...(await call(() => this.client.earnPositions(key, 'OnChain'))).map((item) => ({
+          ...item,
+          product: 'onchain' as const,
+        })),
+        ...(await call(() => this.client.fixedTermPositions(key))).map((item) => ({
+          ...item,
+          product: 'fixed' as const,
+        })),
+      ];
+    } catch (error) {
+      if (!refused(error)) throw error;
+      await this.denyEarn(account);
+      return null;
     }
   }
 
