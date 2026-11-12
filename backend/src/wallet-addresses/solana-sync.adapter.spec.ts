@@ -416,7 +416,7 @@ describe('SOL-SYNC-PROGRESS stores a batch under the address lock', () => {
     expect(query.mock.calls[0][1]).toEqual(['owner-id', 'address-id']);
     expect(state.solanaSync).toEqual({ ...progress, revision: expect.any(String) });
     expect(state.solanaSync?.revision).not.toBe('revision-1');
-    const [owner, id, stored] = query.mock.calls.at(-1)?.[1] as string[];
+    const [owner, id, stored] = (query.mock.calls.at(-1)?.[1] ?? []) as string[];
     expect([owner, id]).toEqual(['owner-id', 'address-id']);
     expect(JSON.parse(stored)).toEqual(state.solanaSync);
   });
