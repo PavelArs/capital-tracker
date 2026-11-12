@@ -78,6 +78,16 @@ function tag(data: string): number | null {
   return bytes && bytes.length >= 4 ? bytes.readUInt32LE(0) : null;
 }
 
+/** Indexes of the stake accounts a stake-program instruction names, the wallet's own left out. */
+function namedStakes(address: string, tx: SolanaTransaction, item: Instruction): number[] {
+  const kind = tag(item.data);
+  if (kind === null || kind === NAMES_NO_STAKE) return [];
+  const named = SECOND_IS_STAKE.has(kind) ? item.accounts.slice(0, 2) : item.accounts.slice(0, 1);
+  return named.filter(
+    (index) => index >= 0 && index < tx.accounts.length && tx.accounts[index] !== address,
+  );
+}
+
 /**
  * SOL-STAKE-FIND, SOL-STAKE-MOVE: the stake accounts the wallet `address` acted on in `tx`
  * and how much each one's balance changed. Only a transaction the wallet signed counts:
@@ -91,13 +101,7 @@ export function stakeActivity(address: string, tx: SolanaTransaction): StakeActi
   const found = new Set<number>();
   for (const item of instructions(tx.raw)) {
     if (tx.accounts[item.programIdIndex] !== STAKE_PROGRAM) continue;
-    const kind = tag(item.data);
-    if (kind === null || kind === NAMES_NO_STAKE) continue;
-    const named = SECOND_IS_STAKE.has(kind) ? item.accounts.slice(0, 2) : item.accounts.slice(0, 1);
-    for (const index of named) {
-      if (index >= 0 && index < tx.accounts.length && tx.accounts[index] !== address)
-        found.add(index);
-    }
+    for (const index of namedStakes(address, tx, item)) found.add(index);
   }
   const indexes = [...found].sort((left, right) => left - right);
   const accounts = [...new Set(indexes.map((index) => tx.accounts[index]))];
@@ -142,21 +146,35 @@ export function parseStakeAccount(
   if (item.owner !== STAKE_PROGRAM || !Number.isSafeInteger(item.lamports)) return null;
   const lamports = BigInt(item.lamports as number);
   if (lamports < 0n) return null;
+  const delegation = delegationOf(item);
+  if (!delegation) {
+    // Initialized but never delegated, or no longer readable as a delegation.
+    return { account, lamports, validator: null, state: 'inactive' };
+  }
+  const validator = validatorOf(delegation);
+  const activation = epochOf(delegation.activationEpoch);
+  const deactivation = epochOf(delegation.deactivationEpoch);
+  if (activation === null || deactivation === null) return null;
+  return { account, lamports, validator, state: stakeState(activation, deactivation, epoch) };
+}
+
+/** The delegation of a "delegated" stake account; null for any other. */
+function delegationOf(item: Record<string, unknown>): Record<string, unknown> | null {
   const parsed = (item.data as { parsed?: { type?: unknown; info?: unknown } } | undefined)?.parsed;
   const delegation = (
     parsed?.info as { stake?: { delegation?: Record<string, unknown> } | null } | undefined
   )?.stake?.delegation;
-  if (parsed?.type !== 'delegated' || !delegation) {
-    // Initialized but never delegated, or no longer readable as a delegation.
-    return { account, lamports, validator: null, state: 'inactive' };
-  }
+  return parsed?.type !== 'delegated' || !delegation ? null : delegation;
+}
+
+/** The vote account the stake is delegated to; null when it is not a readable address. */
+function validatorOf(delegation: Record<string, unknown>): string | null {
   const voter = typeof delegation.voter === 'string' ? delegation.voter : null;
-  const validator = voter && base58Bytes(voter)?.length === 32 ? voter : null;
-  const activation = epochOf(delegation.activationEpoch);
-  const deactivation = epochOf(delegation.deactivationEpoch);
-  if (activation === null || deactivation === null) return null;
-  let state: StakeState;
-  if (deactivation !== NEVER) state = deactivation >= epoch ? 'deactivating' : 'inactive';
-  else state = activation >= epoch ? 'activating' : 'active';
-  return { account, lamports, validator, state };
+  return voter && base58Bytes(voter)?.length === 32 ? voter : null;
+}
+
+/** Where a delegation stands in `epoch`. */
+function stakeState(activation: bigint, deactivation: bigint, epoch: bigint): StakeState {
+  if (deactivation !== NEVER) return deactivation >= epoch ? 'deactivating' : 'inactive';
+  return activation >= epoch ? 'activating' : 'active';
 }

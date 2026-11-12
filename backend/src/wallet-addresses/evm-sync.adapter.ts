@@ -19,8 +19,10 @@ import {
   EtherscanClient,
   type Failed,
   type InternalTransfer,
+  type NormalTransaction,
   parseInternal,
   parseNormal,
+  type TokenTransfer,
 } from './etherscan-client';
 import { readEvmBlock, type EvmScan as ScanRow, sameEvmScan } from './evm-block-progress';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
@@ -37,6 +39,26 @@ const SYNC_TIME_BUDGET_MS = 25_000;
 const scanColumns = `id, "ownerId", address, "scannedBlock", "tokenBackfillTo", "tokenBackfillAt", "evmSync"`;
 
 type Pools = { ok: true; pools: Set<string> } | { ok: false; reason: StepFailure };
+
+/** A range's lists up to `end`, where every list is whole; `state` after any staged block. */
+interface RangeLists {
+  ok: true;
+  state: ScanRow;
+  end: number;
+  normal: NormalTransaction[];
+  internal: InternalTransfer[];
+  tokens: TokenTransfer[];
+}
+
+/** A token range up to `end` and its transfers, or why it stopped; `state` after any staging. */
+type TokenRange =
+  | { ok: true; state: ScanRow; end: number; transfers: readonly TokenTransfer[] }
+  | { ok: false; state: ScanRow; reason: StepFailure | null };
+
+/** Whether a pass has read its share of ranges or used up its time. */
+function budgetSpent(ranges: number, started: number): boolean {
+  return ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS;
+}
 
 /** A stored ether leg's transaction as it arrived; null when it holds none the wallet sent. */
 function storedTransaction(raw: {
@@ -78,96 +100,132 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
   }
 
   async step(ownerId: string, addressId: string): Promise<StepResult> {
-    let state = await this.scan(ownerId, addressId);
-    let imported = 0;
-    const finish = (outcome: StepResult['outcome'], reason: StepFailure | null) => ({
+    const state = await this.scan(ownerId, addressId);
+    if (!this.etherscan.configured) return this.finish('provider_error', 'not_configured', 0);
+    const tip = await this.etherscan.blockNumber();
+    if (!tip.ok) return this.finish('provider_error', tip.reason, 0);
+    const target = tip.block - CONFIRMATIONS;
+    if (state.evmSync && state.evmSync.block > target)
+      return this.finish('provider_error', 'invalid_response', 0);
+    const backfill = this.stake ? await this.backfillStake(state, target) : null;
+    if (backfill) return this.finish('provider_error', backfill, 0);
+    const started = Date.now();
+    // TOKEN-BACKFILL: the stored history is read again for other tokens before anything new.
+    const tokens = await this.backfillTokens(state, started);
+    if (tokens.reason) return this.finish('provider_error', tokens.reason, tokens.imported);
+    if (tokens.state.tokenBackfillTo !== null) return this.finish('partial', null, tokens.imported);
+    return this.scanRanges(tokens.state, target, started, tokens.ranges, tokens.imported);
+  }
+
+  private finish(outcome: StepResult['outcome'], reason: StepFailure | null, imported: number) {
+    return {
       outcome,
       reason,
       imported,
       // SYNC-DETAIL: what the source said, so "temporarily unavailable" can be told apart.
       detail: reason === null ? null : this.etherscan.detail,
-    });
-    if (!this.etherscan.configured) return finish('provider_error', 'not_configured');
-    const tip = await this.etherscan.blockNumber();
-    if (!tip.ok) return finish('provider_error', tip.reason);
-    const target = tip.block - CONFIRMATIONS;
-    if (state.evmSync && state.evmSync.block > target)
-      return finish('provider_error', 'invalid_response');
-    const backfill = this.stake ? await this.backfillStake(state, target) : null;
-    if (backfill) return finish('provider_error', backfill);
-    const started = Date.now();
-    // TOKEN-BACKFILL: the stored history is read again for other tokens before anything new.
-    const tokens = await this.backfillTokens(state, started);
-    imported += tokens.imported;
-    if (tokens.reason) return finish('provider_error', tokens.reason);
-    if (tokens.state.tokenBackfillTo !== null) return finish('partial', null);
-    state = tokens.state;
-    // The pools are read as of the block the stored history ends at.
-    const complete = async (at: ScanRow) => {
-      const refused = this.stake ? await this.refreshStake(at, at.scannedBlock ?? target) : null;
-      return refused ? finish('provider_error', refused) : finish('complete', null);
     };
-    for (let ranges = tokens.ranges; ; ranges++) {
+  }
+
+  /** The history from the stored block on, range by range, each committed with its rows. */
+  private async scanRanges(
+    initial: ScanRow,
+    target: number,
+    started: number,
+    ranges: number,
+    imported: number,
+  ): Promise<StepResult> {
+    let state = initial;
+    let count = imported;
+    for (let range = ranges; ; range++) {
       const from = (state.scannedBlock ?? -1) + 1;
-      // Nothing final since the last pass: the stored history is complete as it is.
-      if (from > target) {
-        const committed = await this.commit(state, [], [], [], state.scannedBlock ?? target, true);
-        return complete(committed.state);
-      }
-      if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS) {
-        return finish('partial', null);
-      }
-      let normal = state.evmSync
-        ? { ok: true as const, items: [] as ReturnType<typeof parseNormal>[] }
-        : await this.etherscan.normal(state.address, from, target);
-      if (!normal.ok) return finish('provider_error', normal.reason);
-      let internal = state.evmSync
-        ? { ok: true as const, items: [] as InternalTransfer[], end: target }
-        : await this.internalUpTo(state.address, from, target, started);
-      if (!internal.ok) return finish('provider_error', internal.reason);
-      let read = state.evmSync
-        ? { ok: true as const, items: [] as Parameters<typeof ethereumLegs>[3] }
-        : await this.etherscan.tokens(state.address, from, target);
-      if (!read.ok) return finish('provider_error', read.reason);
-      let end = rangeEnd(from, internal.end, [normal.items, internal.items, read.items]);
-      if (end === null || state.evmSync) {
-        const staged = await readEvmBlock(this.source, this.etherscan, state, 'history', started);
-        if (!staged.ok) return finish('provider_error', staged.reason);
-        if (!staged.complete) return finish('partial', null);
-        state = staged.state;
-        end = staged.end;
-        normal = { ok: true, items: staged.normal };
-        internal = { ok: true, items: staged.internal, end };
-        read = { ok: true, items: staged.tokens };
-      }
-      const within = <T extends { blockNumber: number }>(items: readonly T[]) =>
-        items.filter((item) => item.blockNumber >= from && item.blockNumber <= end);
-      const transfers = within(read.items);
-      const legs = ethereumLegs(
-        state.address,
-        within(normal.items),
-        within(internal.items),
-        transfers,
-        this.network,
-      );
-      const sent = etherTransactions(state.address, within(normal.items), within(internal.items));
-      const pools = this.stake
-        ? await this.pools(state, sent, target)
-        : { ok: true as const, pools: new Set<string>() };
-      if (!pools.ok) return finish('provider_error', pools.reason);
-      const moves = etherStakeMoves(state.address, sent, pools.pools);
+      if (from > target) return this.caughtUp(state, target, count);
+      if (budgetSpent(range, started)) return this.finish('partial', null, count);
+      const read = await this.readRange(state, from, target, started);
+      if (!read.ok)
+        return this.finish(read.reason ? 'provider_error' : 'partial', read.reason, count);
+      const rows = await this.rangeRows(read, from, target);
+      if (!rows.ok) return this.finish('provider_error', rows.reason, count);
+      const done = read.end === target;
       const committed = await this.commit(
-        state,
-        legs,
-        ethereumTokenFacts(transfers, this.network),
-        moves,
-        end,
-        end === target,
+        read.state,
+        rows.legs,
+        rows.facts,
+        rows.moves,
+        read.end,
+        done,
       );
-      imported += committed.inserted;
-      if (end === target) return complete(committed.state);
+      count += committed.inserted;
+      if (done) return this.complete(committed.state, target, count);
       state = committed.state;
     }
+  }
+
+  /** Nothing final since the last pass: the stored history is complete as it is. */
+  private async caughtUp(state: ScanRow, target: number, imported: number): Promise<StepResult> {
+    const committed = await this.commit(state, [], [], [], state.scannedBlock ?? target, true);
+    return this.complete(committed.state, target, imported);
+  }
+
+  /** The pools are read as of the block the stored history ends at. */
+  private async complete(at: ScanRow, target: number, imported: number): Promise<StepResult> {
+    const refused = this.stake ? await this.refreshStake(at, at.scannedBlock ?? target) : null;
+    return refused
+      ? this.finish('provider_error', refused, imported)
+      : this.finish('complete', null, imported);
+  }
+
+  /**
+   * One range's lists from `from`, up to the last block every list returned whole. A block that
+   * alone fills a page, or one already staged, is read page by page; a null reason means it is
+   * staged only in part.
+   */
+  private async readRange(
+    state: ScanRow,
+    from: number,
+    target: number,
+    started: number,
+  ): Promise<RangeLists | { ok: false; reason: StepFailure | null }> {
+    if (!state.evmSync) {
+      const normal = await this.etherscan.normal(state.address, from, target);
+      if (!normal.ok) return normal;
+      const internal = await this.internalUpTo(state.address, from, target, started);
+      if (!internal.ok) return internal;
+      const tokens = await this.etherscan.tokens(state.address, from, target);
+      if (!tokens.ok) return tokens;
+      const end = rangeEnd(from, internal.end, [normal.items, internal.items, tokens.items]);
+      if (end !== null) {
+        const lists = { normal: normal.items, internal: internal.items, tokens: tokens.items };
+        return { ok: true, state, end, ...lists };
+      }
+    }
+    const staged = await readEvmBlock(this.source, this.etherscan, state, 'history', started);
+    if (!staged.ok) return staged;
+    if (!staged.complete) return { ok: false, reason: null };
+    const { normal, internal, tokens } = staged;
+    return { ok: true, state: staged.state, end: staged.end, normal, internal, tokens };
+  }
+
+  /** The legs, token facts and staking moves of a range's items from `from` to its end. */
+  private async rangeRows(range: RangeLists, from: number, target: number) {
+    const { state, end } = range;
+    const within = <T extends { blockNumber: number }>(items: readonly T[]) =>
+      items.filter((item) => item.blockNumber >= from && item.blockNumber <= end);
+    const transfers = within(range.tokens);
+    const legs = ethereumLegs(
+      state.address,
+      within(range.normal),
+      within(range.internal),
+      transfers,
+      this.network,
+    );
+    const sent = etherTransactions(state.address, within(range.normal), within(range.internal));
+    const pools = this.stake
+      ? await this.pools(state, sent, target)
+      : { ok: true as const, pools: new Set<string>() };
+    if (!pools.ok) return pools;
+    const moves = etherStakeMoves(state.address, sent, pools.pools);
+    return { ok: true as const, legs, facts: ethereumTokenFacts(transfers, this.network), moves };
   }
 
   /**
@@ -263,67 +321,89 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
     while (state.tokenBackfillTo !== null) {
       const to = state.tokenBackfillTo;
       const from = (state.tokenBackfillAt ?? -1) + 1;
-      let end = to;
-      let transfers: Parameters<typeof ethereumLegs>[3] = [];
+      let range: TokenRange = { ok: true, state, end: to, transfers: [] };
       if (from <= to) {
-        if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
-          return result();
+        if (budgetSpent(ranges, started)) return result();
         ranges++;
-        const read = state.evmSync
-          ? { ok: true as const, items: [] as Parameters<typeof ethereumLegs>[3] }
-          : await this.etherscan.tokens(state.address, from, to);
-        if (!read.ok) return result(read.reason);
-        const last = rangeEnd(from, to, [read.items]);
-        if (last === null || state.evmSync) {
-          const staged = await readEvmBlock(this.source, this.etherscan, state, 'tokens', started);
-          if (!staged.ok) return result(staged.reason);
-          state = staged.state;
-          if (!staged.complete) return result();
-          end = staged.end;
-          transfers = staged.tokens;
-        } else {
-          end = last;
-          transfers = read.items.filter(
-            (item) => item.blockNumber >= from && item.blockNumber <= end,
-          );
+        range = await this.readTokenRange(state, from, to, started);
+        if (!range.ok) {
+          state = range.state;
+          return result(range.reason);
         }
       }
-      const expected = state;
-      const committed = await this.source.transaction('READ COMMITTED', async (manager) => {
-        const [current]: ScanRow[] = await manager.query(
-          `SELECT ${scanColumns} FROM wallet_addresses
-            WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
-          [expected.ownerId, expected.id],
-        );
-        if (!sameEvmScan(current, expected))
-          throw new ConflictException('Another sync advanced this address');
-        const legs = ethereumLegs(current.address, [], [], transfers, this.network);
-        const inserted = await this.insertLegs(
-          manager,
-          current,
-          legs,
-          ethereumTokenFacts(transfers, this.network),
-        );
-        const done = end === to;
-        await manager.query(
-          `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4, "evmSync" = NULL
-            WHERE "ownerId" = $1 AND id = $2`,
-          [current.ownerId, current.id, done ? null : to, done ? null : end],
-        );
-        return {
-          inserted,
-          state: {
-            ...current,
-            tokenBackfillTo: done ? null : to,
-            tokenBackfillAt: done ? null : end,
-            evmSync: null,
-          },
-        };
-      });
+      const committed = await this.commitTokenRange(range.state, range.transfers, range.end, to);
       imported += committed.inserted;
       state = committed.state;
     }
     return result();
+  }
+
+  /**
+   * One token range from `from` up to the last block the list returned whole. A block that alone
+   * fills a page, or one already staged, is read page by page; a null reason means it is staged
+   * only in part.
+   */
+  private async readTokenRange(
+    state: ScanRow,
+    from: number,
+    to: number,
+    started: number,
+  ): Promise<TokenRange> {
+    if (!state.evmSync) {
+      const read = await this.etherscan.tokens(state.address, from, to);
+      if (!read.ok) return { ok: false, state, reason: read.reason };
+      const last = rangeEnd(from, to, [read.items]);
+      if (last !== null) {
+        const transfers = read.items.filter(
+          (item) => item.blockNumber >= from && item.blockNumber <= last,
+        );
+        return { ok: true, state, end: last, transfers };
+      }
+    }
+    const staged = await readEvmBlock(this.source, this.etherscan, state, 'tokens', started);
+    if (!staged.ok) return { ok: false, state, reason: staged.reason };
+    if (!staged.complete) return { ok: false, state: staged.state, reason: null };
+    return { ok: true, state: staged.state, end: staged.end, transfers: staged.tokens };
+  }
+
+  /** Stores a token range's legs and moves the backfill past it; done once it reaches `to`. */
+  private commitTokenRange(
+    expected: ScanRow,
+    transfers: readonly TokenTransfer[],
+    end: number,
+    to: number,
+  ) {
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      const [current]: ScanRow[] = await manager.query(
+        `SELECT ${scanColumns} FROM wallet_addresses
+            WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
+        [expected.ownerId, expected.id],
+      );
+      if (!sameEvmScan(current, expected))
+        throw new ConflictException('Another sync advanced this address');
+      const legs = ethereumLegs(current.address, [], [], transfers, this.network);
+      const inserted = await this.insertLegs(
+        manager,
+        current,
+        legs,
+        ethereumTokenFacts(transfers, this.network),
+      );
+      const done = end === to;
+      await manager.query(
+        `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4, "evmSync" = NULL
+            WHERE "ownerId" = $1 AND id = $2`,
+        [current.ownerId, current.id, done ? null : to, done ? null : end],
+      );
+      return {
+        inserted,
+        state: {
+          ...current,
+          tokenBackfillTo: done ? null : to,
+          tokenBackfillAt: done ? null : end,
+          evmSync: null,
+        },
+      };
+    });
   }
 
   /**

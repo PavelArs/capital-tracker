@@ -6,22 +6,21 @@
 // object stays complete evidence and nothing else about it changes.
 
 const escapeUnit = (unit: number) => `\\u${unit.toString(16).padStart(4, '0')}`;
+const isHighSurrogate = (unit: number) => unit >= 0xd800 && unit <= 0xdbff;
+const isLowSurrogate = (unit: number) => unit >= 0xdc00 && unit <= 0xdfff;
 
 /** The text with every U+0000 and unpaired surrogate written as an escape; the same text if none. */
 export function jsonbSafeText(text: string): string {
   let safe: string | null = null;
   for (let at = 0; at < text.length; at++) {
     const unit = text.charCodeAt(at);
-    let bad = unit === 0;
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = text.charCodeAt(at + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        if (safe !== null) safe += text[at] + text[at + 1];
-        at++;
-        continue;
-      }
-      bad = true;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) bad = true;
+    if (isHighSurrogate(unit) && isLowSurrogate(text.charCodeAt(at + 1))) {
+      if (safe !== null) safe += text[at] + text[at + 1];
+      at++;
+      continue;
+    }
+    // Past a pair, any surrogate is unpaired.
+    const bad = unit === 0 || isHighSurrogate(unit) || isLowSurrogate(unit);
     if (bad) {
       safe ??= text.slice(0, at);
       safe += escapeUnit(unit);

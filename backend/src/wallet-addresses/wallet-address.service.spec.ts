@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { DataSource, EntityManager } from 'typeorm';
 import { WalletAddressService } from './wallet-address.service';
 import type { WalletSyncService } from './wallet-sync.service';
@@ -193,5 +198,133 @@ describe('WAL-INVALID: a retried or raced new wallet never takes a removed or em
     await expect(
       service.register(owner, { network: 'bitcoin', address, newAccount }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('BYBIT-COUNT-GAP: a difference to Bybit is counted only against the balance it reports now', () => {
+  const accountId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const gapRequest = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const bybitRow = (
+    exchange: Record<string, unknown> | null,
+    wallet: string | null = accountId,
+  ) => ({
+    ...addressRow(wallet),
+    network: 'bybit',
+    address: 'bybit-account',
+    exchange: exchange && {
+      keyHint: 'WXYZ',
+      ipBound: true,
+      keyExpiresAt: null,
+      balancesAt: '2026-10-30T00:00:00+00:00',
+      historyFrom: '2025-11-01T00:00:00+00:00',
+      readFrom: '2025-11-01T00:00:00+00:00',
+      earnAllowed: null,
+      earn: null,
+      convertAllowed: null,
+      hiddenLegs: [],
+      ...exchange,
+    },
+  });
+  function gapHarness(row: ReturnType<typeof bybitRow>) {
+    const inserts: unknown[][] = [];
+    const query = jest.fn(async (sql: string, parameters: unknown[] = []) => {
+      if (sql.includes('FROM wallet_addresses a')) return [row];
+      if (sql.includes('INSERT INTO wallet_address_transactions')) inserts.push(parameters);
+      return [];
+    });
+    const transaction = jest.fn(
+      async (_level: string, work: (manager: EntityManager) => Promise<unknown>) =>
+        work({ query } as unknown as EntityManager),
+    );
+    const linkOwnTransfers = jest.fn();
+    const service = new WalletAddressService(
+      { transaction } as unknown as DataSource,
+      { linkOwnTransfers } as unknown as WalletSyncService,
+    );
+    return { service, inserts, linkOwnTransfers };
+  }
+  const gap = (direction: 'in' | 'out', quantity: string, reported: string) => ({
+    requestId: gapRequest,
+    coin: 'BTC',
+    direction,
+    quantity,
+    reported,
+  });
+
+  it.each([
+    ['a wallet address', bybitRow(null)],
+    ['a Bybit account outside a wallet', bybitRow({ balances: [] }, null)],
+  ])('BYBIT-COUNT-GAP refuses %s', async (_name, row) => {
+    const { service, inserts } = gapHarness(row);
+    const result = service.countGap(owner, row.id, gap('out', '0.2', '0.5'));
+    await expect(result).rejects.toBeInstanceOf(UnprocessableEntityException);
+    await expect(result).rejects.toThrow('Only a Bybit account in a wallet can count a gap');
+    expect(inserts).toEqual([]);
+  });
+
+  it.each([
+    [
+      'another reported balance',
+      gap('out', '0.2', '0.4'),
+      ConflictException,
+      'Bybit reports another balance now',
+    ],
+    [
+      'more coming in than Bybit holds',
+      gap('in', '0.6', '0.5'),
+      UnprocessableEntityException,
+      'The difference exceeds the balance Bybit holds',
+    ],
+  ])('BYBIT-COUNT-GAP refuses %s and stores nothing', async (_name, request, type, message) => {
+    const row = bybitRow({ balances: [{ coin: 'BTC', quantity: '0.5' }] });
+    const { service, inserts, linkOwnTransfers } = gapHarness(row);
+    const result = service.countGap(owner, row.id, request);
+    await expect(result).rejects.toBeInstanceOf(type);
+    await expect(result).rejects.toThrow(message);
+    expect(inserts).toEqual([]);
+    expect(linkOwnTransfers).not.toHaveBeenCalled();
+  });
+
+  it('BYBIT-COUNT-GAP asks to reload when the stored balance has more decimals than Bybit keeps', async () => {
+    const row = bybitRow({ balances: [{ coin: 'BTC', quantity: '0.0000000000000000001' }] });
+    const { service, inserts } = gapHarness(row);
+    const result = service.countGap(owner, row.id, gap('out', '0.2', '0.5'));
+    await expect(result).rejects.toBeInstanceOf(ConflictException);
+    await expect(result).rejects.toThrow('Reload the balances');
+    expect(inserts).toEqual([]);
+  });
+
+  it('BYBIT-COUNT-GAP counts a coin Bybit no longer lists as a zero balance', async () => {
+    const row = bybitRow({ balances: [{ coin: 'ETH', quantity: '1' }] });
+    const { service, inserts } = gapHarness(row);
+    await expect(service.countGap(owner, row.id, gap('out', '0.2', '0'))).resolves.toMatchObject({
+      id: row.id,
+    });
+    expect(inserts).toHaveLength(1);
+  });
+
+  it('BYBIT-COUNT-GAP stores one record for the difference and links own transfers after', async () => {
+    const row = bybitRow({ balances: [{ coin: 'BTC', quantity: '0.5' }] });
+    const { service, inserts, linkOwnTransfers } = gapHarness(row);
+    const result = await service.countGap(owner, row.id, gap('in', '0.2', '0.5'));
+    expect(result).toMatchObject({ id: row.id, network: 'bybit', exchange: { keyHint: 'WXYZ' } });
+    expect(inserts).toHaveLength(1);
+    const [ownerId, addressId, txid, blockTime, received, sent, direction, raw, asset] = inserts[0];
+    expect([ownerId, addressId, txid, received, sent, direction, asset]).toEqual([
+      owner,
+      row.id,
+      `bybit-deposit-gap-${gapRequest}`,
+      '200000000000000000',
+      '0',
+      'in',
+      'BTC',
+    ]);
+    expect(typeof blockTime).toBe('string');
+    expect(JSON.parse(raw as string)).toMatchObject({
+      txid: `bybit-deposit-gap-${gapRequest}`,
+      balanceGap: true,
+      coveredTo: '2026-10-30T00:00:00.000Z',
+    });
+    expect(linkOwnTransfers).toHaveBeenCalledWith(owner);
   });
 });

@@ -32,6 +32,58 @@ interface ScanRow {
   readTo: Date | null;
 }
 
+/** One transaction hash as the lists name it, before the node's record is read. */
+type ListedGroup = Omit<TronTransactionGroup, 'info'>;
+
+const failed = (reason: StepFailure, imported: number): StepResult => ({
+  outcome: 'provider_error',
+  reason,
+  imported,
+});
+
+/** Files one listed item under its transaction. */
+function addItem(group: ListedGroup, item: TronAccountItem | TronTokenTransfer) {
+  if ('kind' in item && item.kind === 'transaction') group.transaction = item;
+  else if ('kind' in item) group.internal.push(item);
+  else group.tokens.push(item);
+}
+
+/** The index just past the transactions of the block time at `position`. */
+function blockEnd(ordered: readonly ListedGroup[], position: number): number {
+  const { timestamp } = ordered[position];
+  let next = position;
+  while (next < ordered.length && ordered[next].timestamp === timestamp) next++;
+  return next;
+}
+
+/** The listed items of block times in (after, end], by transaction hash, oldest first. */
+function byTransaction(
+  lists: readonly { items: (TronAccountItem | TronTokenTransfer)[] }[],
+  after: number,
+  end: number,
+): ListedGroup[] {
+  const groups = new Map<string, ListedGroup>();
+  for (const list of lists) {
+    for (const item of list.items) {
+      if (item.timestamp <= after || item.timestamp > end) continue;
+      // A zero-value token transfer (address poisoning) moves nothing and needs no reading.
+      if ('value' in item && item.value === 0n) continue;
+      const found = groups.get(item.txid) ?? {
+        txid: item.txid,
+        timestamp: item.timestamp,
+        transaction: null,
+        internal: [],
+        tokens: [],
+      };
+      groups.set(item.txid, found);
+      addItem(found, item);
+    }
+  }
+  return [...groups.values()].sort(
+    (left, right) => left.timestamp - right.timestamp || left.txid.localeCompare(right.txid),
+  );
+}
+
 /**
  * TRON-SYNC: Tron history from TronGrid. Every confirmed transaction of the wallet, its TRX
  * moved by contracts and its USDT and USDC transfers are listed oldest first by block time up to
@@ -54,21 +106,13 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     const state = await this.scan(ownerId, addressId);
     const hex = tronHex(state.address);
     if (!hex) throw new Error('A stored Tron address is valid');
-    const failed = (reason: StepFailure): StepResult => ({
-      outcome: 'provider_error',
-      reason,
-      imported: 0,
-    });
     const tip = await this.client.tip();
-    if (!tip.ok) return failed(tip.reason);
+    if (!tip.ok) return failed(tip.reason, 0);
     const target = tip.tip.timestamp;
     const after = state.readTo?.getTime() ?? 0;
     if (after >= target) {
       await this.commit(state, [], [], after, tip.tip.number, true);
-      const imported = await this.readInternal(state, hex, after);
-      const refused = await this.refreshState(state);
-      if (refused) return { outcome: 'provider_error', reason: refused, imported };
-      return { outcome: 'complete', reason: null, imported };
+      return this.completed(state, hex, after, 0);
     }
 
     const started = Date.now();
@@ -83,85 +127,91 @@ export class TronSyncAdapter implements ChainSyncAdapter {
       after,
       target,
     );
-    if (!listed.ok) return failed(listed.reason);
+    if (!listed.ok) return failed(listed.reason, 0);
     const { lists, end } = listed;
-    const groups = new Map<string, Omit<TronTransactionGroup, 'info'>>();
-    const group = (txid: string, timestamp: number) => {
-      const found = groups.get(txid) ?? {
-        txid,
-        timestamp,
-        transaction: null,
-        internal: [],
-        tokens: [],
-      };
-      groups.set(txid, found);
-      return found;
-    };
-    for (const list of lists) {
-      for (const item of list.items) {
-        if (item.timestamp <= after || item.timestamp > end) continue;
-        // A zero-value token transfer (address poisoning) moves nothing and needs no reading.
-        if ('value' in item && item.value === 0n) continue;
-        const found = group(item.txid, item.timestamp);
-        if ('kind' in item && item.kind === 'transaction') found.transaction = item;
-        else if ('kind' in item) found.internal.push(item);
-        else found.tokens.push(item);
-      }
-    }
-    const ordered = [...groups.values()].sort(
-      (left, right) => left.timestamp - right.timestamp || left.txid.localeCompare(right.txid),
-    );
+    const ordered = byTransaction(lists, after, end);
+    const read = await this.readBlocks(state.address, hex, ordered, after, started);
+    const all = read.failure === null && read.position === ordered.length;
+    const caughtUp = all && end === target;
+    // Everything listed is read: the cursor moves to the end of what the lists covered.
+    const done = all ? end : read.done;
+    const imported =
+      done === after
+        ? 0
+        : await this.commit(state, read.legs, read.stake, done, tip.tip.number, caughtUp);
+    if (read.failure) return failed(read.failure, imported);
+    if (!caughtUp) return { outcome: 'partial', reason: null, imported };
+    return this.completed(state, hex, done, imported);
+  }
 
-    // Whole block times, oldest first, until the pass budget is spent or the provider fails.
+  /** A history read up to the tip: contract payouts, then the staking the chain reports. */
+  private async completed(
+    state: ScanRow,
+    hex: string,
+    readTo: number,
+    imported: number,
+  ): Promise<StepResult> {
+    const total = imported + (await this.readInternal(state, hex, readTo));
+    const refused = await this.refreshState(state);
+    if (refused) return { outcome: 'provider_error', reason: refused, imported: total };
+    return { outcome: 'complete', reason: null, imported: total };
+  }
+
+  /**
+   * Whole block times, oldest first, until the pass budget is spent or the provider fails. The
+   * first block time is always taken: a pass that listed for long must still advance.
+   */
+  private async readBlocks(
+    address: string,
+    hex: string,
+    ordered: readonly ListedGroup[],
+    after: number,
+    started: number,
+  ) {
     const legs: TronLeg[] = [];
     const stake: TronStakeMove[] = [];
     let done = after;
     let fetched = 0;
-    let failure: StepFailure | null = null;
     let position = 0;
     while (position < ordered.length) {
       const timestamp = ordered[position].timestamp;
-      let next = position;
-      while (next < ordered.length && ordered[next].timestamp === timestamp) next++;
+      const next = blockEnd(ordered, position);
       const batch = ordered.slice(position, next);
       const wanted = batch.filter((item) => needsInfo(hex, item)).length;
       if (fetched > 0 && fetched + wanted > MAX_INFO_PER_SYNC) break;
-      // The first block time is always taken: a pass that listed for long must still advance.
       if (position > 0 && Date.now() - started > SYNC_TIME_BUDGET_MS) break;
-      const read: TronTransactionGroup[] = [];
-      for (const item of batch) {
-        let info: TronTransactionInfo | null = null;
-        if (needsInfo(hex, item)) {
-          const found = await this.client.info(item.txid);
-          fetched++;
-          if (!found.ok) failure = found.reason;
-          else if (found.info.timestamp !== timestamp) failure = 'invalid_response';
-          else info = found.info;
-          if (failure) break;
-        }
-        read.push({ ...item, info });
-      }
-      if (failure) break;
-      for (const item of read) {
-        const effect = tronLegs(state.address, hex, item);
+      const read = await this.readBatch(hex, batch, timestamp);
+      if (!read.ok) return { legs, stake, done, position, failure: read.reason };
+      fetched += wanted;
+      for (const item of read.groups) {
+        const effect = tronLegs(address, hex, item);
         legs.push(...effect.legs);
         if (effect.stake) stake.push(effect.stake);
       }
       done = timestamp;
       position = next;
     }
-    const caughtUp = failure === null && position === ordered.length && end === target;
-    // Everything listed is read: the cursor moves to the end of what the lists covered.
-    if (failure === null && position === ordered.length) done = end;
-    let imported =
-      done === after ? 0 : await this.commit(state, legs, stake, done, tip.tip.number, caughtUp);
-    if (failure) return { outcome: 'provider_error', reason: failure, imported };
-    if (caughtUp) {
-      imported += await this.readInternal(state, hex, done);
-      const refused = await this.refreshState(state);
-      if (refused) return { outcome: 'provider_error', reason: refused, imported };
+    return { legs, stake, done, position, failure: null };
+  }
+
+  /** The node's record of each transaction of one block time that needs one. */
+  private async readBatch(
+    hex: string,
+    batch: readonly ListedGroup[],
+    timestamp: number,
+  ): Promise<{ ok: true; groups: TronTransactionGroup[] } | { ok: false; reason: StepFailure }> {
+    const groups: TronTransactionGroup[] = [];
+    for (const item of batch) {
+      let info: TronTransactionInfo | null = null;
+      if (needsInfo(hex, item)) {
+        const found = await this.client.info(item.txid);
+        if (!found.ok) return { ok: false, reason: found.reason };
+        if (found.info.timestamp !== timestamp) return { ok: false, reason: 'invalid_response' };
+        info = found.info;
+      }
+      groups.push({ ...item, info });
     }
-    return { outcome: caughtUp ? 'complete' : 'partial', reason: null, imported };
+    return { ok: true, groups };
   }
 
   /**
@@ -174,13 +224,8 @@ export class TronSyncAdapter implements ChainSyncAdapter {
    * until a later pass; the wallet shows the chain's total beside it meanwhile.
    */
   private async readInternal(state: ScanRow, hex: string, readTo: number): Promise<number> {
-    const listed: TronscanInternal[] = [];
-    for (let page = 0; page < MAX_TRON_PAGES; page++) {
-      const found = await this.client.internalTransfers(state.address, page * TRONSCAN_PAGE_SIZE);
-      if (!found.ok) return 0;
-      listed.push(...found.items);
-      if (found.items.length < TRONSCAN_PAGE_SIZE) break;
-    }
+    const listed = await this.listInternal(state.address);
+    if (!listed) return 0;
     const wanted = new Map<string, TronscanInternal>();
     for (const item of listed)
       if (item.to === hex && item.timestamp <= readTo) wanted.set(item.txid, item);
@@ -195,13 +240,39 @@ export class TronSyncAdapter implements ChainSyncAdapter {
         (left, right) => left.timestamp - right.timestamp || left.txid.localeCompare(right.txid),
       )
       .slice(0, MAX_INFO_PER_SYNC);
+    const legs = await this.payoutLegs(state.address, hex, missing, readTo);
+    if (legs.length === 0) return 0;
+    return this.source.transaction('READ COMMITTED', (manager) =>
+      this.insert(manager, state, legs),
+    );
+  }
+
+  /** Tronscan's pages of contract transfers to the account; null when one cannot be read. */
+  private async listInternal(address: string): Promise<TronscanInternal[] | null> {
+    const listed: TronscanInternal[] = [];
+    for (let page = 0; page < MAX_TRON_PAGES; page++) {
+      const found = await this.client.internalTransfers(address, page * TRONSCAN_PAGE_SIZE);
+      if (!found.ok) return null;
+      listed.push(...found.items);
+      if (found.items.length < TRONSCAN_PAGE_SIZE) break;
+    }
+    return listed;
+  }
+
+  /** The TRX legs of each payout by TronGrid's record of it, until a record cannot be read. */
+  private async payoutLegs(
+    address: string,
+    hex: string,
+    missing: readonly TronscanInternal[],
+    readTo: number,
+  ): Promise<TronLeg[]> {
     const legs: TronLeg[] = [];
     for (const item of missing) {
       const found = await this.client.info(item.txid);
       if (!found.ok) break;
       const { info } = found;
       if (info.timestamp > readTo) continue;
-      const effect = tronLegs(state.address, hex, {
+      const effect = tronLegs(address, hex, {
         txid: item.txid,
         timestamp: info.timestamp,
         transaction: null,
@@ -211,10 +282,7 @@ export class TronSyncAdapter implements ChainSyncAdapter {
       });
       legs.push(...effect.legs);
     }
-    if (legs.length === 0) return 0;
-    return this.source.transaction('READ COMMITTED', (manager) =>
-      this.insert(manager, state, legs),
-    );
+    return legs;
   }
 
   private async scan(owner: string, id: string): Promise<ScanRow> {

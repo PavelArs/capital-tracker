@@ -1,6 +1,6 @@
 import type { EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
+import { type LatestMarketPrice, latestMarketPrices } from '../prices/market-price.store';
 import { freshness } from '../prices/price-collection';
 import {
   anyTokenNetworks,
@@ -104,21 +104,34 @@ export async function withDust<Row extends TokenHolder>(
       : (await latestMarketPrices(manager, tickers, now)).map((item) => [item.asset, item]),
   );
   for (const row of candidates) {
-    const dust = new Set<string>();
-    for (const item of held(row)) {
-      const asset = chainAsset(row.network, item.asset);
-      const units = BigInt(item.units);
-      const quote = prices.get(asset.symbol);
-      // An old quote may value a holding as stale, but cannot silently hide it.
-      if (quote && freshness(quote.observedAt, now) !== 'fresh') continue;
-      if (
-        isWorthless(asset, formatUnits(units, asset), units === 0n ? null : threshold, quote?.price)
-      )
-        dust.add(item.asset as string);
-    }
-    row.dustTokens = dust;
+    row.dustTokens = new Set(
+      held(row)
+        .filter((item) => isDust(row.network, item, prices, threshold, now))
+        .map((item) => item.asset as string),
+    );
   }
   return rows;
+}
+
+/** Whether one held token is worth nothing by its latest fresh quote, or has no source at all. */
+function isDust(
+  network: Network,
+  item: TokenHolder['balances'][number],
+  prices: ReadonlyMap<string, LatestMarketPrice>,
+  threshold: string | null,
+  now: Date,
+): boolean {
+  const asset = chainAsset(network, item.asset);
+  const units = BigInt(item.units);
+  const quote = prices.get(asset.symbol);
+  // An old quote may value a holding as stale, but cannot silently hide it.
+  if (quote && freshness(quote.observedAt, now) !== 'fresh') return false;
+  return isWorthless(
+    asset,
+    formatUnits(units, asset),
+    units === 0n ? null : threshold,
+    quote?.price,
+  );
 }
 
 /** The owner's Ethereum and Solana addresses with what each holds, dust marked. */
