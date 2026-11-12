@@ -39,6 +39,7 @@ import {
   parseTransferListQuery,
   parseTransferVoid,
   type RequestedMovement,
+  type TransferAllocationQuery,
   type TransferCorrectionInput,
   type TransferCreateInput,
   type TransferVoidInput,
@@ -46,6 +47,7 @@ import {
 } from './owned-transfer-input';
 import {
   type AccountRow,
+  type JournalRow,
   readJournal,
   readOwnedAccount,
   startEmptyJournal,
@@ -161,6 +163,15 @@ function assertReplays(
     if (shortfall) throw dependent(shortfall, shortfall.operationId === `transfer:${transferId}`);
     throw error;
   }
+}
+/** Journal revisions an allocation read was pinned to must still be current. */
+function assertAllocationPins(query: TransferAllocationQuery, from: JournalRow, to: JournalRow) {
+  if (
+    (query.fromJournalRevision !== undefined &&
+      query.fromJournalRevision !== from.currentRevision) ||
+    (query.toJournalRevision !== undefined && query.toJournalRevision !== to.currentRevision)
+  )
+    throw conflict();
 }
 
 @Injectable()
@@ -353,12 +364,7 @@ export class OwnedTransferService {
         readJournal(manager, owner, row.toAccountId),
       ]);
       if (!from || !to) throw conflict();
-      if (
-        (query.fromJournalRevision !== undefined &&
-          query.fromJournalRevision !== from.currentRevision) ||
-        (query.toJournalRevision !== undefined && query.toJournalRevision !== to.currentRevision)
-      )
-        throw conflict();
+      assertAllocationPins(query, from, to);
       const metadata = {
         transferId: id,
         version: row.version,
