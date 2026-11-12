@@ -120,7 +120,7 @@ const noRate = () => new ConflictException('No Bank of Russia rate is stored for
 
 type Ordered<O> = Omit<Execution, 'orderWithinTimestamp'> & { orderWithinTimestamp: O };
 /** The execution fields; an automatic order stays null in the request as sent. */
-function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
+export function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
   return {
     instrumentId: value.instrumentId,
     side: value.side,
