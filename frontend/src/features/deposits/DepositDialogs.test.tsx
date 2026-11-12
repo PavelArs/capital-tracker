@@ -208,4 +208,21 @@ describe('DEP-TERMS: the frame every deposit dialog shares', () => {
       expect(onSaved).not.toHaveBeenCalled();
     },
   );
+
+  it('takes the failure text away when the next try starts, and sends that try once', async () => {
+    let answer: (deposit: DepositDetail) => void = () => undefined;
+    const addRate = vi
+      .spyOn(depositsApi, 'addRate')
+      .mockRejectedValueOnce(httpError(500))
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { dialog, onSaved } = openRate();
+    const user = await changeRate(dialog);
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Change rate' }));
+    expect(within(dialog).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    expect(addRate).toHaveBeenCalledTimes(2);
+    await act(async () => answer(saved));
+    expect(onSaved).toHaveBeenCalledWith(saved);
+  });
 });
