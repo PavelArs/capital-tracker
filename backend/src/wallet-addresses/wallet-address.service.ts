@@ -39,6 +39,7 @@ import { type SyncOffReason, setSyncEnabled } from './sync-switch';
 import { balancesLateral, leftOut, withDust } from './token-left-out';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
+  type BalanceGap,
   type ExchangeRegistration,
   parseBalanceGap,
   parseRegistration,
@@ -606,6 +607,23 @@ function summary(row: AddressRow, now = new Date()) {
   };
 }
 
+/**
+ * BYBIT-COUNT-GAP: the gap was read against the balance Bybit reports now, and what comes in
+ * fits inside it; a stored balance with more decimals than Bybit keeps needs a reload.
+ */
+function checkGap(exchange: ExchangeRow, gap: BalanceGap) {
+  try {
+    const reported = exchange.balances?.find((item) => item.coin === gap.coin)?.quantity;
+    if (toUnits(reported ?? '0') !== toUnits(gap.reported))
+      throw new ConflictException('Bybit reports another balance now');
+    if (gap.direction === 'in' && toUnits(gap.quantity) > toUnits(gap.reported))
+      throw new UnprocessableEntityException('The difference exceeds the balance Bybit holds');
+  } catch (error) {
+    if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
+    throw error;
+  }
+}
+
 function transaction(row: TransactionRow) {
   const asset = chainAsset(row.network, row.asset);
   const amount = (units: bigint) => formatUnits(units, asset);
@@ -946,16 +964,7 @@ export class WalletAddressService {
       const row = await this.address(manager, owner, addressId);
       if (!row.exchange || row.accountId === null)
         throw new UnprocessableEntityException('Only a Bybit account in a wallet can count a gap');
-      try {
-        const reported = row.exchange.balances?.find((item) => item.coin === gap.coin)?.quantity;
-        if (toUnits(reported ?? '0') !== toUnits(gap.reported))
-          throw new ConflictException('Bybit reports another balance now');
-        if (gap.direction === 'in' && toUnits(gap.quantity) > toUnits(gap.reported))
-          throw new UnprocessableEntityException('The difference exceeds the balance Bybit holds');
-      } catch (error) {
-        if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
-        throw error;
-      }
+      checkGap(row.exchange, gap);
       const leg = gapLeg(
         gap,
         new Date(),
