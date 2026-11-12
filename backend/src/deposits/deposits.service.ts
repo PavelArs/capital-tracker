@@ -23,6 +23,7 @@ import {
   parseMovement,
   parseRateChange,
   parseUuid,
+  type RateInput,
 } from './deposit-input';
 import {
   bankBalanceOf,
@@ -324,36 +325,7 @@ export class DepositsService {
     const input = parseRateChange(raw);
     await this.source.transaction(async (manager) => {
       const stored = await this.locked(manager, owner, depositId);
-      if (input.effectiveFrom > moscowDate(new Date()))
-        throw new UnprocessableEntityException('The rate change date is in the future');
-      // A term deposit opens with its rate; an account entered without one may be given its first
-      // rate from its opening day, so that day's interest is not lost.
-      const firstRateOfAccount =
-        stored.deposit.kind === 'account' &&
-        !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
-      if (
-        (firstRateOfAccount
-          ? input.effectiveFrom < stored.deposit.startDate
-          : input.effectiveFrom <= stored.deposit.startDate) ||
-        (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
-      )
-        throw new UnprocessableEntityException('The rate must change inside the term');
-      const next: DepositTerms = {
-        ...termsOf(stored),
-        rates: [
-          ...stored.rates.filter((rate) => rate.effectiveFrom !== input.effectiveFrom),
-          input,
-        ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
-      };
-      const closedOn = projectDeposit(
-        termsOf(stored),
-        movementsOf(stored),
-        stored.deposit.endDate ?? moscowDate(new Date()),
-      ).closedOn;
-      if (closedOn !== null && input.effectiveFrom >= closedOn)
-        throw new UnprocessableEntityException('The deposit was closed before that date');
-      if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
-        throw new ConflictException('A recorded movement depends on the earlier rate');
+      assertRateChange(stored, input);
       // A retry of the same rate (a lost answer) writes nothing, so it adds no History event.
       const changed: unknown[] = await manager.query(
         `INSERT INTO bank_deposit_rates ("ownerId", "depositId", "effectiveFrom", "ratePercent")
@@ -716,6 +688,43 @@ export class DepositsService {
 }
 
 /** The day the first rate of a deposit takes effect, or undefined when it has none. */
+/**
+ * DEP-RATE: refuses a rate change dated in the future, outside the term, on or after the day the
+ * deposit closed, or one a recorded movement could not stand.
+ */
+function assertRateChange(stored: Stored, input: RateInput) {
+  if (input.effectiveFrom > moscowDate(new Date()))
+    throw new UnprocessableEntityException('The rate change date is in the future');
+  // A term deposit opens with its rate; an account entered without one may be given its first
+  // rate from its opening day, so that day's interest is not lost.
+  const firstRateOfAccount =
+    stored.deposit.kind === 'account' &&
+    !stored.rates.some((rate) => rate.effectiveFrom === stored.deposit.startDate);
+  if (
+    (firstRateOfAccount
+      ? input.effectiveFrom < stored.deposit.startDate
+      : input.effectiveFrom <= stored.deposit.startDate) ||
+    (stored.deposit.endDate !== null && input.effectiveFrom >= stored.deposit.endDate)
+  )
+    throw new UnprocessableEntityException('The rate must change inside the term');
+  const next: DepositTerms = {
+    ...termsOf(stored),
+    rates: [
+      ...stored.rates.filter((rate) => rate.effectiveFrom !== input.effectiveFrom),
+      input,
+    ].sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : 1)),
+  };
+  const closedOn = projectDeposit(
+    termsOf(stored),
+    movementsOf(stored),
+    stored.deposit.endDate ?? moscowDate(new Date()),
+  ).closedOn;
+  if (closedOn !== null && input.effectiveFrom >= closedOn)
+    throw new UnprocessableEntityException('The deposit was closed before that date');
+  if (firstImpossibleMovement(next, movementsOf(stored)) !== -1)
+    throw new ConflictException('A recorded movement depends on the earlier rate');
+}
+
 const firstRateDay = (stored: Stored): string | undefined =>
   stored.rates.map((rate) => rate.effectiveFrom).sort()[0];
 
