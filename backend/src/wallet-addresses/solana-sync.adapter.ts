@@ -451,10 +451,13 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     return { ok: true, facts: [...facts.filter((item) => known.has(item.contract)), ...named] };
   }
 
-  private assertCurrent(
-    current: ScanRow | undefined,
-    expected: ScanRow,
-  ): asserts current is ScanRow {
+  /** Locks the address's row, as `expected` read it: another sync that moved it conflicts. */
+  private async lock(manager: EntityManager, expected: ScanRow): Promise<ScanRow> {
+    const [current]: ScanRow[] = await manager.query(
+      `SELECT ${scanColumns} FROM wallet_addresses
+        WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
+      [expected.ownerId, expected.id],
+    );
     if (
       !current ||
       current.scannedBlock !== expected.scannedBlock ||
@@ -463,16 +466,23 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
       (current.solanaSync?.revision ?? null) !== (expected.solanaSync?.revision ?? null)
     )
       throw new ConflictException('Another sync advanced this address');
+    return current;
+  }
+
+  /** TOKEN-ANY: stores the new tokens the legs name, then the legs that can be counted. */
+  private async store(
+    manager: EntityManager,
+    current: ScanRow,
+    legs: SolanaLeg[],
+    facts: TokenFacts[],
+  ) {
+    const countable = await registerChainTokens(manager, 'solana', facts);
+    return this.insert(manager, current, countableLegs('solana', legs, countable));
   }
 
   private checkpoint(expected: ScanRow, next: SyncProgress): Promise<ScanRow> {
     return this.source.transaction('READ COMMITTED', async (manager) => {
-      const [current]: ScanRow[] = await manager.query(
-        `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
-        [expected.ownerId, expected.id],
-      );
-      this.assertCurrent(current, expected);
+      const current = await this.lock(manager, expected);
       const progress = { ...next, revision: randomUUID() };
       await manager.query(
         `UPDATE wallet_addresses SET "solanaSync" = $3::jsonb
@@ -493,18 +503,8 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     next: SyncProgress | null,
   ) {
     return this.source.transaction('READ COMMITTED', async (manager) => {
-      const [current]: ScanRow[] = await manager.query(
-        `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
-        [expected.ownerId, expected.id],
-      );
-      this.assertCurrent(current, expected);
-      const countable = await registerChainTokens(manager, 'solana', facts);
-      const inserted = await this.insert(
-        manager,
-        current,
-        countableLegs('solana', legs, countable),
-      );
+      const current = await this.lock(manager, expected);
+      const inserted = await this.store(manager, current, legs, facts);
       const state = {
         ...current,
         tokenBackfillTo: done ? null : current.tokenBackfillTo,
@@ -548,18 +548,8 @@ export class SolanaSyncAdapter implements ChainSyncAdapter {
     next: SyncProgress | null,
   ) {
     return this.source.transaction('READ COMMITTED', async (manager) => {
-      const [current]: ScanRow[] = await manager.query(
-        `SELECT ${scanColumns} FROM wallet_addresses
-          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR UPDATE`,
-        [expected.ownerId, expected.id],
-      );
-      this.assertCurrent(current, expected);
-      const countable = await registerChainTokens(manager, 'solana', facts);
-      const inserted = await this.insert(
-        manager,
-        current,
-        countableLegs('solana', legs, countable),
-      );
+      const current = await this.lock(manager, expected);
+      const inserted = await this.store(manager, current, legs, facts);
       await this.insertStake(manager, current, stake);
       const state = {
         ...current,
