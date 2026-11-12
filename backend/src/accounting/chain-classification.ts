@@ -199,101 +199,115 @@ function object(raw: unknown, keys: readonly string[]): Record<string, unknown> 
   return strictRecord(raw, keys) ?? bad();
 }
 
+/** A value in USD that may be unknown (null); a given one is positive. */
+function optionalUsd(raw: unknown): string | null {
+  return raw === null ? null : parseDecimal(raw, true);
+}
+
+/** The owner's raw transaction a classification names: an address and a valid txid. */
+function chainReference(raw: unknown): { addressId: unknown; txid: string } {
+  const row = object(raw, ['addressId', 'txid']);
+  if (typeof row.txid !== 'string' || !chainTxid.test(row.txid)) return bad();
+  return { addressId: row.addressId, txid: row.txid };
+}
+
+function priced(raw: unknown, type: PricedClassification['type']): PricedClassification {
+  const row = object(raw, ['type', 'currency', 'amount', 'fee', 'perUsd']);
+  const currency = settlementCurrencies.find((code) => code === row.currency) ?? bad();
+  if (row.perUsd !== undefined && !isPaidCurrency(currency)) return bad();
+  return {
+    type,
+    currency,
+    amount: parseDecimal(row.amount, true),
+    ...(row.fee === undefined ? {} : { fee: parseDecimal(row.fee, false) }),
+    ...(row.perUsd === undefined ? {} : { perUsd: parseDecimal(row.perUsd, true) }),
+  };
+}
+
+function transfer(raw: unknown): TransferClassification {
+  const row = object(raw, ['type', 'accountId', 'partner']);
+  if (row.partner === undefined) return { type: 'transfer', accountId: parseUuid(row.accountId) };
+  const other = chainReference(row.partner);
+  return {
+    type: 'transfer',
+    accountId: parseUuid(row.accountId),
+    partner: { addressId: parseUuid(other.addressId), txid: other.txid },
+  };
+}
+
+function swap(raw: unknown): SwapClassification | RecordSwapClassification {
+  const row = object(raw, ['type', 'with', 'record', 'valueUsd']);
+  if (row.record !== undefined) {
+    if (row.with !== undefined) return bad();
+    const record = object(row.record, ['kind', 'id', 'version']);
+    const version = record.version;
+    if (record.kind !== 'trade' || typeof version !== 'number') return bad();
+    if (!Number.isSafeInteger(version) || version < 1 || version > 10000) return bad();
+    return {
+      type: 'swap',
+      record: { kind: 'trade', id: parseUuid(record.id), version },
+      valueUsd: optionalUsd(row.valueUsd),
+    };
+  }
+  const other = chainReference(row.with);
+  return {
+    type: 'swap',
+    with: { addressId: parseUuid(other.addressId), txid: other.txid },
+    valueUsd: optionalUsd(row.valueUsd),
+  };
+}
+
+function poolWithdrawal(raw: unknown): PoolWithdrawalClassification {
+  const row = object(raw, ['type', 'deposit', 'valueUsd', 'partial']);
+  const deposit = chainReference(row.deposit);
+  if (row.partial !== undefined && typeof row.partial !== 'boolean') return bad();
+  return {
+    type: 'pool-withdrawal',
+    deposit: { addressId: parseUuid(deposit.addressId), txid: deposit.txid },
+    ...(row.partial === true ? { partial: true as const } : {}),
+    valueUsd: optionalUsd(row.valueUsd),
+  };
+}
+
+function recorded(raw: unknown): RecordedClassification {
+  const row = object(raw, ['type', 'operation']);
+  const operation = object(row.operation, ['kind', 'id']);
+  if (operation.kind !== 'trade' && operation.kind !== 'swap') return bad();
+  return { type: 'recorded', operation: { kind: operation.kind, id: parseUuid(operation.id) } };
+}
+
 function classification(raw: unknown): Classification | null {
   if (raw === null) return null;
   const type = (raw as Record<string, unknown> | undefined)?.type;
-  if (type === 'buy' || type === 'sell') {
-    const row = object(raw, ['type', 'currency', 'amount', 'fee', 'perUsd']);
-    const currency = settlementCurrencies.find((code) => code === row.currency) ?? bad();
-    if (row.perUsd !== undefined && !isPaidCurrency(currency)) return bad();
-    return {
-      type,
-      currency,
-      amount: parseDecimal(row.amount, true),
-      ...(row.fee === undefined ? {} : { fee: parseDecimal(row.fee, false) }),
-      ...(row.perUsd === undefined ? {} : { perUsd: parseDecimal(row.perUsd, true) }),
-    };
+  switch (type) {
+    case 'buy':
+    case 'sell':
+      return priced(raw, type);
+    case 'transfer':
+      return transfer(raw);
+    case 'income':
+    case 'expense':
+    case 'gift':
+      return { type, valueUsd: parseDecimal(object(raw, ['type', 'valueUsd']).valueUsd, true) };
+    case 'fee':
+    case 'reward':
+    case 'staking-reward':
+    case 'airdrop':
+    case 'pool-reward':
+      return { type, valueUsd: optionalUsd(object(raw, ['type', 'valueUsd']).valueUsd) };
+    case 'other':
+    case 'pool-deposit':
+      object(raw, ['type']);
+      return { type };
+    case 'swap':
+      return swap(raw);
+    case 'pool-withdrawal':
+      return poolWithdrawal(raw);
+    case 'recorded':
+      return recorded(raw);
+    default:
+      return bad();
   }
-  if (type === 'transfer') {
-    const row = object(raw, ['type', 'accountId', 'partner']);
-    if (row.partner === undefined) return { type, accountId: parseUuid(row.accountId) };
-    const other = object(row.partner, ['addressId', 'txid']);
-    if (typeof other.txid !== 'string' || !chainTxid.test(other.txid)) return bad();
-    return {
-      type,
-      accountId: parseUuid(row.accountId),
-      partner: { addressId: parseUuid(other.addressId), txid: other.txid },
-    };
-  }
-  if (type === 'income' || type === 'expense' || type === 'gift') {
-    const row = object(raw, ['type', 'valueUsd']);
-    return { type, valueUsd: parseDecimal(row.valueUsd, true) };
-  }
-  if (type === 'fee') {
-    const row = object(raw, ['type', 'valueUsd']);
-    return { type, valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true) };
-  }
-  if (
-    type === 'reward' ||
-    type === 'staking-reward' ||
-    type === 'airdrop' ||
-    type === 'pool-reward'
-  ) {
-    const row = object(raw, ['type', 'valueUsd']);
-    return {
-      type,
-      valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
-    };
-  }
-  if (type === 'other') {
-    object(raw, ['type']);
-    return { type };
-  }
-  if (type === 'swap') {
-    const row = object(raw, ['type', 'with', 'record', 'valueUsd']);
-    if (row.record !== undefined) {
-      if (row.with !== undefined) return bad();
-      const record = object(row.record, ['kind', 'id', 'version']);
-      const version = record.version;
-      if (record.kind !== 'trade' || typeof version !== 'number') return bad();
-      if (!Number.isSafeInteger(version) || version < 1 || version > 10000) return bad();
-      return {
-        type,
-        record: { kind: 'trade', id: parseUuid(record.id), version },
-        valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
-      };
-    }
-    const other = object(row.with, ['addressId', 'txid']);
-    if (typeof other.txid !== 'string' || !chainTxid.test(other.txid)) return bad();
-    return {
-      type,
-      with: { addressId: parseUuid(other.addressId), txid: other.txid },
-      valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
-    };
-  }
-  if (type === 'pool-deposit') {
-    object(raw, ['type']);
-    return { type };
-  }
-  if (type === 'pool-withdrawal') {
-    const row = object(raw, ['type', 'deposit', 'valueUsd', 'partial']);
-    const deposit = object(row.deposit, ['addressId', 'txid']);
-    if (typeof deposit.txid !== 'string' || !chainTxid.test(deposit.txid)) return bad();
-    if (row.partial !== undefined && typeof row.partial !== 'boolean') return bad();
-    return {
-      type,
-      deposit: { addressId: parseUuid(deposit.addressId), txid: deposit.txid },
-      ...(row.partial === true ? { partial: true as const } : {}),
-      valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
-    };
-  }
-  if (type === 'recorded') {
-    const row = object(raw, ['type', 'operation']);
-    const operation = object(row.operation, ['kind', 'id']);
-    if (operation.kind !== 'trade' && operation.kind !== 'swap') return bad();
-    return { type, operation: { kind: operation.kind, id: parseUuid(operation.id) } };
-  }
-  return bad();
 }
 
 export function parseClassification(raw: unknown): ClassificationInput {
@@ -373,6 +387,36 @@ export function classificationPayload(
  * classify.
  */
 export function exchangeTrade(raw: unknown): PricedClassification | null {
+  const fill = spotFill(raw);
+  if (!fill) return null;
+  const { side, base, quote, price, value, fee, feeCoin } = fill;
+  const atoms = (item: string) => canonicalDecimalToAtoms(parseDecimal(item, false));
+  const feeAtoms = atoms(fee);
+  let quoteFee: bigint;
+  if (feeAtoms === 0n || feeCoin === quote) quoteFee = feeAtoms;
+  else if (feeCoin === base) quoteFee = roundedProduct(feeAtoms, atoms(price));
+  else return null;
+  const gross = atoms(value) - (feeCoin === base && side === 'buy' ? quoteFee : 0n);
+  const amount = side === 'sell' && feeCoin === base ? atoms(value) + quoteFee : gross;
+  if (amount <= 0n) return null;
+  return {
+    type: side,
+    currency: quote,
+    amount: formatAtoms(amount),
+    fee: formatAtoms(quoteFee),
+  };
+}
+
+/** The text fields of a Bybit spot fill of a coin against USDT or USDC, or null. */
+function spotFill(raw: unknown): {
+  side: 'buy' | 'sell';
+  base: string;
+  quote: 'USDT' | 'USDC';
+  price: string;
+  value: string;
+  fee: string;
+  feeCoin: string | null;
+} | null {
   const trade = (raw as { trade?: Record<string, unknown> } | null)?.trade;
   if (!trade || typeof trade !== 'object') return null;
   const text = (key: string) => (typeof trade[key] === 'string' ? (trade[key] as string) : null);
@@ -389,21 +433,7 @@ export function exchangeTrade(raw: unknown): PricedClassification | null {
   if (quote !== 'USDT' && quote !== 'USDC') return null;
   const decimal = /^\d+(\.\d+)?$/;
   if (![price, value, fee].every((item) => decimal.test(item))) return null;
-  const atoms = (item: string) => canonicalDecimalToAtoms(parseDecimal(item, false));
-  const feeAtoms = atoms(fee);
-  let quoteFee: bigint;
-  if (feeAtoms === 0n || feeCoin === quote) quoteFee = feeAtoms;
-  else if (feeCoin === base) quoteFee = roundedProduct(feeAtoms, atoms(price));
-  else return null;
-  const gross = atoms(value) - (feeCoin === base && side === 'buy' ? quoteFee : 0n);
-  const amount = side === 'sell' && feeCoin === base ? atoms(value) + quoteFee : gross;
-  if (amount <= 0n) return null;
-  return {
-    type: side,
-    currency: quote,
-    amount: formatAtoms(amount),
-    fee: formatAtoms(quoteFee),
-  };
+  return { side, base, quote, price, value, fee, feeCoin };
 }
 
 /** a × b for two amounts in atoms, half up at the 30 decimals amounts keep. */
@@ -474,6 +504,29 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
   'pool-reward': 'other',
 };
 
+/** A buy or sale's amounts: as paid in RUB or EUR, otherwise in USD. */
+function pricedAmounts(value: PricedClassification) {
+  const fee = value.fee ?? '0';
+  if (!isPaidCurrency(value.currency)) return { grossUsd: value.amount, feeUsd: fee };
+  return {
+    paid: {
+      currency: value.currency,
+      gross: value.amount,
+      fee,
+      ...(value.perUsd === undefined ? {} : { perUsd: value.perUsd }),
+    },
+  };
+}
+
+/** A gift's purpose follows the direction of the coins; the other valued types are their own. */
+function valuedPurpose(
+  type: 'income' | 'expense' | 'gift' | 'fee',
+  inbound: boolean,
+): TradePurpose {
+  if (type !== 'gift') return purposes[type];
+  return inbound ? 'gift-received' : 'gift-sent';
+}
+
 /**
  * The entry for the whole amount the leg moved, at the block time. A buy or sale settles in
  * the account's cash like one added by hand (PR-OPS-9); income, expense, gift and fee carry
@@ -497,37 +550,24 @@ export function planOperation(
   const note = comment === undefined ? {} : { comment };
   switch (value.type) {
     case 'buy':
-    case 'sell': {
-      const fee = value.fee ?? '0';
-      const amounts = isPaidCurrency(value.currency)
-        ? {
-            paid: {
-              currency: value.currency,
-              gross: value.amount,
-              fee,
-              ...(value.perUsd === undefined ? {} : { perUsd: value.perUsd }),
-            },
-          }
-        : { grossUsd: value.amount, feeUsd: fee };
+    case 'sell':
       return {
         journal: 'trade',
         fields: {
           ...common,
           side: value.type,
-          ...amounts,
+          ...pricedAmounts(value),
           settlementCurrency: value.currency,
           ...note,
         },
       };
-    }
     case 'income':
     case 'expense':
     case 'gift':
     case 'fee': {
       // FEE-VALUE: the service fills an empty fee's value from the stored price first.
       if (value.valueUsd === null) throw new Error('A fee without a value takes its stored price');
-      const purpose =
-        value.type === 'gift' ? (inbound ? 'gift-received' : 'gift-sent') : purposes[value.type];
+      const purpose = valuedPurpose(value.type, inbound);
       return {
         journal: 'trade',
         fields: {

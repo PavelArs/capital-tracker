@@ -70,6 +70,28 @@ class StructuralError extends Error {
   }
 }
 
+/** The line feeds in source[from, to). */
+function lineBreaks(source: Buffer, from: number, to: number): number {
+  let count = 0;
+  for (let index = from; index < to; index++) if (source[index] === 10) count++;
+  return count;
+}
+
+function headerRecord(record: string[], line: number): string[] {
+  const empty = record.findIndex((cell) => cell.trim().length === 0);
+  if (empty !== -1) throw new StructuralError('empty-header', line, empty + 1);
+  if (new Set(record).size !== record.length) throw new StructuralError('duplicate-header', line);
+  return record;
+}
+
+/** The next data row after `count` others, as long as it fits the header. */
+function dataRow(record: string[], width: number, count: number, line: number): CsvSourceRow {
+  if (record.length !== width) throw new StructuralError('row-width', line);
+  if (record.every((cell) => cell === '')) throw new StructuralError('blank-row', line);
+  if (count === 100) throw new StructuralError('row-limit', line);
+  return { ordinal: count + 1, startLine: line, cells: record };
+}
+
 export function parseCsvSource(bytes: Buffer, delimiter: ',' | ';'): CsvInspection {
   validateCsvSource(bytes);
   const source = bytes.subarray(
@@ -107,21 +129,10 @@ export function parseCsvSource(bytes: Buffer, delimiter: ',' | ';'): CsvInspecti
       },
       on_record(record: string[], context) {
         const line = startLine;
-        for (let index = previousEnd; index < context.bytes; index++)
-          if (source[index] === 10) startLine++;
+        startLine += lineBreaks(source, previousEnd, context.bytes);
         previousEnd = context.bytes;
-        if (!headers) {
-          const empty = record.findIndex((cell) => cell.trim().length === 0);
-          if (empty !== -1) throw new StructuralError('empty-header', line, empty + 1);
-          if (new Set(record).size !== record.length)
-            throw new StructuralError('duplicate-header', line);
-          headers = record;
-        } else {
-          if (record.length !== headers.length) throw new StructuralError('row-width', line);
-          if (record.every((cell) => cell === '')) throw new StructuralError('blank-row', line);
-          if (rows.length === 100) throw new StructuralError('row-limit', line);
-          rows.push({ ordinal: rows.length + 1, startLine: line, cells: record });
-        }
+        if (!headers) headers = headerRecord(record, line);
+        else rows.push(dataRow(record, headers.length, rows.length, line));
         return record;
       },
     });
@@ -172,6 +183,72 @@ function order(raw: string): number | null {
   return value <= 2147483647 ? value : null;
 }
 
+/** The values of a row's mapped cells: undefined for an unmapped key, null for an invalid cell. */
+function rowValues(
+  cells: string[],
+  settings: CsvSettings,
+  instruments: ReadonlyMap<string, string>,
+  sides: ReadonlyMap<string, 'buy' | 'sell'>,
+) {
+  const { columns } = settings.mapping;
+  const separator = settings.format.decimalSeparator;
+  return {
+    instrumentId: instruments.get(cells[columns.instrument]),
+    side: sides.get(cells[columns.side]),
+    occurredAt: timestamp(cells[columns.occurredAt], settings.format),
+    orderWithinTimestamp: order(cells[columns.order]),
+    quantity: amount(cells[columns.quantity], separator, true),
+    grossUsd: amount(cells[columns.grossUsd], separator, true),
+    feeUsd: amount(cells[columns.feeUsd], separator, false),
+  };
+}
+type RowValues = ReturnType<typeof rowValues>;
+
+function rowErrors(
+  ordinal: number,
+  values: RowValues,
+  cells: string[],
+  columns: CsvSettings['mapping']['columns'],
+): CsvRowError[] {
+  const errors: CsvRowError[] = [];
+  const issue = (field: CsvColumnField, code: CsvRowError['code']) =>
+    errors.push({ ordinal, field, code });
+  const { side, grossUsd, feeUsd } = values;
+  if (values.instrumentId === undefined) issue('instrument', 'instrument-key-unmapped');
+  if (side === undefined) issue('side', 'side-key-unmapped');
+  if (values.occurredAt === null) issue('occurredAt', 'invalid-time');
+  if (values.orderWithinTimestamp === null) issue('order', 'invalid-order');
+  if (values.quantity === null) issue('quantity', 'invalid-quantity');
+  if (grossUsd === null) issue('grossUsd', 'invalid-gross');
+  else if (
+    side === 'buy' &&
+    feeUsd !== null &&
+    canonicalDecimalToAtoms(grossUsd) + canonicalDecimalToAtoms(feeUsd) > MAX_INPUT_ATOMS
+  )
+    issue('grossUsd', 'buy-cost-overflow');
+  if (feeUsd === null) issue('feeUsd', 'invalid-fee');
+  if (columns.currency !== undefined && cells[columns.currency] !== 'USD')
+    issue('currency', 'currency-not-usd');
+  return errors;
+}
+
+/** The execution a row without errors stands for. */
+function rowExecution(values: RowValues): Execution | null {
+  const { instrumentId, side, occurredAt, orderWithinTimestamp, quantity, grossUsd, feeUsd } =
+    values;
+  if (
+    instrumentId === undefined ||
+    side === undefined ||
+    occurredAt === null ||
+    orderWithinTimestamp === null ||
+    quantity === null ||
+    grossUsd === null ||
+    feeUsd === null
+  )
+    return null;
+  return { instrumentId, side, occurredAt, orderWithinTimestamp, quantity, grossUsd, feeUsd };
+}
+
 export function normalizeCsvRows(
   document: Extract<CsvInspection, { valid: true }>,
   settings: CsvSettings,
@@ -198,45 +275,16 @@ export function normalizeCsvRows(
   const observedInstruments = new Set<string>();
   const observedSides = new Set<string>();
   for (const { ordinal, startLine, cells } of document.rows) {
-    const beforeErrors = result.rowErrors.length;
-    const issue = (field: CsvColumnField, code: CsvRowError['code']) =>
-      result.rowErrors.push({ ordinal, field, code });
     observedInstruments.add(cells[columns.instrument]);
     observedSides.add(cells[columns.side]);
-    const instrumentId = instruments.get(cells[columns.instrument]);
-    const side = sides.get(cells[columns.side]);
-    const occurredAt = timestamp(cells[columns.occurredAt], settings.format);
-    const orderWithinTimestamp = order(cells[columns.order]);
-    const quantity = amount(cells[columns.quantity], settings.format.decimalSeparator, true);
-    const grossUsd = amount(cells[columns.grossUsd], settings.format.decimalSeparator, true);
-    const feeUsd = amount(cells[columns.feeUsd], settings.format.decimalSeparator, false);
-    if (instrumentId === undefined) issue('instrument', 'instrument-key-unmapped');
-    if (side === undefined) issue('side', 'side-key-unmapped');
-    if (occurredAt === null) issue('occurredAt', 'invalid-time');
-    if (orderWithinTimestamp === null) issue('order', 'invalid-order');
-    if (quantity === null) issue('quantity', 'invalid-quantity');
-    if (grossUsd === null) issue('grossUsd', 'invalid-gross');
-    else if (
-      side === 'buy' &&
-      feeUsd !== null &&
-      canonicalDecimalToAtoms(grossUsd) + canonicalDecimalToAtoms(feeUsd) > MAX_INPUT_ATOMS
-    )
-      issue('grossUsd', 'buy-cost-overflow');
-    if (feeUsd === null) issue('feeUsd', 'invalid-fee');
-    if (columns.currency !== undefined && cells[columns.currency] !== 'USD')
-      issue('currency', 'currency-not-usd');
-    const execution =
-      result.rowErrors.length === beforeErrors &&
-      instrumentId !== undefined &&
-      side !== undefined &&
-      occurredAt !== null &&
-      orderWithinTimestamp !== null &&
-      quantity !== null &&
-      grossUsd !== null &&
-      feeUsd !== null
-        ? { instrumentId, side, occurredAt, orderWithinTimestamp, quantity, grossUsd, feeUsd }
-        : null;
-    result.rows.push({ ordinal, startLine, execution });
+    const values = rowValues(cells, settings, instruments, sides);
+    const errors = rowErrors(ordinal, values, cells, columns);
+    result.rowErrors.push(...errors);
+    result.rows.push({
+      ordinal,
+      startLine,
+      execution: errors.length ? null : rowExecution(values),
+    });
   }
   if (settings.mapping.instruments.some((entry) => !observedInstruments.has(entry.source)))
     result.batchErrors.push({ code: 'unused-instrument-key', line: null, column: null });

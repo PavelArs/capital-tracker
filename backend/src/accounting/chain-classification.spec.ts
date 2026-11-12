@@ -427,6 +427,89 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ ...body(null), comment: 'x'.repeat(501) });
   });
 
+  it('CLS-SWAP: a swap names the raw transaction on the other side', () => {
+    const addressId = '00000000-0000-4000-8000-00000000000A';
+    const txid = 'e'.repeat(64);
+    expect(
+      parse({ classification: { type: 'swap', with: { addressId, txid }, valueUsd: '12.50' } })
+        .classification,
+    ).toEqual({
+      type: 'swap',
+      with: { addressId: addressId.toLowerCase(), txid },
+      valueUsd: '12.5',
+    });
+    expect(
+      parse({ classification: { type: 'swap', with: { addressId, txid }, valueUsd: null } })
+        .classification,
+    ).toEqual({ type: 'swap', with: { addressId: addressId.toLowerCase(), txid }, valueUsd: null });
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'swap', valueUsd: null });
+    refused({ type: 'swap', with: { addressId, txid: 'nope' }, valueUsd: null });
+    refused({ type: 'swap', with: { addressId, txid: 7 }, valueUsd: null });
+    refused({ type: 'swap', with: { addressId: 'x', txid }, valueUsd: null });
+    refused({ type: 'swap', with: { addressId, txid }, valueUsd: '0' });
+    refused({ type: 'swap', with: { addressId, txid }, valueUsd: null, extra: 1 });
+  });
+
+  it('refuses an unknown type or a classification that is no object', () => {
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'loan' });
+    refused({ type: 'toString' });
+    refused({});
+    refused('buy');
+    refused(7);
+    refused([]);
+  });
+
+  it('each parsed answer keeps the order of its fields, which the stored payload depends on', () => {
+    const addressId = '00000000-0000-4000-8000-000000000002';
+    const id = '00000000-0000-4000-8000-000000000009';
+    const txid = 'c'.repeat(64);
+    const stored = (classification: unknown) =>
+      JSON.stringify(parse({ classification }).classification);
+    expect(
+      stored({ perUsd: '90.50', fee: '1', amount: '1000', currency: 'RUB', type: 'buy' }),
+    ).toBe('{"type":"buy","currency":"RUB","amount":"1000","fee":"1","perUsd":"90.5"}');
+    expect(stored({ amount: '5', currency: 'USD', type: 'sell' })).toBe(
+      '{"type":"sell","currency":"USD","amount":"5"}',
+    );
+    expect(stored({ partner: { txid, addressId }, accountId: id, type: 'transfer' })).toBe(
+      `{"type":"transfer","accountId":"${id}","partner":{"addressId":"${addressId}","txid":"${txid}"}}`,
+    );
+    expect(stored({ accountId: id, type: 'transfer' })).toBe(
+      `{"type":"transfer","accountId":"${id}"}`,
+    );
+    expect(stored({ valueUsd: '3', type: 'gift' })).toBe('{"type":"gift","valueUsd":"3"}');
+    expect(stored({ valueUsd: null, type: 'fee' })).toBe('{"type":"fee","valueUsd":null}');
+    expect(stored({ valueUsd: '2', type: 'airdrop' })).toBe('{"type":"airdrop","valueUsd":"2"}');
+    expect(stored({ valueUsd: null, type: 'staking-reward' })).toBe(
+      '{"type":"staking-reward","valueUsd":null}',
+    );
+    expect(stored({ type: 'other' })).toBe('{"type":"other"}');
+    expect(stored({ valueUsd: '4', with: { txid, addressId }, type: 'swap' })).toBe(
+      `{"type":"swap","with":{"addressId":"${addressId}","txid":"${txid}"},"valueUsd":"4"}`,
+    );
+    expect(
+      stored({ valueUsd: null, record: { version: 2, id, kind: 'trade' }, type: 'swap' }),
+    ).toBe(`{"type":"swap","record":{"kind":"trade","id":"${id}","version":2},"valueUsd":null}`);
+    expect(stored({ type: 'pool-deposit' })).toBe('{"type":"pool-deposit"}');
+    expect(
+      stored({
+        partial: true,
+        valueUsd: '1',
+        deposit: { txid, addressId },
+        type: 'pool-withdrawal',
+      }),
+    ).toBe(
+      `{"type":"pool-withdrawal","deposit":{"addressId":"${addressId}","txid":"${txid}"},"partial":true,"valueUsd":"1"}`,
+    );
+    expect(stored({ operation: { id, kind: 'swap' }, type: 'recorded' })).toBe(
+      `{"type":"recorded","operation":{"kind":"swap","id":"${id}"}}`,
+    );
+  });
+
   it('the stored payload names the transaction and the whole answer', () => {
     const input = parse({ classification: { type: 'income', valueUsd: '700' } });
     expect(JSON.parse(classificationPayload('a', 'b', input))).toEqual({
@@ -503,6 +586,33 @@ describe('BYBIT-TRADES: a Bybit spot fill as a Buy or Sell (M22)', () => {
     expect(exchangeTrade(trade({ fee: '-0.01', feeCoin: 'USDT' }))).toBeNull();
     expect(exchangeTrade({ kind: 'deposit' })).toBeNull();
     expect(exchangeTrade(null)).toBeNull();
+  });
+
+  it('a fill with a missing or odd field, or no amount left, stays to classify', () => {
+    expect(exchangeTrade(trade({ side: 'hold' }))).toBeNull();
+    expect(exchangeTrade(trade({ base: '' }))).toBeNull();
+    expect(exchangeTrade(trade({ price: '6.5e4' }))).toBeNull();
+    expect(exchangeTrade({ trade: { ...trade().trade, price: 65000 } })).toBeNull();
+    expect(exchangeTrade({ trade: { ...trade().trade, fee: undefined } })).toBeNull();
+    expect(exchangeTrade({ trade: 'buy' })).toBeNull();
+    // A base-coin fee worth more than the fill leaves nothing to buy.
+    expect(exchangeTrade(trade({ fee: '0.1' }))).toBeNull();
+    expect(exchangeTrade(trade({ value: '0', fee: '0', feeCoin: 'USDT' }))).toBeNull();
+    // A zero fee needs no coin of the pair.
+    expect(exchangeTrade(trade({ fee: '0', feeCoin: 'MNT' }))).toEqual({
+      type: 'buy',
+      currency: 'USDT',
+      amount: '650',
+      fee: '0',
+    });
+    expect(exchangeTrade(trade({ side: 'sell', fee: '0', feeCoin: 'BTC', quote: 'USDC' }))).toEqual(
+      { type: 'sell', currency: 'USDC', amount: '650', fee: '0' },
+    );
+    // A number the journal cannot keep is refused, as any amount is.
+    expect(() => exchangeTrade(trade({ value: `1.${'1'.repeat(31)}`, feeCoin: 'USDT' }))).toThrow(
+      BadRequestException,
+    );
+    expect(exchangeTrade(trade({ value: `1.${'1'.repeat(31)}`, feeCoin: 'MNT' }))).toBeNull();
   });
 });
 
