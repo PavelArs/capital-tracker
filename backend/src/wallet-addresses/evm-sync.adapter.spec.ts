@@ -89,3 +89,170 @@ describe('UNPROCESSED internal transfers', () => {
     expect(stored.scannedBlock).toBe(600);
   });
 });
+
+/**
+ * Characterization of one pass's outcomes. `client` replaces the explorer's answers; `positions`
+ * are the staking pools stored for the address (Ethereum only); `evmSync` a staged block.
+ */
+function pass(
+  network: 'optimism' | 'ethereum',
+  client: Record<string, unknown> = {},
+  options: { positions?: { contract: string; symbol: string | null }[]; evmSync?: unknown } = {},
+) {
+  const stored = { scannedBlock: null as number | null, completedAt: false, updates: 0 };
+  const explorer = {
+    configured: true,
+    blockNumber: async () => ({ ok: true, block: TIP }),
+    normal: async () => ({ ok: true, items: [] }),
+    internal: async () => ({ ok: true, items: [] }),
+    tokens: async () => ({ ok: true, items: [] }),
+    call: async () => ({ ok: true, data: null }),
+    ...client,
+  };
+  const row = () => ({
+    id: 'a',
+    ownerId: 'o',
+    address: '0xabc',
+    scannedBlock: stored.scannedBlock,
+    tokenBackfillTo: null,
+    tokenBackfillAt: null,
+    evmSync: options.evmSync ?? null,
+  });
+  const query = async (sql: string, args: unknown[] = []) => {
+    if (sql.includes('FROM wallet_stake_scans')) return [{ exists: 1 }];
+    if (sql.startsWith('SELECT contract, symbol FROM wallet_ether_stake_positions'))
+      return options.positions ?? [];
+    if (sql.includes('UPDATE wallet_addresses')) {
+      stored.updates++;
+      stored.scannedBlock = args[2] as number;
+      stored.completedAt = args[3] as boolean;
+    }
+    if (sql.includes('FOR UPDATE') || sql.includes('FROM wallet_addresses')) return [row()];
+    return [];
+  };
+  const source = {
+    query,
+    manager: { query },
+    transaction: async (_level: string, run: (m: unknown) => unknown) => run({ query }),
+  };
+  const adapter = new EvmSyncAdapter(
+    source as unknown as DataSource,
+    { forChain: () => explorer, blockscout: () => explorer } as unknown as EtherscanClient,
+    { ...evmChain(network), blockscout: undefined },
+  );
+  return { adapter, stored };
+}
+
+describe('SYNC-DETAIL EVM pass outcomes', () => {
+  it('SYNC-DETAIL ends a pass without a key as not configured, reading nothing', async () => {
+    const blockNumber = jest.fn();
+    const { adapter, stored } = pass('optimism', { configured: false, blockNumber });
+    await expect(adapter.step('o', 'a')).resolves.toEqual({
+      outcome: 'provider_error',
+      reason: 'not_configured',
+      imported: 0,
+      detail: null,
+    });
+    expect(blockNumber).not.toHaveBeenCalled();
+    expect(stored.updates).toBe(0);
+  });
+
+  it("SYNC-DETAIL ends the pass with the explorer's words when the chain tip cannot be read", async () => {
+    const { adapter } = pass('optimism', {
+      blockNumber: async () => ({
+        ok: false,
+        reason: 'rate_limited',
+        detail: 'explorer.test limits requests',
+      }),
+    });
+    await expect(adapter.step('o', 'a')).resolves.toEqual({
+      outcome: 'provider_error',
+      reason: 'rate_limited',
+      imported: 0,
+      detail: 'explorer.test limits requests',
+    });
+  });
+
+  it.each(['normal', 'tokens'])(
+    "SYNC-DETAIL stores nothing and passes on the explorer's words when the %s list fails",
+    async (list) => {
+      const { adapter, stored } = pass('optimism', {
+        [list]: async () => ({
+          ok: false,
+          reason: 'unavailable',
+          detail: 'explorer.test did not answer',
+        }),
+      });
+      await expect(adapter.step('o', 'a')).resolves.toEqual({
+        outcome: 'provider_error',
+        reason: 'unavailable',
+        imported: 0,
+        detail: 'explorer.test did not answer',
+      });
+      expect(stored.updates).toBe(0);
+    },
+  );
+
+  it('SYNC-PROGRESS refuses a staged block past the final one as an invalid answer', async () => {
+    const { adapter, stored } = pass('optimism', {}, { evmSync: { block: TARGET + 1 } });
+    await expect(adapter.step('o', 'a')).resolves.toEqual({
+      outcome: 'provider_error',
+      reason: 'invalid_response',
+      imported: 0,
+      detail: null,
+    });
+    expect(stored.updates).toBe(0);
+  });
+
+  it('SYNC-PROGRESS ends the pass partial when its time is used up before the first range', async () => {
+    let clock = 0;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => (clock += 30_000));
+    try {
+      const normal = jest.fn();
+      const { adapter, stored } = pass('optimism', { normal });
+      await expect(adapter.step('o', 'a')).resolves.toEqual({
+        outcome: 'partial',
+        reason: null,
+        imported: 0,
+        detail: null,
+      });
+      expect(normal).not.toHaveBeenCalled();
+      expect(stored.updates).toBe(0);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('ETH-STAKE-STATE completes an Ethereum history with no pools as on any other chain', async () => {
+    const { adapter, stored } = pass('ethereum');
+    await expect(adapter.step('o', 'a')).resolves.toEqual({
+      outcome: 'complete',
+      reason: null,
+      imported: 0,
+      detail: null,
+    });
+    expect(stored).toMatchObject({ scannedBlock: TARGET, completedAt: true });
+  });
+
+  it("ETH-STAKE-STATE fails the pass with the explorer's words when a stored pool cannot be read", async () => {
+    const { adapter, stored } = pass(
+      'ethereum',
+      {
+        call: async () => ({
+          ok: false,
+          reason: 'rate_limited',
+          detail: 'explorer.test limits requests',
+        }),
+      },
+      { positions: [{ contract: `0x${'5e'.repeat(20)}`, symbol: 'stSYN' }] },
+    );
+    await expect(adapter.step('o', 'a')).resolves.toEqual({
+      outcome: 'provider_error',
+      reason: 'rate_limited',
+      imported: 0,
+      detail: 'explorer.test limits requests',
+    });
+    // The history is stored whole before the pools are read.
+    expect(stored).toMatchObject({ scannedBlock: TARGET, completedAt: true });
+  });
+});
