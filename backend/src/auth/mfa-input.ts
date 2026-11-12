@@ -7,17 +7,8 @@ export type MfaCommand =
   | { action: 'prepare'; userId: string; output: string; replace: boolean }
   | { action: 'confirm'; userId: string; candidateId: string; output: string; codeStdin: boolean };
 
-export function parseMfaCommand(args: string[]): MfaCommand {
-  const [action, ...options] = args;
-  if (action !== 'prepare' && action !== 'confirm') {
-    throw new MfaInputError(
-      'Use mfa-cli.js prepare --user-id UUID --output PATH [--replace] or confirm --user-id UUID --candidate-id UUID --output PATH [--code-stdin]',
-    );
-  }
-  const allowed =
-    action === 'prepare'
-      ? ['--user-id', '--output', '--replace']
-      : ['--user-id', '--candidate-id', '--output', '--code-stdin'];
+/** Each allowed option once; every option but the two flags takes the next argument. */
+function optionValues(allowed: string[], options: string[]): Map<string, string> {
   const values = new Map<string, string>();
   for (let index = 0; index < options.length; index++) {
     const option = options[index];
@@ -31,6 +22,22 @@ export function parseMfaCommand(args: string[]): MfaCommand {
       values.set(option, value);
     }
   }
+  return values;
+}
+
+export function parseMfaCommand(args: string[]): MfaCommand {
+  const [action, ...options] = args;
+  if (action !== 'prepare' && action !== 'confirm') {
+    throw new MfaInputError(
+      'Use mfa-cli.js prepare --user-id UUID --output PATH [--replace] or confirm --user-id UUID --candidate-id UUID --output PATH [--code-stdin]',
+    );
+  }
+  const values = optionValues(
+    action === 'prepare'
+      ? ['--user-id', '--output', '--replace']
+      : ['--user-id', '--candidate-id', '--output', '--code-stdin'],
+    options,
+  );
   const userId = values.get('--user-id');
   const output = values.get('--output');
   if (!userId || !isUUID(userId)) throw new MfaInputError('Invalid or missing owner user ID');

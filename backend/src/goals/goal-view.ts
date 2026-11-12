@@ -120,6 +120,67 @@ function progressOf(value: Exact, target: Exact) {
   };
 }
 
+/** What every return case of a goal starts from, in plain numbers. */
+interface CaseInputs {
+  current: number;
+  target: number;
+  plan: number;
+  /** Months of payments left to the deadline; null without one or once it has passed. */
+  horizon: number | null;
+  payments: number;
+  hasDeadline: boolean;
+  reached: boolean;
+  today: string;
+}
+
+function atDeadline(projected: number | null, target: number) {
+  if (projected === null) return { projectedAtDeadline: null, gap: null, metByDeadline: null };
+  return {
+    projectedAtDeadline: expected(projected),
+    gap: required(target - projected),
+    metByDeadline: Number.isFinite(projected) ? projected >= target : null,
+  };
+}
+
+/** One return case, and whether its raw projection falls short of the target. */
+function scenarioOf(key: ScenarioKey, yearly: number, goal: CaseInputs) {
+  const { current, target, plan, horizon, payments } = goal;
+  const rate = monthlyRate(yearly);
+  const raw = monthsToReach(current, target, plan, rate);
+  // A float can round a value just short of the sum up to it: until the exact progress
+  // says reached, the sum is at least a month away, never this month.
+  const left = raw === null || goal.reached ? raw : Math.max(raw, 1);
+  const months = left === null ? null : Math.ceil(left);
+  const projected = horizon === null ? null : futureValue(current, plan, rate, horizon, payments);
+  const tenYears = goal.hasDeadline ? null : futureValue(current, plan, rate, 120, 120);
+  const scenario: GoalScenario = {
+    key,
+    returnPercent: percent(yearly),
+    requiredMonthly:
+      horizon === null
+        ? null
+        : required(requiredContribution(current, target, rate, horizon, payments)),
+    monthsToTarget: months,
+    reachedOn: months === null ? null : addMonths(goal.today, months),
+    ...atDeadline(projected, target),
+    projectedIn10Years: tenYears === null ? null : expected(tenYears),
+  };
+  return { scenario, short: projected === null || !(projected >= target) };
+}
+
+function statusOf(
+  progress: { reached: boolean } | null,
+  months: number | null,
+  passed: boolean,
+  baseShort: boolean,
+): GoalStatus {
+  if (progress === null) return 'unknown';
+  if (progress.reached) return 'reached';
+  if (months === null) return 'open';
+  if (passed) return 'overdue';
+  return baseShort ? 'behind' : 'on-track';
+}
+
 /** One goal with its progress and the three return cases (GOAL-FORECAST). */
 export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   const progress =
@@ -134,9 +195,7 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
   // open, judged on the value now with no payment left; it is overdue from the next day.
   const passed = row.deadline !== null && row.deadline < today;
   const horizon = months === null || passed ? null : Math.max(months, 0);
-  // The status reads the raw base projection, not the gap shown to the cent.
-  let baseShort = false;
-  const scenarios: GoalScenario[] =
+  const cases =
     current === null
       ? []
       : (
@@ -144,39 +203,22 @@ export function goalView(row: GoalRow, now: PortfolioNow, today: string) {
             ScenarioKey,
             number,
           ][]
-        ).map(([key, yearly]) => {
-          const rate = monthlyRate(yearly);
-          const raw = monthsToReach(current, target, plan, rate);
-          // A float can round a value just short of the sum up to it: until the exact progress
-          // says reached, the sum is at least a month away, never this month.
-          const left = raw === null || progress?.reached ? raw : Math.max(raw, 1);
-          const projected =
-            horizon === null ? null : futureValue(current, plan, rate, horizon, payments);
-          const tenYears =
-            row.deadline === null ? futureValue(current, plan, rate, 120, 120) : null;
-          if (key === 'base') baseShort = projected === null || !(projected >= target);
-          return {
-            key,
-            returnPercent: percent(yearly),
-            requiredMonthly:
-              horizon === null
-                ? null
-                : required(requiredContribution(current, target, rate, horizon, payments)),
-            monthsToTarget: left === null ? null : Math.ceil(left),
-            reachedOn: left === null ? null : addMonths(today, Math.ceil(left)),
-            projectedAtDeadline: projected === null ? null : expected(projected),
-            gap: projected === null ? null : required(target - projected),
-            metByDeadline:
-              projected === null || !Number.isFinite(projected) ? null : projected >= target,
-            projectedIn10Years: tenYears === null ? null : expected(tenYears),
-          };
-        });
-  let status: GoalStatus;
-  if (progress === null) status = 'unknown';
-  else if (progress.reached) status = 'reached';
-  else if (months === null) status = 'open';
-  else if (passed) status = 'overdue';
-  else status = baseShort ? 'behind' : 'on-track';
+        ).map(([key, yearly]) =>
+          scenarioOf(key, yearly, {
+            current,
+            target,
+            plan,
+            horizon,
+            payments,
+            hasDeadline: row.deadline !== null,
+            reached: progress?.reached === true,
+            today,
+          }),
+        );
+  const scenarios = cases.map((each) => each.scenario);
+  // The status reads the raw base projection, not the gap shown to the cent.
+  const baseShort = cases.some((each) => each.scenario.key === 'base' && each.short);
+  let status = statusOf(progress, months, passed, baseShort);
   // A value that leaves out an asset without a price or rate only understates the portfolio:
   // reaching the goal stays true, falling behind does not.
   if (!now.complete && (status === 'behind' || status === 'overdue')) status = 'unknown';

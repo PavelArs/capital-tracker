@@ -10,20 +10,11 @@ export interface OwnerCommand {
   passwordStdin: boolean;
 }
 
-export function parseOwnerCommand(args: string[]): OwnerCommand {
-  const [action, ...options] = args;
-  if (action !== 'bootstrap' && action !== 'recover') {
-    throw new OwnerInputError(
-      'Use owner-cli.js bootstrap --email EMAIL [--existing-user-id UUID] or recover --user-id UUID; optional --password-stdin',
-    );
-  }
+/** Each allowed option once; every option but --password-stdin takes the next argument. */
+function optionValues(allowed: string[], options: string[]): Map<string, string> {
   const values = new Map<string, string>();
   for (let index = 0; index < options.length; index++) {
     const option = options[index];
-    const allowed =
-      action === 'bootstrap'
-        ? ['--email', '--existing-user-id', '--password-stdin']
-        : ['--user-id', '--password-stdin'];
     if (!allowed.includes(option) || values.has(option))
       throw new OwnerInputError('Invalid or duplicate CLI option');
     if (option === '--password-stdin') values.set(option, 'true');
@@ -33,6 +24,22 @@ export function parseOwnerCommand(args: string[]): OwnerCommand {
       values.set(option, value);
     }
   }
+  return values;
+}
+
+export function parseOwnerCommand(args: string[]): OwnerCommand {
+  const [action, ...options] = args;
+  if (action !== 'bootstrap' && action !== 'recover') {
+    throw new OwnerInputError(
+      'Use owner-cli.js bootstrap --email EMAIL [--existing-user-id UUID] or recover --user-id UUID; optional --password-stdin',
+    );
+  }
+  const values = optionValues(
+    action === 'bootstrap'
+      ? ['--email', '--existing-user-id', '--password-stdin']
+      : ['--user-id', '--password-stdin'],
+    options,
+  );
   const email = values.get('--email')?.trim().toLowerCase();
   const userId = values.get(action === 'bootstrap' ? '--existing-user-id' : '--user-id');
   if (action === 'bootstrap' && (!email || email.length > 254 || !isEmail(email))) {

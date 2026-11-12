@@ -725,3 +725,53 @@ describe('INFL-DOMAIN the dates the month arithmetic supports', () => {
     ).toEqual([]);
   });
 });
+
+describe('INFL-OFFICIAL answers the parsers read or refuse', () => {
+  it('reads a doubled quote inside a quoted field as one quote', () => {
+    const body = `${HEADER}\r\nDATAFLOW,"say ""CPI"", US",x,I,USA,United States,M,IX,Index,2025-01,,100.5,`;
+    expect(parseOecdCpiLevels(body)).toEqual([{ month: '2025-01', value: 100.5 }]);
+  });
+
+  const eurostat = (over: Record<string, unknown>) =>
+    JSON.stringify({
+      id: ['geo', 'time'],
+      size: [1, 2],
+      value: { '0': 100, '1': 101 },
+      dimension: { time: { category: { index: { '2025-01': 0, '2025-02': 1 } } } },
+      ...over,
+    });
+
+  it.each([
+    ['no dimension list', eurostat({ id: undefined }), 'no dimensions'],
+    ['fewer sizes than dimensions', eurostat({ size: [2] }), 'no dimensions'],
+    ['no months', eurostat({ dimension: {} }), 'no months'],
+    ['a month list', eurostat({ dimension: { time: { category: { index: [0] } } } }), 'no months'],
+    ['a value list', eurostat({ value: [100, 101] }), 'no values'],
+    [
+      'a negative position',
+      eurostat({ dimension: { time: { category: { index: { '2025-01': -1 } } } } }),
+      'month "2025-01"',
+    ],
+    [
+      'months out of order',
+      eurostat({ dimension: { time: { category: { index: { '2025-02': 0, '2025-01': 1 } } } } }),
+      '2025-01 after 2025-02',
+    ],
+    ['a zero value', eurostat({ value: { '0': 0 } }), 'value on 2025-01'],
+  ])('refuses Eurostat %s', (_name, body, detail) => {
+    expect(() => parseEurostatHicp(body)).toThrow(detail);
+  });
+
+  it('skips a Eurostat month whose value is null', () => {
+    expect(parseEurostatHicp(eurostat({ value: { '0': null, '1': 101 } }))).toEqual([]);
+    expect(() => parseEurostatHicp(eurostat({ value: { '0': null } }))).toThrow('no values');
+  });
+
+  it('refuses a Bank of Russia date with a month 13', () => {
+    expect(() =>
+      parseCbrInflation(
+        '<table class="data"><tr><th>Дата</th><th>Инфляция, % г/г</th></tr><tr><td>13.2026</td><td>6,35</td></tr></table>',
+      ),
+    ).toThrow('date "13.2026"');
+  });
+});

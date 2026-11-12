@@ -99,22 +99,44 @@ export function addMonths(start: string, months: number): string {
   return dateOf(Date.UTC(targetYear, targetMonth, target));
 }
 
+const beforeEnd = (terms: DepositTerms, date: string): boolean =>
+  terms.endDate === null || date < terms.endDate;
+
+// Daily posts at the end of every day from the first one on; the end date is added after.
+function dailyPayoutDates(terms: DepositTerms, last: string): string[] {
+  const dates: string[] = [];
+  for (
+    let date = nextDay(terms.startDate);
+    date <= last && beforeEnd(terms, date);
+    date = nextDay(date)
+  )
+    dates.push(date);
+  return dates;
+}
+
+const monthsPerPayout: Record<PayoutSchedule, number> = {
+  daily: 0,
+  monthly: 1,
+  quarterly: 3,
+  'at-end': 0,
+};
+
+function monthlyPayoutDates(terms: DepositTerms, last: string): string[] {
+  const dates: string[] = [];
+  const every = monthsPerPayout[terms.payout];
+  if (every === 0) return dates;
+  for (let step = 1; ; step += 1) {
+    const date = addMonths(terms.startDate, step * every);
+    if (date > last || !beforeEnd(terms, date)) break;
+    dates.push(date);
+  }
+  return dates;
+}
+
 /** The dates interest is posted, ascending, up to and including `last`. */
 export function payoutDates(terms: DepositTerms, last: string): string[] {
-  const dates: string[] = [];
-  // Daily posts at the end of every day from the first one on; the end date is added below.
-  if (terms.payout === 'daily')
-    for (let date = nextDay(terms.startDate); date <= last; date = nextDay(date)) {
-      if (terms.endDate !== null && date >= terms.endDate) break;
-      dates.push(date);
-    }
-  const every = terms.payout === 'monthly' ? 1 : terms.payout === 'quarterly' ? 3 : 0;
-  if (every > 0)
-    for (let step = 1; ; step += 1) {
-      const date = addMonths(terms.startDate, step * every);
-      if (date > last || (terms.endDate !== null && date >= terms.endDate)) break;
-      dates.push(date);
-    }
+  const dates =
+    terms.payout === 'daily' ? dailyPayoutDates(terms, last) : monthlyPayoutDates(terms, last);
   if (terms.endDate !== null && terms.endDate <= last && terms.endDate > terms.startDate)
     dates.push(terms.endDate);
   return dates;
@@ -147,6 +169,120 @@ function daysInYearOf(basis: DayBasis, date: string): bigint {
   return basis === 'actual-actual' && isLeap(Number(date.slice(0, 4))) ? 366n : 365n;
 }
 
+/** The day-by-day replay of a deposit; `next` is the first movement not yet applied. */
+interface Replay {
+  principal: bigint;
+  accrued: bigint;
+  due: bigint;
+  posted: bigint;
+  paidOut: bigint;
+  forfeited: bigint;
+  closedOn: string | null;
+  periodStart: string;
+  periods: InterestPeriod[];
+  next: number;
+}
+
+function startReplay(terms: DepositTerms): Replay {
+  return {
+    principal: 0n,
+    accrued: 0n,
+    due: 0n,
+    posted: 0n,
+    paidOut: 0n,
+    forfeited: 0n,
+    closedOn: null,
+    periodStart: terms.startDate,
+    periods: [],
+    next: 0,
+  };
+}
+
+/** A payout date posts what was earned since the last one, rounded to cents. */
+function postInterest(terms: DepositTerms, replay: Replay, date: string): void {
+  const interest = roundToCents(replay.accrued);
+  if (terms.capitalized) replay.principal += interest;
+  else replay.due += interest;
+  replay.posted += interest;
+  replay.accrued = 0n;
+  replay.periods.push({
+    from: replay.periodStart,
+    to: date,
+    interest: centsText(interest),
+    treatment: terms.capitalized ? 'capitalized' : 'payable',
+  });
+  replay.periodStart = date;
+}
+
+/** An interest payout takes out at most the interest due. */
+function payOut(replay: Replay, amount: bigint): void {
+  const taken = amount < replay.due ? amount : replay.due;
+  replay.due -= taken;
+  replay.paidOut += taken;
+}
+
+/** The whole deposit is withdrawn before its end date: what it earned since the last posting. */
+function closeEarly(terms: DepositTerms, replay: Replay, date: string): void {
+  if (terms.earlyClose === 'forfeits-interest') replay.forfeited = replay.accrued;
+  else {
+    // Closing pays what was earned since the last payout date: it is due now.
+    const interest = roundToCents(replay.accrued);
+    replay.due += interest;
+    replay.posted += interest;
+    // A payout date has just posted the period; nothing is left to show for today.
+    if (replay.periodStart < date)
+      replay.periods.push({
+        from: replay.periodStart,
+        to: date,
+        interest: centsText(interest),
+        treatment: 'payable',
+      });
+  }
+  replay.accrued = 0n;
+}
+
+function withdraw(terms: DepositTerms, replay: Replay, date: string, amount: bigint): void {
+  replay.principal -= amount < replay.principal ? amount : replay.principal;
+  // An account has no term: emptying it leaves it open for the next top-up.
+  if (replay.principal !== 0n || terms.kind === 'account') return;
+  replay.closedOn = date;
+  if (beforeEnd(terms, date)) closeEarly(terms, replay, date);
+}
+
+/** Posts the interest on a payout date, then applies the movements up to `date`. */
+function settleDay(
+  terms: DepositTerms,
+  movements: readonly DepositMovement[],
+  posting: ReadonlySet<string>,
+  replay: Replay,
+  date: string,
+): void {
+  if (posting.has(date)) postInterest(terms, replay, date);
+  for (; replay.next < movements.length && movements[replay.next].date <= date; replay.next += 1) {
+    const movement = movements[replay.next];
+    const amount = canonicalDecimalToAtoms(movement.amount);
+    if (movement.kind === 'topup') replay.principal += amount;
+    else if (movement.kind === 'interest-payout') payOut(replay, amount);
+    else withdraw(terms, replay, date, amount);
+  }
+}
+
+/** A day earns interest on the money held after its movements. */
+function accrueDay(terms: DepositTerms, replay: Replay, date: string): void {
+  const rate = rateOn(terms.rates, date);
+  replay.accrued +=
+    (replay.principal * rate) / (100n * RATE_STEP * daysInYearOf(terms.dayBasis, date));
+}
+
+/** Once the replay has stopped, only payouts of posted interest up to `until` follow. */
+function payOutUntil(movements: readonly DepositMovement[], replay: Replay, until: string): void {
+  for (; replay.next < movements.length && movements[replay.next].date <= until; replay.next += 1) {
+    const movement = movements[replay.next];
+    if (movement.kind === 'interest-payout')
+      payOut(replay, canonicalDecimalToAtoms(movement.amount));
+  }
+}
+
 /**
  * Replays the deposit day by day up to `asOf` (or its end date). A day earns interest on the
  * money held after that day's movements, so the start day counts and the end day does not;
@@ -161,95 +297,32 @@ export function projectDeposit(
 ): DepositProjection {
   const horizon = terms.endDate !== null && terms.endDate < asOf ? terms.endDate : asOf;
   const posting = new Set(payoutDates(terms, horizon));
-  let principal = 0n;
-  let accrued = 0n;
-  let due = 0n;
-  let posted = 0n;
-  let paidOut = 0n;
-  let forfeited = 0n;
-  let closedOn: string | null = null;
-  let periodStart = terms.startDate;
-  const periods: InterestPeriod[] = [];
-  let next = 0;
-
-  for (let date = terms.startDate; date <= horizon && closedOn === null; date = nextDay(date)) {
-    if (posting.has(date)) {
-      const interest = roundToCents(accrued);
-      if (terms.capitalized) principal += interest;
-      else due += interest;
-      posted += interest;
-      accrued = 0n;
-      periods.push({
-        from: periodStart,
-        to: date,
-        interest: centsText(interest),
-        treatment: terms.capitalized ? 'capitalized' : 'payable',
-      });
-      periodStart = date;
-    }
-    for (; next < movements.length && movements[next].date <= date; next += 1) {
-      const movement = movements[next];
-      const amount = canonicalDecimalToAtoms(movement.amount);
-      if (movement.kind === 'topup') principal += amount;
-      else if (movement.kind === 'interest-payout') {
-        const taken = amount < due ? amount : due;
-        due -= taken;
-        paidOut += taken;
-      } else {
-        principal -= amount < principal ? amount : principal;
-        // An account has no term: emptying it leaves it open for the next top-up.
-        if (principal === 0n && terms.kind !== 'account') {
-          closedOn = date;
-          if (terms.endDate === null || date < terms.endDate) {
-            if (terms.earlyClose === 'forfeits-interest') forfeited = accrued;
-            else {
-              // Closing pays what was earned since the last payout date: it is due now.
-              const interest = roundToCents(accrued);
-              due += interest;
-              posted += interest;
-              // A payout date has just posted the period; nothing is left to show for today.
-              if (periodStart < date)
-                periods.push({
-                  from: periodStart,
-                  to: date,
-                  interest: centsText(interest),
-                  treatment: 'payable',
-                });
-            }
-            accrued = 0n;
-          }
-        }
-      }
-    }
-    if (closedOn === null && date < horizon) {
-      const rate = rateOn(terms.rates, date);
-      accrued += (principal * rate) / (100n * RATE_STEP * daysInYearOf(terms.dayBasis, date));
-    }
+  const replay = startReplay(terms);
+  for (
+    let date = terms.startDate;
+    date <= horizon && replay.closedOn === null;
+    date = nextDay(date)
+  ) {
+    settleDay(terms, movements, posting, replay, date);
+    if (replay.closedOn === null && date < horizon) accrueDay(terms, replay, date);
   }
-
   // Interest posted at maturity or at closure can be paid out after the replay stopped.
-  for (; next < movements.length && movements[next].date <= asOf; next += 1) {
-    const movement = movements[next];
-    if (movement.kind !== 'interest-payout') continue;
-    const taken = canonicalDecimalToAtoms(movement.amount);
-    const paid = taken < due ? taken : due;
-    due -= paid;
-    paidOut += paid;
-  }
+  payOutUntil(movements, replay, asOf);
 
-  const earned = roundToCents(accrued);
+  const { principal, due } = replay;
+  const earned = roundToCents(replay.accrued);
   return {
     asOf,
-    closedOn,
+    closedOn: replay.closedOn,
     principal: centsText(principal),
     accrued: centsText(earned),
     due: centsText(due),
     balance: centsText(principal + due + earned),
     posted: centsText(principal + due),
-    interestPosted: centsText(posted),
-    interestPaidOut: centsText(paidOut),
-    interestForfeited: centsText(roundToCents(forfeited)),
-    periods,
+    interestPosted: centsText(replay.posted),
+    interestPaidOut: centsText(replay.paidOut),
+    interestForfeited: centsText(roundToCents(replay.forfeited)),
+    periods: replay.periods,
   };
 }
 
@@ -271,57 +344,26 @@ export function depositBalances(
   const last = wanted[wanted.length - 1];
   const horizon = terms.endDate !== null && terms.endDate < last ? terms.endDate : last;
   const posting = new Set(payoutDates(terms, horizon));
-  let principal = 0n;
-  let accrued = 0n;
-  let due = 0n;
-  let closedOn: string | null = null;
-  let next = 0;
+  const replay = startReplay(terms);
   let index = 0;
-  const balance = () => principal + due + roundToCents(accrued);
+  const balance = () => replay.principal + replay.due + roundToCents(replay.accrued);
   for (; index < wanted.length && wanted[index] < terms.startDate; index += 1)
     balances.set(wanted[index], 0n);
 
-  for (let date = terms.startDate; date <= horizon && closedOn === null; date = nextDay(date)) {
-    if (posting.has(date)) {
-      const interest = roundToCents(accrued);
-      if (terms.capitalized) principal += interest;
-      else due += interest;
-      accrued = 0n;
-    }
-    for (; next < movements.length && movements[next].date <= date; next += 1) {
-      const movement = movements[next];
-      const amount = canonicalDecimalToAtoms(movement.amount);
-      if (movement.kind === 'topup') principal += amount;
-      else if (movement.kind === 'interest-payout') {
-        due -= amount < due ? amount : due;
-      } else {
-        principal -= amount < principal ? amount : principal;
-        // An account has no term: emptying it leaves it open for the next top-up.
-        if (principal === 0n && terms.kind !== 'account') {
-          closedOn = date;
-          if (terms.endDate === null || date < terms.endDate) {
-            if (terms.earlyClose !== 'forfeits-interest') due += roundToCents(accrued);
-            accrued = 0n;
-          }
-        }
-      }
-    }
+  for (
+    let date = terms.startDate;
+    date <= horizon && replay.closedOn === null;
+    date = nextDay(date)
+  ) {
+    settleDay(terms, movements, posting, replay, date);
     for (; index < wanted.length && wanted[index] === date; index += 1)
       balances.set(date, balance());
-    if (closedOn === null && date < horizon) {
-      const rate = rateOn(terms.rates, date);
-      accrued += (principal * rate) / (100n * RATE_STEP * daysInYearOf(terms.dayBasis, date));
-    }
+    if (replay.closedOn === null && date < horizon) accrueDay(terms, replay, date);
   }
 
   // The replay has stopped (closed, or at the end date): only payouts of posted interest follow.
   for (; index < wanted.length; index += 1) {
-    for (; next < movements.length && movements[next].date <= wanted[index]; next += 1) {
-      const movement = movements[next];
-      if (movement.kind !== 'interest-payout') continue;
-      const taken = canonicalDecimalToAtoms(movement.amount);
-      due -= taken < due ? taken : due;
-    }
+    payOutUntil(movements, replay, wanted[index]);
     balances.set(wanted[index], balance());
   }
   return balances;
@@ -372,32 +414,38 @@ export function firstImpossibleMovement(
   const lowerBounds =
     terms.kind === 'account' && !terms.rates.some((rate) => rate.effectiveFrom <= terms.startDate);
   for (const [index, movement] of movements.entries()) {
-    if (movement.date < terms.startDate) return index;
-    // Money can be taken out on the end date, but a top-up that day would earn nothing.
-    if (
-      terms.endDate !== null &&
-      movement.kind !== 'interest-payout' &&
-      (movement.date > terms.endDate ||
-        (movement.kind === 'topup' && movement.date >= terms.endDate))
-    )
-      return index;
+    if (outsideTerm(terms, movement)) return index;
     if (index > 0 && movements[index - 1].date > movement.date) return index;
     const before = projectDeposit(terms, movements.slice(0, index), movement.date);
-    const amount = canonicalDecimalToAtoms(movement.amount);
-    if (movement.kind === 'interest-payout') {
-      if ((!lowerBounds || terms.capitalized) && amount > canonicalDecimalToAtoms(before.due))
-        return index;
-    } else if (before.closedOn !== null) {
-      return index;
-    } else if (
-      movement.kind === 'withdrawal' &&
-      (!lowerBounds || !terms.capitalized) &&
-      amount > canonicalDecimalToAtoms(before.principal)
-    ) {
-      return index;
-    }
+    if (exceedsWhatIsHeld(terms, lowerBounds, movement, before)) return index;
   }
   return -1;
+}
+
+function outsideTerm(terms: DepositTerms, movement: DepositMovement): boolean {
+  if (movement.date < terms.startDate) return true;
+  // Money can be taken out on the end date, but a top-up that day would earn nothing.
+  if (terms.endDate === null || movement.kind === 'interest-payout') return false;
+  return (
+    movement.date > terms.endDate || (movement.kind === 'topup' && movement.date >= terms.endDate)
+  );
+}
+
+function exceedsWhatIsHeld(
+  terms: DepositTerms,
+  lowerBounds: boolean,
+  movement: DepositMovement,
+  before: DepositProjection,
+): boolean {
+  const amount = canonicalDecimalToAtoms(movement.amount);
+  if (movement.kind === 'interest-payout')
+    return (!lowerBounds || terms.capitalized) && amount > canonicalDecimalToAtoms(before.due);
+  if (before.closedOn !== null) return true;
+  return (
+    movement.kind === 'withdrawal' &&
+    (!lowerBounds || !terms.capitalized) &&
+    amount > canonicalDecimalToAtoms(before.principal)
+  );
 }
 
 /**

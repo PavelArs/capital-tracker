@@ -414,6 +414,25 @@ describe('PasswordResetMailer (Yandex SMTP)', () => {
       expect(await mailCount('retried')).toBe(retried);
     });
 
+    it('logs each refusal with its code and reply, and says when it retries', async () => {
+      const warn = jest.spyOn(require('@nestjs/common').Logger.prototype, 'warn');
+      warn.mockClear();
+      await send(
+        jest
+          .fn()
+          .mockRejectedValueOnce(Object.assign(new Error('transient'), { code: 'ECONNRESET' }))
+          .mockResolvedValueOnce({}),
+      );
+      await send(
+        jest.fn().mockRejectedValue(Object.assign(new Error('busy'), { responseCode: 450 })),
+      );
+      expect(warn.mock.calls).toEqual([
+        ['Password reset email was not sent (ECONNRESET); retrying once'],
+        ['Password reset email was not sent (error 450); retrying once'],
+        ['Password reset email was not sent (error 450)'],
+      ]);
+    });
+
     it('counts a send without credentials as unconfigured', async () => {
       const unconfigured = await mailCount('unconfigured');
       await new PasswordResetMailer(resetMailSettings(() => undefined)).sendPasswordReset(

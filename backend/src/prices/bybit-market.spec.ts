@@ -42,6 +42,22 @@ describe('BYBIT-ANY-COIN Bybit spot candles', () => {
     expect(parseBybitCandles({ retCode: 0 }, HOUR, now)).toBe('invalid_response');
   });
 
+  it('refuses a candle start that is not whole milliseconds as text, or before 2009', () => {
+    const at = (start: unknown) => [start, '1', '2', '0.5', '2.5', '9', '9'];
+    for (const list of [
+      [at(hour - HOUR)],
+      [at('-3600000')],
+      [at(`${hour / 1000}e3`)],
+      [at(String(Date.UTC(2008, 11, 31)))],
+      [at(String(hour - HOUR)).slice(0, 4)],
+      [candle(hour - HOUR, '2.5'), candle(hour - HOUR, '2.5')],
+    ])
+      expect(parseBybitCandles(answer(list), HOUR, now)).toBe('invalid_response');
+    expect(parseBybitCandles(answer([at(String(hour - HOUR))]), HOUR, now)).toEqual([
+      { closedAt: hour, close: '2.5' },
+    ]);
+  });
+
   describe('against a local HTTP server', () => {
     let server: Server;
     let client: BybitMarketClient;
