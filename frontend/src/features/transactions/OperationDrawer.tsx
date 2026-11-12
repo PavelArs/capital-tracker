@@ -788,11 +788,100 @@ function History({ history }: { history: TradeVersion[] }) {
   );
 }
 
-/** Guidance on what the buttons of a blockchain transaction or Bybit record can do. */
-function chainGuidance(operation: Operation, counted: boolean): string {
-  if (counted)
-    return 'You counted this difference yourself, so you can delete it. Until then you can also change the classification, add a comment or hide it from calculations.';
-  return `${sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'} can't be deleted. You can change the classification, add a comment or hide it from calculations. Your changes survive the next sync.`;
+/** A blockchain transaction or Bybit record with its address and transaction, else null. */
+const chainOf = (operation: Operation) =>
+  operation.kind === 'chain' && operation.wallet && operation.chain ? operation : null;
+
+/** CLS-RECORDED: the trade or swap added by hand this transaction already is. */
+function recordOf(operation: Operation, operations: Operation[]): Operation | undefined {
+  const saved = operation.classification?.value;
+  return saved?.type === 'recorded'
+    ? operations.find((item) => item.id === `${saved.operation.kind}:${saved.operation.id}`)
+    : undefined;
+}
+
+/** The account of an operation the drawer can delete (and edit, when editable), else null. */
+function changeableAccount(operation: Operation): Operation['account'] {
+  const deletable =
+    editable(operation) || (operation.kind === 'capital-return' && operation.version !== null);
+  return deletable && operation.account ? operation.account : null;
+}
+
+// SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool
+// or back has nothing to classify.
+const isStakeMove = (operation: Operation) =>
+  operation.type === 'stake' || operation.type === 'unstake';
+
+/**
+ * Guidance on what the buttons below can do; not a note of its own (role none), so the drawer's
+ * one note stays the verdict on this transaction.
+ */
+function ChainGuidance({ operation }: { operation: Operation }) {
+  if (isStakeMove(operation)) return null;
+  // BYBIT-GAP-DELETE: a counted difference is the owner's own record, so it can be deleted.
+  const counted = Boolean(operation.chain && isCountedGap(operation.chain.txid));
+  return (
+    <Banner tone="info" role="none">
+      {counted
+        ? 'You counted this difference yourself, so you can delete it. Until then you can also change the classification, add a comment or hide it from calculations.'
+        : `${sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'} can't be deleted. You can change the classification, add a comment or hide it from calculations. Your changes survive the next sync.`}
+    </Banner>
+  );
+}
+
+function ChainFooter({
+  operation,
+  busy,
+  onClassify,
+  onToggleHidden,
+  onDeleted,
+}: {
+  operation: Operation;
+  busy: boolean;
+  onClassify: () => void;
+  onToggleHidden: () => void;
+  onDeleted: () => void;
+}) {
+  return (
+    <DrawerFooter>
+      {!isStakeMove(operation) && (
+        <Button variant="secondary" disabled={busy} onClick={onClassify}>
+          {operation.classification?.value ? 'Change classification' : 'Classify'}
+        </Button>
+      )}
+      <span className="ui-grow" />
+      <RemoveCounted operation={operation} disabled={busy} onDeleted={onDeleted} />
+      <Button variant="ghost" disabled={busy} onClick={onToggleHidden}>
+        {operation.status === 'hidden' ? 'Include in calculations' : 'Hide from calculations'}
+      </Button>
+    </DrawerFooter>
+  );
+}
+
+function JournalFooter({
+  operation,
+  deleteRef,
+  onDelete,
+  onEdit,
+}: {
+  operation: Operation;
+  deleteRef: RefObject<HTMLButtonElement | null>;
+  onDelete: () => void;
+  onEdit?: (operation: Operation) => void;
+}) {
+  return (
+    <DrawerFooter>
+      <Button ref={deleteRef} variant="ghost" destructive icon="trash" onClick={onDelete}>
+        Delete
+      </Button>
+      <span className="ui-grow" />
+      {editable(operation) && (
+        <Button variant="secondary" icon="edit" onClick={() => onEdit?.(operation)}>
+          Edit
+        </Button>
+      )}
+    </DrawerFooter>
+  );
 }
 
 function DeleteConfirm({
@@ -863,6 +952,15 @@ type Deletion = { key: string; requestId: string; from: number; to: number };
 const journalRevision = async (accountId: string) =>
   (await tradesApi.state(accountId)).journal?.journalRevision ?? 0;
 
+/** The journal revisions a deletion expects: its account's and, for a transfer, the other's. */
+const revisions = (operation: Operation, accountId: string) =>
+  Promise.all([
+    journalRevision(accountId),
+    operation.kind === 'transfer' ? journalRevision(operation.counterAccount?.id ?? accountId) : 0,
+  ]);
+
+const statusOf = (error: unknown) => (isAxiosError(error) ? error.response?.status : undefined);
+
 /** OPS-DELETE: the void command of the operation's kind, at the revisions read the first time. */
 function voidOperation(
   operation: Operation,
@@ -906,7 +1004,7 @@ function deleteError(status: number | undefined): string {
 function hideError(error: unknown): string {
   if (dependentOf(error) !== null)
     return 'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.';
-  const status = isAxiosError(error) ? error.response?.status : undefined;
+  const status = statusOf(error);
   if (
     status === 422 &&
     isAxiosError(error) &&
@@ -958,15 +1056,9 @@ export default function OperationDrawer({
   const deleteButton = useRef<HTMLButtonElement>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [history, setHistory] = useState<TradeVersion[] | null>(null);
-  const chain =
-    operation.kind === 'chain' && operation.wallet && operation.chain ? operation : null;
+  const chain = chainOf(operation);
   const needs = operation.status === 'needs-classification';
-  // CLS-RECORDED: the trade or swap added by hand this transaction already is.
-  const saved = operation.classification?.value;
-  const record =
-    saved?.type === 'recorded'
-      ? operations.find((item) => item.id === `${saved.operation.kind}:${saved.operation.id}`)
-      : undefined;
+  const record = recordOf(operation, operations);
   const [classifying, setClassifying] = useState(needs);
   const [toggling, setToggling] = useState<{ busy: boolean; error: string | null }>({
     busy: false,
@@ -985,11 +1077,7 @@ export default function OperationDrawer({
       modal.current?.querySelector<HTMLElement>('.ui-modal__foot button:not([disabled])')?.focus();
   }, [step]);
 
-  const changeable =
-    (editable(operation) || (operation.kind === 'capital-return' && operation.version !== null)) &&
-    operation.account
-      ? operation.account
-      : null;
+  const changeable = changeableAccount(operation);
   const trade = operation.kind === 'trade' ? changeable : null;
   const tradeId = operation.id.replace(/^trade:/, '');
   const tradeAccountId = trade?.id;
@@ -1046,18 +1134,13 @@ export default function OperationDrawer({
     const key = `${operation.id}:${operation.version ?? 0}`;
     try {
       if (deletion.current?.key !== key) {
-        const [from, to] = await Promise.all([
-          journalRevision(changeable.id),
-          operation.kind === 'transfer'
-            ? journalRevision(operation.counterAccount?.id ?? changeable.id)
-            : 0,
-        ]);
+        const [from, to] = await revisions(operation, changeable.id);
         deletion.current = { key, requestId: newRequestId(), from, to };
       }
       await voidOperation(operation, changeable.id, deletion.current);
       onDeleted?.();
     } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const status = statusOf(error);
       // A definite refusal deleted nothing: the next try is a new command at the current revisions.
       if (status !== undefined && status < 500) deletion.current = null;
       const dependent = dependentOf(error);
@@ -1068,9 +1151,6 @@ export default function OperationDrawer({
       setConfirm({ step: 'ask', error: deleteError(status) });
     }
   };
-
-  // BYBIT-GAP-DELETE: a counted difference is the owner's own record, so it can be deleted.
-  const counted = Boolean(chain?.chain && isCountedGap(chain.chain.txid));
 
   // CLS-HIDE: hiding keeps the answer, so including the row again restores it.
   const hideAttempt = useAttempt();
@@ -1097,10 +1177,6 @@ export default function OperationDrawer({
     }
   };
 
-  const hidden = operation.status === 'hidden';
-  // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool
-  // or back has nothing to classify.
-  const stakeMove = operation.type === 'stake' || operation.type === 'unstake';
   // CLS-COMPACT: while a blockchain transaction waits for its answer, only what identifies it
   // stays above the question; the technical facts fold into "Details".
   const compact = Boolean(chain && classifying);
@@ -1113,6 +1189,8 @@ export default function OperationDrawer({
       <Facts rows={facts(operation, currency, record)} compact={compact} />
     </>
   );
+  // Later closes a transaction still to classify; a change of an answer goes back to its facts.
+  const laterCloses = needs ? onClose : () => setClassifying(false);
   const chainDeleted = () => {
     announceClassificationChange();
     onClassified?.('deleted');
@@ -1139,7 +1217,7 @@ export default function OperationDrawer({
             left={left}
             onSaved={(label) => onClassified?.(label)}
             onDeleted={chainDeleted}
-            onCancel={needs ? onClose : () => setClassifying(false)}
+            onCancel={laterCloses}
           >
             {summary}
           </ClassifyForm>
@@ -1148,58 +1226,24 @@ export default function OperationDrawer({
             <div className="ui-drawer__body">
               {summary}
               {trade && history && history.length > 1 && <History history={history} />}
-              {chain && !stakeMove && (
-                // Guidance on what the buttons below can do; not a note of its own (role none), so
-                // the drawer's one note stays the verdict on this transaction.
-                <Banner tone="info" role="none">
-                  {chainGuidance(operation, counted)}
-                </Banner>
-              )}
+              {chain && <ChainGuidance operation={operation} />}
               {toggling.error && <Banner tone="neg">{toggling.error}</Banner>}
             </div>
             {chain ? (
-              <DrawerFooter>
-                {!stakeMove && (
-                  <Button
-                    variant="secondary"
-                    disabled={toggling.busy}
-                    onClick={() => setClassifying(true)}
-                  >
-                    {operation.classification?.value ? 'Change classification' : 'Classify'}
-                  </Button>
-                )}
-                <span className="ui-grow" />
-                <RemoveCounted
-                  operation={chain}
-                  disabled={toggling.busy}
-                  onDeleted={chainDeleted}
-                />
-                <Button
-                  variant="ghost"
-                  disabled={toggling.busy}
-                  onClick={() => void toggleHidden()}
-                >
-                  {hidden ? 'Include in calculations' : 'Hide from calculations'}
-                </Button>
-              </DrawerFooter>
+              <ChainFooter
+                operation={chain}
+                busy={toggling.busy}
+                onClassify={() => setClassifying(true)}
+                onToggleHidden={() => void toggleHidden()}
+                onDeleted={chainDeleted}
+              />
             ) : changeable ? (
-              <DrawerFooter>
-                <Button
-                  ref={deleteButton}
-                  variant="ghost"
-                  destructive
-                  icon="trash"
-                  onClick={() => void askToDelete()}
-                >
-                  Delete
-                </Button>
-                <span className="ui-grow" />
-                {editable(operation) && (
-                  <Button variant="secondary" icon="edit" onClick={() => onEdit?.(operation)}>
-                    Edit
-                  </Button>
-                )}
-              </DrawerFooter>
+              <JournalFooter
+                operation={operation}
+                deleteRef={deleteButton}
+                onDelete={() => void askToDelete()}
+                onEdit={onEdit}
+              />
             ) : null}
           </>
         )}
