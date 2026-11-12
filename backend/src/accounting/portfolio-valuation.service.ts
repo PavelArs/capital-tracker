@@ -169,6 +169,42 @@ const signedLeg = (units: bigint) => ({
   sentUnits: (units < 0n ? -units : 0n).toString(),
 });
 
+/** A leg of a pool deposit or withdrawal, with the deposit a withdrawal returns. */
+interface PoolMoveRow extends Omit<ChainMoveRow, 'stakeUnits'> {
+  txid: string;
+  feeUnits: string;
+  partial: boolean;
+  depositKey: string | null;
+  deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
+}
+
+/**
+ * POOL-DEPOSIT, POOL-WITHDRAW: coins in a liquidity pool stay held; a deposit and a withdrawal
+ * spend their network fee, and the withdrawal that closes its deposit the rest of it
+ * (POOL-PARTIAL: the parts before it only return their share). Sorts `pools` in place.
+ */
+function poolMoves(pools: PoolMoveRow[]): ChainMoveRow[] {
+  // The parts of one deposit are settled in the order they happened.
+  pools.sort(byPoolOrder);
+  const moves: ChainMoveRow[] = [];
+  const left = new Map<string, bigint>();
+  for (const { deposit, depositKey, partial, feeUnits, ...row } of pools) {
+    let loss = 0n;
+    if (deposit && depositKey) {
+      const withdrawal = { ...row, feeUnits };
+      const before = left.get(depositKey) ?? poolDepositAtoms({ ...row, ...deposit });
+      const [settled] = settlePool(before, [
+        { returnedAtoms: poolReturnAtoms(withdrawal), partial },
+      ]);
+      left.set(depositKey, settled.remaining);
+      loss = poolAtomsToUnits(settled.loss, withdrawal);
+    }
+    const units = poolMoveUnits({ ...row, feeUnits }, loss);
+    moves.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
+  }
+  return moves;
+}
+
 /**
  * D1, CLS-PROVISIONAL: the chain movements that count before anyone answers them. Hidden ones
  * and answers that produced an entry are out; an outgoing "Other" produced none and stays in.
@@ -240,16 +276,7 @@ export async function readChainMoves(
       [owner],
     );
   for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
-  // POOL-DEPOSIT, POOL-WITHDRAW: coins in a liquidity pool stay held; a deposit and a withdrawal
-  // spend their network fee, and the withdrawal that closes its deposit the rest of it
-  // (POOL-PARTIAL: the parts before it only return their share).
-  const pools: (Omit<ChainMoveRow, 'stakeUnits'> & {
-    txid: string;
-    feeUnits: string;
-    partial: boolean;
-    depositKey: string | null;
-    deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
-  })[] = await manager.query(
+  const pools: PoolMoveRow[] = await manager.query(
     `SELECT w."accountId", w.id AS "addressId", w.network, t.asset, t."blockTime", t.txid,
         t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
         t."feeUnits"::text AS "feeUnits",
@@ -269,23 +296,7 @@ export async function readChainMoves(
         AND v.status='classified' AND v.type IN ('pool-deposit', 'pool-withdrawal')`,
     [owner],
   );
-  // The parts of one deposit are settled in the order they happened.
-  pools.sort(byPoolOrder);
-  const left = new Map<string, bigint>();
-  for (const { deposit, depositKey, partial, feeUnits, ...row } of pools) {
-    let loss = 0n;
-    if (deposit && depositKey) {
-      const withdrawal = { ...row, feeUnits };
-      const before = left.get(depositKey) ?? poolDepositAtoms({ ...row, ...deposit });
-      const [settled] = settlePool(before, [
-        { returnedAtoms: poolReturnAtoms(withdrawal), partial },
-      ]);
-      left.set(depositKey, settled.remaining);
-      loss = poolAtomsToUnits(settled.loss, withdrawal);
-    }
-    const units = poolMoveUnits({ ...row, feeUnits }, loss);
-    rows.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
-  }
+  for (const move of poolMoves(pools)) rows.push(move);
   // TOKEN-HIDE: a token the address leaves out (spam, no price anywhere, hidden by the owner)
   // never counts, so no asset, total or list shows it.
   const hidden = await leftOutTokens(manager, owner);
