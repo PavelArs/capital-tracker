@@ -44,20 +44,24 @@ export function parseBybitCandles(
     const closed: { closedAt: number; close: string }[] = [];
     let later = Number.POSITIVE_INFINITY;
     for (const entry of list as unknown[]) {
-      if (!Array.isArray(entry) || entry.length < 5 || typeof entry[0] !== 'string') invalid();
-      if (!/^[0-9]{1,15}$/.test(entry[0])) invalid();
-      const start = Number(entry[0]);
-      if (start < EARLIEST_MS || start > nowMs + CLOCK_SKEW_MS || start % intervalMs !== 0)
-        invalid();
-      if (start >= later) invalid();
+      const { start, close } = readCandle(entry, intervalMs, nowMs, later);
       later = start;
-      const close = positiveDecimal(entry[4]);
       if (start + intervalMs <= nowMs) closed.push({ closedAt: start + intervalMs, close });
     }
     return closed.reverse();
   } catch {
     return 'invalid_response';
   }
+}
+
+/** One candle's start and close; it starts on the interval, before `later` and by `now`. */
+function readCandle(entry: unknown, intervalMs: number, nowMs: number, later: number) {
+  if (!Array.isArray(entry) || entry.length < 5 || typeof entry[0] !== 'string') invalid();
+  if (!/^[0-9]{1,15}$/.test(entry[0])) invalid();
+  const start = Number(entry[0]);
+  if (start < EARLIEST_MS || start > nowMs + CLOCK_SKEW_MS || start % intervalMs !== 0) invalid();
+  if (start >= later) invalid();
+  return { start, close: positiveDecimal(entry[4]) };
 }
 
 export class BybitMarketClient {

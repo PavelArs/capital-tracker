@@ -32,6 +32,41 @@ interface PgPool {
   waitingCount: number;
 }
 
+function setSourceGauges(sources: SourceRow[]): void {
+  sourceLastSuccess.reset();
+  sourceState.reset();
+  for (const row of sources) {
+    if (row.lastSuccessAt) {
+      sourceLastSuccess.set({ source: row.key }, row.lastSuccessAt.getTime() / 1000);
+    }
+    for (const state of SOURCE_STATES) {
+      sourceState.set({ source: row.key, state }, row.state === state ? 1 : 0);
+    }
+  }
+}
+
+function setWalletGauges(wallets: WalletRow[]): void {
+  walletsByState.reset();
+  walletOldestSuccess.reset();
+  const oldest = new Map<string, number>();
+  for (const row of wallets) {
+    walletsByState.set({ network: row.network, state: row.state }, row.count);
+    if (row.oldest) {
+      const at = row.oldest.getTime() / 1000;
+      oldest.set(row.network, Math.min(at, oldest.get(row.network) ?? at));
+    }
+  }
+  for (const [network, at] of oldest) walletOldestSuccess.set({ network }, at);
+  // Every state is present for a network that has wallets, so alerts see explicit zeros.
+  for (const network of new Set(wallets.map((row) => row.network))) {
+    for (const state of WALLET_STATES) {
+      if (!wallets.some((row) => row.network === network && row.state === state)) {
+        walletsByState.set({ network, state }, 0);
+      }
+    }
+  }
+}
+
 /**
  * Fills the scrape-time gauges from the database. Everything here is read-only and
  * aggregated: no wallet address, id or label ever becomes a metric label.
@@ -75,37 +110,8 @@ export class MetricsCollector {
       );
       databaseSize.set(Number(bytes));
       dependencyUp.set({ dependency: 'postgres' }, 1);
-
-      sourceLastSuccess.reset();
-      sourceState.reset();
-      for (const row of sources) {
-        if (row.lastSuccessAt) {
-          sourceLastSuccess.set({ source: row.key }, row.lastSuccessAt.getTime() / 1000);
-        }
-        for (const state of SOURCE_STATES) {
-          sourceState.set({ source: row.key, state }, row.state === state ? 1 : 0);
-        }
-      }
-
-      walletsByState.reset();
-      walletOldestSuccess.reset();
-      const oldest = new Map<string, number>();
-      for (const row of wallets) {
-        walletsByState.set({ network: row.network, state: row.state }, row.count);
-        if (row.oldest) {
-          const at = row.oldest.getTime() / 1000;
-          oldest.set(row.network, Math.min(at, oldest.get(row.network) ?? at));
-        }
-      }
-      for (const [network, at] of oldest) walletOldestSuccess.set({ network }, at);
-      // Every state is present for a network that has wallets, so alerts see explicit zeros.
-      for (const network of new Set(wallets.map((row) => row.network))) {
-        for (const state of WALLET_STATES) {
-          if (!wallets.some((row) => row.network === network && row.state === state)) {
-            walletsByState.set({ network, state }, 0);
-          }
-        }
-      }
+      setSourceGauges(sources);
+      setWalletGauges(wallets);
     } catch (error) {
       dependencyUp.set({ dependency: 'postgres' }, 0);
       this.logger.warn(`Metrics could not read the database: ${(error as Error).name}`);
