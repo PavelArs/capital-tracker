@@ -25,7 +25,12 @@ import {
   validateCsvSource,
   validateDisplayName,
 } from './csv-input';
-import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
+import {
+  type CsvIssue,
+  type CsvNormalization,
+  normalizeCsvRows,
+  parseCsvSource,
+} from './csv-parser';
 import { type Execution, FifoHistoryError, type FifoTrade } from './fifo';
 import { parseUuid } from './input';
 import { type AccountFifoResult, OwnedTransferCapacityError } from './owned-transfer-fifo';
@@ -212,6 +217,52 @@ function projectCandidate(
       return { refusal: ledger.transfers.length ? 'connected-history' : 'insufficient-holdings' };
     throw error;
   }
+}
+/**
+ * The history checks of a file whose rows all parsed. Each refusal is added to the batch errors in
+ * this order; the account summary with the rows comes back only when nothing refuses them.
+ */
+function checkCandidate(
+  batch: BatchRow,
+  rows: CsvNormalization['rows'],
+  instruments: Map<string, Instrument>,
+  journal: JournalRow,
+  heads: TradeVersion[],
+  ledger: ConnectedLedger,
+  id: string,
+  batchErrors: CsvIssue[],
+): AccountFifoResult['summary'] | null {
+  const added: FifoTrade[] = rows.map((row) => {
+    if (!row.execution) throw new Error('Missing normalized CSV execution');
+    const instrument = instruments.get(row.execution.instrumentId);
+    if (!instrument) throw new Error('Missing CSV instrument');
+    return {
+      ...row.execution,
+      tradeId: `csv:${batch.id}:${row.ordinal}`,
+      version: 1,
+      instrumentName: instrument.name,
+      instrumentSymbol: instrument.symbol,
+    };
+  });
+  const candidate = [...active(heads), ...added];
+  const add = (code: CsvIssue['code']) => batchErrors.push({ code, line: null, column: null });
+  if (added.some((t) => t.occurredAt < journal.coverageFrom.toISOString())) add('before-coverage');
+  const chronology = new Set<string>();
+  let duplicate = false;
+  for (const trade of candidate) {
+    const key = JSON.stringify([trade.occurredAt, trade.orderWithinTimestamp]);
+    if (chronology.has(key)) duplicate = true;
+    chronology.add(key);
+  }
+  if (duplicate) add('duplicate-chronology');
+  if (candidate.length > 1000) add('active-trade-cap');
+  if (journal.currentRevision + added.length > 10000) add('version-cap');
+  if (!duplicate && candidate.length <= 1000) {
+    const projected = projectCandidate(ledger, id, added.length, candidate);
+    if ('refusal' in projected) add(projected.refusal);
+    else return projected.summary;
+  }
+  return null;
 }
 
 @Injectable()
@@ -568,48 +619,17 @@ export class CsvImportService {
       : { rows: [], rowErrors: [], ignoredColumns: [], batchErrors: [document.error] };
     const batchErrors: CsvIssue[] = [...normalized.batchErrors];
     let candidateSummary: AccountFifoResult['summary'] | null = null;
-    if (!normalized.rowErrors.length && !batchErrors.length) {
-      const added: FifoTrade[] = normalized.rows.map((row) => {
-        if (!row.execution) throw new Error('Missing normalized CSV execution');
-        const instrument = instruments.get(row.execution.instrumentId);
-        if (!instrument) throw new Error('Missing CSV instrument');
-        return {
-          ...row.execution,
-          tradeId: `csv:${batch.id}:${row.ordinal}`,
-          version: 1,
-          instrumentName: instrument.name,
-          instrumentSymbol: instrument.symbol,
-        };
-      });
-      const candidate = [...active(heads), ...added];
-      const add = (code: CsvIssue['code']) => batchErrors.push({ code, line: null, column: null });
-      if (added.some((t) => t.occurredAt < journal.coverageFrom.toISOString()))
-        add('before-coverage');
-      const chronology = new Set<string>();
-      let duplicate = false;
-      for (const trade of candidate) {
-        const key = JSON.stringify([trade.occurredAt, trade.orderWithinTimestamp]);
-        if (chronology.has(key)) duplicate = true;
-        chronology.add(key);
-      }
-      if (duplicate) add('duplicate-chronology');
-      if (candidate.length > 1000) add('active-trade-cap');
-      if (journal.currentRevision + added.length > 10000) add('version-cap');
-      if (!duplicate && candidate.length <= 1000) {
-        try {
-          assertRevisionCapacity(ledger, id, added.length);
-          candidateSummary = projectConnectedLedger(ledger, {
-            accountId: id,
-            trades: candidate,
-          }).accounts.get(id)!.summary;
-        } catch (error) {
-          if (error instanceof OwnedTransferCapacityError) add('connected-capacity');
-          else if (error instanceof FifoHistoryError)
-            add(ledger.transfers.length ? 'connected-history' : 'insufficient-holdings');
-          else throw error;
-        }
-      }
-    }
+    if (!normalized.rowErrors.length && !batchErrors.length)
+      candidateSummary = checkCandidate(
+        batch,
+        normalized.rows,
+        instruments,
+        journal,
+        heads,
+        ledger,
+        id,
+        batchErrors,
+      );
     const canConfirm = normalized.rowErrors.length === 0 && batchErrors.length === 0;
     const tuple = tuples(settings);
     const previewHash = canConfirm
