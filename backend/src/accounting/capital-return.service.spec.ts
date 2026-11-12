@@ -103,32 +103,44 @@ interface World {
 
 function build(world: World) {
   const calls: [string, unknown[]][] = [];
-  let written = false;
+  // The version just written is what the replay read finds afterwards.
+  let replay = world.replay;
+  const versions = world.versions ?? [0, 0];
+  const journal = {
+    accountId: account,
+    requestId: '00000000-0000-4000-8000-000000000008',
+    canonicalPayload: '{}',
+    coverageFrom: new Date('2025-01-01T00:00:00.000Z'),
+    createdAt: new Date('2025-01-01T00:00:00.000Z'),
+    currentRevision: world.revision ?? 7,
+    originKind: 'declared-empty',
+    openingRevision: null,
+  };
   const query = async (sql: string, params: unknown[] = []) => {
     const name = label(sql);
     calls.push([name, params]);
-    if (name === 'read replay') return written ? [saved] : world.replay ? [world.replay] : [];
-    if (name === 'read account') return [{ id: account, currentRevision: 1 }];
-    if (name === 'read head') return world.head ? [world.head] : [];
-    if (name === 'count versions')
-      return [{ count: (world.versions ?? [0, 0])[params.length === 1 ? 0 : 1] }];
-    if (name === 'count heads') return [{ count: 1, active: 1 }];
-    if (name === 'lock accounts') return [{ id: account }];
-    if (name === 'read journals')
-      return [
-        {
-          accountId: account,
-          requestId: '00000000-0000-4000-8000-000000000008',
-          canonicalPayload: '{}',
-          coverageFrom: new Date('2025-01-01T00:00:00.000Z'),
-          createdAt: new Date('2025-01-01T00:00:00.000Z'),
-          currentRevision: world.revision ?? 7,
-          originKind: 'declared-empty',
-          openingRevision: null,
-        },
-      ];
-    if (name === 'insert version') written = true;
-    return [];
+    switch (name) {
+      case 'read replay':
+        return replay ? [replay] : [];
+      case 'read account':
+        return [{ id: account, currentRevision: 1 }];
+      case 'read head':
+        return world.head ? [world.head] : [];
+      case 'count versions':
+        // The owner count has one parameter, the account count two.
+        return [{ count: versions[params.length - 1] }];
+      case 'count heads':
+        return [{ count: 1, active: 1 }];
+      case 'lock accounts':
+        return [{ id: account }];
+      case 'read journals':
+        return [journal];
+      case 'insert version':
+        replay = saved;
+        return [];
+      default:
+        return [];
+    }
   };
   const manager = { query, queryRunner: { isTransactionActive: true } };
   const source = {

@@ -54,29 +54,35 @@ function label(sql: string): string {
 
 function build(world: World) {
   const calls: [string, unknown[]][] = [];
+  const snapshot = (revision: number) => ({
+    accountId: account,
+    revision,
+    requestId: '00000000-0000-4000-8000-000000000003',
+    asOf,
+    createdAt: created,
+    canonicalPayload: '{}',
+  });
   const query = async (sql: string, params: unknown[] = []) => {
     const name = label(sql);
     calls.push([name, params]);
-    if (name === 'read account') return [{ id: account, currentRevision: world.revision }];
-    if (name === 'read journal') return world.journal ? [world.journal] : [];
-    if (name === 'read snapshot')
-      return (world.snapshots ?? []).includes(params[2] as number)
-        ? [
-            {
-              accountId: account,
-              revision: params[2],
-              requestId: '00000000-0000-4000-8000-000000000003',
-              asOf,
-              createdAt: created,
-              canonicalPayload: '{}',
-            },
-          ]
-        : [];
-    if (name === 'read positions') return world.positions ?? [];
-    if (name === 'read lots') return world.lots ?? [];
-    if (name === 'read instruments')
-      return labels.filter((row) => (params[1] as string[]).includes(row.id));
-    return [];
+    switch (name) {
+      case 'read account':
+        return [{ id: account, currentRevision: world.revision }];
+      case 'read journal':
+        return world.journal ? [world.journal] : [];
+      case 'read snapshot':
+        return (world.snapshots ?? [])
+          .filter((revision) => revision === params[2])
+          .map((revision) => snapshot(revision));
+      case 'read positions':
+        return world.positions ?? [];
+      case 'read lots':
+        return world.lots ?? [];
+      case 'read instruments':
+        return labels.filter((row) => (params[1] as string[]).includes(row.id));
+      default:
+        return [];
+    }
   };
   const manager = { query, queryRunner: { isTransactionActive: true } };
   const source = {
