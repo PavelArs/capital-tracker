@@ -19,7 +19,13 @@ import {
   nextRunAt,
   type SourceOutcome,
 } from './price-collection';
-import { CoinGeckoClient, KrakenClient, type PriceFailure, type Quote } from './price-providers';
+import {
+  CoinGeckoClient,
+  KrakenClient,
+  type PriceFailure,
+  type Quote,
+  type TokenQuote,
+} from './price-providers';
 
 export type CollectionResult =
   | { outcome: 'collected'; stored: number; backfilled: number }
@@ -44,6 +50,38 @@ const BYBIT_MISS_TEXT: Record<BybitMarketMiss, string> = {
   rate_limited: 'rate limit reached for',
   invalid_response: 'sent an unreadable answer for',
 };
+/** TOKEN-ANY-PRICE: the tokens asked, those CoinGecko lists, and the quotes it gave. */
+interface TokenAnswers {
+  quotes: Quote[];
+  listed: { network: string; contract: string }[];
+  asked: { network: string; contract: string }[];
+}
+
+/**
+ * Each token of one answered request is asked; one CoinGecko returned is listed, and priced when
+ * its quote could be read.
+ */
+function readTokenBatch(
+  batch: readonly { network: string; contract: string; ticker: string }[],
+  prices: ReadonlyMap<string, TokenQuote | null>,
+  found: TokenAnswers,
+) {
+  for (const token of batch) {
+    found.asked.push(token);
+    if (!prices.has(token.contract)) continue;
+    found.listed.push(token);
+    const price = prices.get(token.contract);
+    if (!price) continue;
+    found.quotes.push({
+      asset: token.ticker,
+      price: price.price,
+      observedAt: price.observedAt,
+      kind: 'spot',
+      source: 'coingecko',
+    });
+  }
+}
+
 // Arbitrary constant identifying the price collector's session advisory lock.
 const LOCK_KEY = 7_340_600_001;
 const INSERT_BATCH = 1000;
@@ -240,39 +278,7 @@ export class PricesService {
         [new Date(now.getTime() - UNLISTED_RECHECK_MS), MAX_TOKENS, [...anyTokenNetworks]],
       );
     if (due.length === 0) return 0;
-    const quotes: Quote[] = [];
-    const listed: { network: string; contract: string }[] = [];
-    const asked: { network: string; contract: string }[] = [];
-    let failure: PriceFailure | null = null;
-    for (const network of anyTokenNetworks) {
-      const own = due.filter((token) => token.network === network);
-      for (let start = 0; start < own.length && !failure; start += TOKENS_PER_REQUEST) {
-        const batch = own.slice(start, start + TOKENS_PER_REQUEST);
-        const answer = await this.coingecko.tokens(
-          isEvmNetwork(network) ? evmChain(network).coingeckoPlatform : network,
-          batch.map(({ contract }) => contract),
-          now,
-        );
-        if (!answer.ok) {
-          failure = answer.reason;
-          break;
-        }
-        for (const token of batch) {
-          asked.push(token);
-          if (!answer.prices.has(token.contract)) continue;
-          listed.push(token);
-          const found = answer.prices.get(token.contract);
-          if (!found) continue;
-          quotes.push({
-            asset: token.ticker,
-            price: found.price,
-            observedAt: found.observedAt,
-            kind: 'spot',
-            source: 'coingecko',
-          });
-        }
-      }
-    }
+    const { quotes, listed, asked, failure } = await this.askTokenPrices(due, now);
     const outcome: SourceOutcome = failure
       ? { state: 'failed', errorCode: failure, errorMessage: failureMessage('coingecko', failure) }
       : { state: 'synced', errorCode: null, errorMessage: null };
@@ -296,6 +302,35 @@ export class PricesService {
     // What the app remembers of the tokens (whether a source lists one) follows the table.
     await loadChainTokens(this.source.manager);
     return stored;
+  }
+
+  /**
+   * TOKEN-ANY-PRICE: asks CoinGecko for the due tokens, network by network in requests of
+   * TOKENS_PER_REQUEST; a failed request ends the asking.
+   */
+  private async askTokenPrices(
+    due: readonly { network: AnyTokenNetwork; contract: string; ticker: string }[],
+    now: Date,
+  ) {
+    const found: TokenAnswers = { quotes: [], listed: [], asked: [] };
+    let failure: PriceFailure | null = null;
+    for (const network of anyTokenNetworks) {
+      const own = due.filter((token) => token.network === network);
+      for (let start = 0; start < own.length && !failure; start += TOKENS_PER_REQUEST) {
+        const batch = own.slice(start, start + TOKENS_PER_REQUEST);
+        const answer = await this.coingecko.tokens(
+          isEvmNetwork(network) ? evmChain(network).coingeckoPlatform : network,
+          batch.map(({ contract }) => contract),
+          now,
+        );
+        if (!answer.ok) {
+          failure = answer.reason;
+          break;
+        }
+        readTokenBatch(batch, answer.prices, found);
+      }
+    }
+    return { ...found, failure };
   }
 
   // Kraken daily candles from 2025-01-01, until every catalog asset succeeded once.
