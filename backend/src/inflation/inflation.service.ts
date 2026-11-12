@@ -5,7 +5,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { parseUuid } from '../accounting/input';
 import { type AccountingCurrency, accountingCurrencies } from '../fx-rates/fx-conversion';
 import { errorMessage, trackJob } from '../observability/metrics';
-import { presentSource, recordSource, type SourceRow } from '../sync-status/sync-source';
+import { presentSource, recordSource, runLocked, type SourceRow } from '../sync-status/sync-source';
 import {
   parseCurrency,
   parseFactorQuery,
@@ -161,30 +161,16 @@ export class InflationService {
   }
 
   async collect(now = new Date(), onlyIfDue = false): Promise<InflationCollectionResult> {
-    const runner = this.source.createQueryRunner();
-    await runner.connect();
-    try {
-      await runner.startTransaction();
-      try {
-        const [lock]: { locked: boolean }[] = await runner.query(
-          'SELECT pg_try_advisory_xact_lock($1) AS locked',
-          [LOCK_KEY],
+    return runLocked(this.source, LOCK_KEY, async () => {
+      if (onlyIfDue) {
+        const [row]: { at: Date | null }[] = await this.source.query(
+          'SELECT "nextRunAt" AS at FROM sync_sources WHERE key = $1',
+          [INFLATION_SOURCE_KEY],
         );
-        if (!lock.locked) return { outcome: 'busy' };
-        if (onlyIfDue) {
-          const [row]: { at: Date | null }[] = await this.source.query(
-            'SELECT "nextRunAt" AS at FROM sync_sources WHERE key = $1',
-            [INFLATION_SOURCE_KEY],
-          );
-          if (row?.at && row.at.getTime() > now.getTime()) return { outcome: 'not_due' };
-        }
-        return { outcome: 'collected', stored: await this.collectMonths(now) };
-      } finally {
-        await runner.rollbackTransaction();
+        if (row?.at && row.at.getTime() > now.getTime()) return { outcome: 'not_due' };
       }
-    } finally {
-      await runner.release();
-    }
+      return { outcome: 'collected', stored: await this.collectMonths(now) };
+    });
   }
 
   private async collectMonths(now: Date): Promise<number> {

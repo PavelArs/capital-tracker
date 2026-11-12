@@ -6,7 +6,7 @@ import { readSplits } from '../accounting/share-split.store';
 import { moscowDate } from '../fx-rates/fx-conversion';
 import { errorMessage, trackJob } from '../observability/metrics';
 import { isDue, nextRunAt, RUN_OFFSET_MS } from '../prices/price-collection';
-import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
+import { INTERRUPTED_AFTER_MS, recordSource, runLocked } from '../sync-status/sync-source';
 import { BrokerConnectionsService, NO_HOLDINGS } from './broker-connections.service';
 import {
   closeInstant,
@@ -84,31 +84,15 @@ export class BrokerPriceSyncService {
 
   async tick(now = new Date()): Promise<BrokerPriceTick> {
     if (!this.enabled) return { outcome: 'disabled' };
-    // A transaction-scoped advisory lock on a dedicated connection: one refresh at a time,
-    // released by the rollback below or by the connection ending, never left behind.
-    const runner = this.source.createQueryRunner();
-    await runner.connect();
-    try {
-      await runner.startTransaction();
-      try {
-        const [lock]: { locked: boolean }[] = await runner.query(
-          'SELECT pg_try_advisory_xact_lock($1) AS locked',
-          [LOCK_KEY],
-        );
-        if (!lock.locked) return { outcome: 'busy' };
-        // Checked under the lock so a run that just finished elsewhere is not repeated.
-        const [row]: { lastAttemptAt: Date | null }[] = await this.source.query(
-          'SELECT "lastAttemptAt" FROM sync_sources WHERE key = $1',
-          [BROKER_PRICES_KEY],
-        );
-        if (!isDue(row?.lastAttemptAt ?? null, now)) return { outcome: 'not_due' };
-        return await this.refresh(now);
-      } finally {
-        await runner.rollbackTransaction();
-      }
-    } finally {
-      await runner.release();
-    }
+    return runLocked(this.source, LOCK_KEY, async () => {
+      // Checked under the lock so a run that just finished elsewhere is not repeated.
+      const [row]: { lastAttemptAt: Date | null }[] = await this.source.query(
+        'SELECT "lastAttemptAt" FROM sync_sources WHERE key = $1',
+        [BROKER_PRICES_KEY],
+      );
+      if (!isDue(row?.lastAttemptAt ?? null, now)) return { outcome: 'not_due' };
+      return await this.refresh(now);
+    });
   }
 
   /** One pass over every T-Bank connection of a live broker account. */
