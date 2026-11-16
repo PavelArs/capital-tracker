@@ -17,7 +17,7 @@ ENV VITE_API_URL=$VITE_API_URL
 
 RUN pnpm --dir frontend build
 
-FROM nginx:1.31.8-alpine-slim@sha256:9c68ad4f28e7dee4b9484a7859bf451da39ef661bcd038ef62e87593fcd91c86 AS release
+FROM nginx:1.31.8-alpine-slim@sha256:4c734d33ee731135dc9f2349914a34551c920f4451fca8bb05bf5880eb9079e8 AS release
 
 # CVE-2026-103111: the pinned base ships pcre2 10.47-r0; require the fixed Alpine package.
 # CVE-2026-14456 and CVE-2026-45447: it also ships OpenSSL 3.5.6-r0; require 3.5.8-r0.
