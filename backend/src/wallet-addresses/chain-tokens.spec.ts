@@ -8,6 +8,7 @@ import {
 } from './chain-assets';
 import {
   countableLegs,
+  loadChainTokens,
   MIN_TOKEN_TICKER,
   newTicker,
   reservedTickers,
@@ -54,6 +55,35 @@ describe('TOKEN-ANY: how an other token is named', () => {
       expect(ticker.length).toBeGreaterThanOrEqual(MIN_TOKEN_TICKER);
       expect(isBybitCoin(ticker)).toBe(false);
     }
+  });
+
+  it('TOKEN-TICKER remembers no reading of the tokens that ends after one begun later', async () => {
+    const row = (ticker: string) => ({
+      network: 'ethereum',
+      contract,
+      symbol: 'SYN',
+      name: 'Synthetic',
+      decimals: 18,
+      ticker,
+      coingeckoId: null,
+    });
+    const answers: ((rows: unknown[]) => void)[] = [];
+    const manager = {
+      query: () => new Promise<unknown[]>((resolve) => answers.push(resolve)),
+    } as never;
+    // A reading begun before a rename answers last, with the ticker the token gave up.
+    const before = loadChainTokens(manager);
+    const after = loadChainTokens(manager);
+    answers[1]([row('SYN7F3A7F')]);
+    await after;
+    answers[0]([row('SYN')]);
+    await before;
+    expect(chainAsset('ethereum', contract).symbol).toBe('SYN7F3A7F');
+    // A reading begun later is remembered again.
+    const next = loadChainTokens(manager);
+    answers[2]([row('SYN7F3A7F2')]);
+    await next;
+    expect(chainAsset('ethereum', contract).symbol).toBe('SYN7F3A7F2');
   });
 
   it('cleans the text a token chose and falls back to its name or contract', () => {

@@ -137,12 +137,24 @@ const asAsset = (row: TokenRow): ChainAsset | null =>
       }
     : null;
 
-/** Reads every stored token into the app's list of assets. */
+// Readings of chain_tokens begun, and the latest whose rows the app remembers.
+let readings = 0;
+let remembered = 0;
+
+/**
+ * Reads every stored token into the app's list of assets. A reading that ends after one begun
+ * later is not remembered: its rows may name a token by a ticker it has since given up
+ * (TOKEN-TICKER).
+ */
 export async function loadChainTokens(manager: EntityManager): Promise<number> {
+  const reading = ++readings;
   const rows: TokenRow[] = await manager.query(
     'SELECT network, contract, symbol, name, decimals, ticker, "coingeckoId" FROM chain_tokens',
   );
-  rememberTokens(rows.flatMap((row) => asAsset(row) ?? []));
+  if (reading > remembered) {
+    remembered = reading;
+    rememberTokens(rows.flatMap((row) => asAsset(row) ?? []));
+  }
   return rows.length;
 }
 
@@ -267,7 +279,8 @@ export async function separateTokenTickers(
     await manager.query(
       `INSERT INTO price_observations (asset, "quoteCurrency", source, "observedAt", price, kind)
         SELECT $2, "quoteCurrency", source, "observedAt", price, kind FROM price_observations
-          WHERE asset = $1 AND source = 'coingecko'`,
+          WHERE asset = $1 AND source = 'coingecko'
+        ON CONFLICT DO NOTHING`,
       [row.ticker, ticker],
     );
     renamed++;

@@ -1397,11 +1397,13 @@ async function main() {
         JSON.stringify({ name: 'Synthetic TON copy', symbol: 'TON' }),
       ],
     );
+    // One price five minutes ago, one 60 days ago: before Bybit's daily history of TON begins.
     const tonTokenPriceAt = new Date(Date.now() - 5 * 60_000);
+    const tonTokenFirstAt = new Date(Date.now() - 60 * DAY);
     await db.query(
       `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-        VALUES ('TON','USD','coingecko',$1,'0.0001','spot')`,
-      [tonTokenPriceAt],
+        VALUES ('TON','USD','coingecko',$1,'0.0001','spot'), ('TON','USD','coingecko',$2,'0.0002','spot')`,
+      [tonTokenPriceAt, tonTokenFirstAt],
     );
 
     // BYBIT-ANY-COIN: an account read while the app tracked only BTC, ETH, SOL, USDT and USDC.
@@ -1712,10 +1714,31 @@ async function main() {
         [tonTicker],
       );
       assert.deepEqual(
-        tokenPrices.map((row) => [row.asset, row.source, row.price, row.observedAt.getTime()]),
+        tokenPrices
+          .map((row) => [row.asset, row.source, row.price, row.observedAt.getTime()])
+          .sort((left, right) => left[0].localeCompare(right[0]) || left[3] - right[3]),
         [
+          ['TON', 'coingecko', '0.0002', tonTokenFirstAt.getTime()],
           ['TON', 'coingecko', '0.0001', tonTokenPriceAt.getTime()],
+          [tonTicker, 'coingecko', '0.0002', tonTokenFirstAt.getTime()],
           [tonTicker, 'coingecko', '0.0001', tonTokenPriceAt.getTime()],
+        ],
+      );
+      // EST-AT-TIME: 50 days ago the coin has no price before (the token's is not its own), so
+      // the first Bybit close after counts; the token keeps its own price from before.
+      const { readNearPrices, nearKey } = require(`${dist}/accounting/estimated-cost.js`);
+      const coinAsset = assets.find((row) => row.symbol === 'TON').id;
+      const fiftyDaysAgo = new Date(Date.now() - 50 * DAY).toISOString();
+      const near = await readNearPrices(db.manager, owner, [
+        { instrumentId: coinAsset, at: fiftyDaysAgo },
+        { instrumentId: tonTokenAsset, at: fiftyDaysAgo },
+      ]);
+      assert.deepEqual(
+        [near.get(nearKey(coinAsset, fiftyDaysAgo)), near.get(nearKey(tonTokenAsset, fiftyDaysAgo))]
+          .map((price) => [price.source, price.priceUsd]),
+        [
+          ['bybit', '3'],
+          ['coingecko', '0.0002'],
         ],
       );
       const { marketPricesAt } = require(`${dist}/prices/market-price.store.js`);
@@ -1758,12 +1781,23 @@ async function main() {
       'PASS TOKEN-TICKER a token that held the code TON from before tickers grew long gives it up when Bybit first records TON: two assets, the token renamed with its history and its CoinGecko price stored again under its new ticker, the coin priced from Bybit only; a code Bybit recorded before is left as it is',
     );
 
-    // TOKEN-TICKER: another such token holds DOT, which Bybit has not recorded.
+    // TOKEN-TICKER: another such token holds DOT, which Bybit has not recorded, with its asset.
     const dotToken = `0x${'6d'.repeat(20)}`;
+    const dotTokenAsset = randomUUID();
     await db.query(
       `INSERT INTO chain_tokens (network, contract, symbol, name, decimals, ticker)
         VALUES ('ethereum', $1, 'DOT', 'Synthetic DOT copy', 18, 'DOT')`,
       [dotToken],
+    );
+    await db.query(
+      `INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload","assetType","valuationCurrency","priceSource")
+        VALUES($1,$2,'Synthetic DOT copy','DOT',$3,$4,'crypto','USD','market')`,
+      [
+        dotTokenAsset,
+        owner,
+        randomUUID(),
+        JSON.stringify({ name: 'Synthetic DOT copy', symbol: 'DOT' }),
+      ],
     );
 
     // BYBIT-COUNT-GAP: Bybit holds 3 DOT no record explains (a purchase the API never lists)
@@ -1967,13 +2001,27 @@ async function main() {
       "PASS BYBIT-COUNT-GAP a difference between Bybit's balance and the records is counted as one more record of the account: 3 DOT Bybit holds without a record become a deposit, 5 TON it holds fewer a withdrawal, both counting at once without a purchase price and with a market-priced asset; the same request stores one record; a balance Bybit no longer reports, a difference larger than the balance and bad input store nothing",
     );
 
-    // TOKEN-TICKER: counting the DOT difference by hand made the token give the code up too.
+    // TOKEN-TICKER: counting the DOT difference by hand made the token give the code up too;
+    // the counted DOT is an asset of its own, the token's asset carries its new ticker.
+    const dotTicker = `DOT${'6D'.repeat(3)}`;
     assert.deepEqual(
       await db.query('SELECT ticker FROM chain_tokens WHERE contract=$1', [dotToken]),
-      [{ ticker: `DOT${'6D'.repeat(3)}` }],
+      [{ ticker: dotTicker }],
+    );
+    const dotAssets = await db.query(
+      `SELECT id, symbol FROM accounting_instruments WHERE "ownerId"=$1 AND symbol IN ('DOT',$2)
+        ORDER BY symbol`,
+      [owner, dotTicker],
+    );
+    assert.deepEqual(
+      dotAssets.map((row) => [row.symbol, row.id === dotTokenAsset]),
+      [
+        ['DOT', false],
+        [dotTicker, true],
+      ],
     );
     console.log(
-      'PASS TOKEN-TICKER-GAP a token holding the code of a coin the owner counts by hand gives it up before the record is stored',
+      'PASS TOKEN-TICKER-GAP a token holding the code of a coin the owner counts by hand gives the code up: the counted DOT is an asset of its own and the token keeps its asset under its new ticker',
     );
 
     // BYBIT-GAP-COVERED: the TON difference counted above was counted from the balance Bybit
