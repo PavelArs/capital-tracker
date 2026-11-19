@@ -58,7 +58,8 @@ CI_WORKFLOW = '.github/workflows/ci.yml'
 DEPLOY_EVENTS = ('workflow_run', 'workflow_dispatch')
 API = 'https://api.github.com'
 CLONE_URL = 'https://github.com/' + REPOSITORY + '.git'
-RUN_URL = 'https://github.com/' + REPOSITORY + '/actions/runs/{}'
+# Names the attempt: the waiting job of cd.yml accepts only a status that names its own.
+RUN_URL = 'https://github.com/' + REPOSITORY + '/actions/runs/{}/attempts/{}'
 # The deploy job uploads this artifact when it waits for the agent. Observe mode also
 # watches the receipt of today's SSH release, so the agent can be checked before it acts.
 REQUEST_ARTIFACT = 'server-release-request'
@@ -107,7 +108,7 @@ LOCK_KEPT = 'the daily backup or another release kept the server lock'
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
-ACTIVE_MARKER = re.compile(r'active-([1-9][0-9]{0,19})-([1-9][0-9]{0,9})')
+ACTIVE_MARKER = re.compile(r'active-([1-9][0-9]{0,19})-([1-9][0-9]{0,19})')
 SHA256 = re.compile(r'[a-f0-9]{64}')
 TOKEN = re.compile(r'github_pat_[A-Za-z0-9_]{20,255}')
 RECEIPT_NAME = re.compile(r'([a-f0-9]{40})-([1-9][0-9]{0,19})\.json')
@@ -404,7 +405,9 @@ def check_run(run, mode):
     if run.get('status') not in (('in_progress',) if mode == 'active' else ('in_progress', 'completed')):
         raise Refusal('run is not in progress')
     run_id, attempt = run.get('id'), run.get('run_attempt')
-    if type(run_id) is not int or not _full(RUN_ID, str(run_id)) or type(attempt) is not int or attempt < 1:
+    # Both bounded like ACTIVE_MARKER, so every marker of a release can be read again.
+    if (type(run_id) is not int or not _full(RUN_ID, str(run_id))
+            or type(attempt) is not int or not _full(RUN_ID, str(attempt))):
         raise Refusal('malformed run identity')
     if not _full(COMMIT, run.get('head_sha')):
         raise Refusal('malformed run commit')
@@ -672,10 +675,10 @@ def _describe(text):
     return text[:140].rstrip() or 'No output'
 
 
-def report(github, commit, run_id, state, description):
+def report(github, commit, run_id, attempt, state, description):
     github.post('/repos/{}/statuses/{}'.format(REPOSITORY, commit), {
         'state': state, 'context': STATUS_CONTEXT, 'description': _describe(description),
-        'target_url': RUN_URL.format(run_id),
+        'target_url': RUN_URL.format(run_id, attempt),
     })
 
 
@@ -733,10 +736,10 @@ def read_marker(path):
     return marker
 
 
-def deliver(github, log, path, marker):
+def deliver(github, log, path, marker, attempt):
     """Post a finished outcome; an unreachable GitHub leaves it for the next pass."""
     try:
-        report(github, marker['commit'], marker['runId'], marker['state'], marker['description'])
+        report(github, marker['commit'], marker['runId'], attempt, marker['state'], marker['description'])
     except (Unavailable, Refusal) as error:
         log('Could not report deploy run {} yet: {}'.format(marker['runId'], error))
         return
@@ -780,7 +783,7 @@ def deliver_pending_outcomes(cfg, github, log, now=time.time):
             log('Deploy run {} attempt {}: not reported, a later attempt for commit {} supersedes it'.format(
                 order[0], order[1], marker['commit']))
             continue
-        deliver(github, log, path, marker)
+        deliver(github, log, path, marker, order[1])
 
 
 def _note_agent_version(cfg, log):
@@ -846,7 +849,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
         if claim(cfg, mode, run_id, attempt, marker):
             log('Deploy run {} attempt {}: {}'.format(run_id, attempt, description))
             if mode == 'active':
-                deliver(github, log, path, marker)
+                deliver(github, log, path, marker, attempt)
         return 2
     identity = 'commit {} (deploy run {} attempt {}, CI run {}, approved by {})'.format(
         head, run_id, attempt, receipt['runId'], APPROVER)
@@ -863,7 +866,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     _note_agent_version(cfg, log)
     log('Releasing {}'.format(identity))
     try:
-        report(github, head, run_id, 'pending', 'Server release started')
+        report(github, head, run_id, attempt, 'pending', 'Server release started')
     except (Unavailable, Refusal) as error:
         log('Could not report the start: {}'.format(error))
     try:
@@ -888,7 +891,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     marker = dict(marker, state='success' if code == 0 else 'failure', description=_describe(last))
     update_marker(path, marker)
     log('Release {}: {}'.format('succeeded' if code == 0 else 'failed', identity))
-    deliver(github, log, path, marker)
+    deliver(github, log, path, marker, attempt)
     return 0 if code == 0 else 1
 
 

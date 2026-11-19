@@ -242,13 +242,14 @@ class ReleasesApprovedRuns(AgentFixture):
         self.assertEqual(options['cwd'], '/')
         self.assertEqual((self.state / 'repo/scripts/manual-mvp-release.sh').read_text(), '# synthetic runner\n')
 
-    def test_reports_pending_then_success_on_the_commit_with_the_run_link(self):
+    def test_reports_pending_then_success_on_the_commit_with_the_attempt_link(self):
         self.run_agent()
         self.assertEqual(self.statuses(), [('pending', 'Server release started'), ('success', 'Release verified')])
-        path, body = self.github.posts[-1]
-        self.assertEqual(path, '/repos/{}/statuses/{}'.format(R, self.commit))
-        self.assertEqual(body['context'], 'production-release')
-        self.assertEqual(body['target_url'], 'https://github.com/{}/actions/runs/{}'.format(R, RUN_ID))
+        # The waiting job accepts only a status that names its own attempt.
+        for path, body in self.github.posts:
+            self.assertEqual(path, '/repos/{}/statuses/{}'.format(R, self.commit))
+            self.assertEqual(body['context'], 'production-release')
+            self.assertEqual(body['target_url'], 'https://github.com/{}/actions/runs/{}/attempts/1'.format(R, RUN_ID))
 
     def test_releases_each_run_attempt_once(self):
         self.run_agent()
@@ -262,8 +263,22 @@ class ReleasesApprovedRuns(AgentFixture):
             'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
             'created_at': '2026-11-19T11:05:00Z', 'workflow_run': {'id': RUN_ID},
         })
+        self.github.posts.clear()
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(len(self.popen.calls), 2)
+        # Both statuses name the second attempt, the one whose job now waits.
+        self.assertEqual([body['target_url'] for _, body in self.github.posts],
+                         ['https://github.com/{}/actions/runs/{}/attempts/2'.format(R, RUN_ID)] * 2)
+
+    def test_a_refused_attempt_is_reported_on_its_own_attempt(self):
+        self.serve(run=self.run_object(run_attempt=3))
+        self.github.responses['/repos/{}/git/ref/heads/main'.format(R)] = {'object': {'sha': 'e' * 40}}
+        self.assertEqual(self.run_agent(), 2)
+        self.assertEqual(self.popen.calls, [])
+        (path, body), = self.github.posts
+        self.assertEqual(path, '/repos/{}/statuses/{}'.format(R, self.commit))
+        self.assertEqual(body['state'], 'failure')
+        self.assertEqual(body['target_url'], 'https://github.com/{}/actions/runs/{}/attempts/3'.format(R, RUN_ID))
 
     def test_failed_runner_reports_failure_with_its_last_line(self):
         self.assertEqual(self.run_agent(FakePopen(0, 1)), 1)
@@ -609,8 +624,11 @@ class ReportsEveryOutcome(AgentFixture):
                            ('active-800-1', other, 'failure', False))
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(self.popen.calls, [])
-        posted = sorted((path.rsplit('/', 1)[1], body['state']) for path, body in self.github.posts)
-        self.assertEqual(posted, sorted([(other, 'failure'), (self.commit, 'success')]))
+        posted = sorted((path.rsplit('/', 1)[1], body['state'], body['target_url']) for path, body in self.github.posts)
+        self.assertEqual(posted, sorted([
+            (other, 'failure', 'https://github.com/{}/actions/runs/800/attempts/1'.format(R)),
+            (self.commit, 'success', 'https://github.com/{}/actions/runs/{}/attempts/2'.format(R, RUN_ID)),
+        ]))
 
     def test_old_markers_are_not_read_again(self):
         runs = self.state / 'runs'
@@ -740,6 +758,7 @@ class IgnoresUnapprovedOrForeignRuns(AgentFixture):
             ({'repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
             ({'head_repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
             ({'id': '900'}, 'malformed run identity'), ({'run_attempt': 0}, 'malformed run identity'),
+            ({'run_attempt': 10 ** 20}, 'malformed run identity'),
             ({'head_sha': 'E' * 40}, 'malformed run commit'),
         ):
             with self.subTest(change=change):
