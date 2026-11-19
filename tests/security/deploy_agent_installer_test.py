@@ -171,6 +171,26 @@ class InstallsInObserveMode(InstallerFixture):
         self.assertIn('local changes', result.stderr)
         self.assertEqual([call for call in self.calls() if call[0] != 'id'], [])
 
+    def test_refuses_to_run_outside_a_git_checkout(self):
+        shutil.rmtree(str(self.checkout / '.git'))
+        self.extra_env = {'GIT_CEILING_DIRECTORIES': str(self.root)}
+        result = self.run_installer('install', token=TOKEN)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Run this from a Git checkout', result.stderr)
+        self.assertFalse((self.server / 'libexec').exists())
+
+    def test_a_refused_token_copy_does_not_outlive_the_installer(self):
+        temporary = self.root / 'tmp'
+        temporary.mkdir()
+        self.extra_env = {'TMPDIR': str(temporary)}
+        (self.server / 'etc').mkdir()
+        os.symlink(str(self.root / 'elsewhere'), str(self.server / 'etc/deploy-agent.token.next'))
+        result = self.run_installer('install', token=TOKEN)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Refusing symlink', result.stderr)
+        self.assertEqual(list(temporary.iterdir()), [])
+        self.assertFalse((self.root / 'elsewhere').exists())
+
     def test_never_writes_through_a_symlink(self):
         (self.server / 'etc').mkdir()
         outside = self.root / 'outside.json'

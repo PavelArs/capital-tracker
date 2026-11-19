@@ -28,8 +28,14 @@ usage() {
 }
 
 clean_checkout() {
-  [[ -z $(git -C "$source" status --porcelain --untracked-files=no) ]] || { echo 'Checkout has local changes' >&2; exit 1; }
+  local changes
+  changes=$(git -C "$source" status --porcelain --untracked-files=no) || { echo 'Run this from a Git checkout of the repository' >&2; exit 1; }
+  [[ -z $changes ]] || { echo 'Checkout has local changes' >&2; exit 1; }
 }
+
+# Staged copies (the token among them) never outlive the script.
+staged=''
+trap 'rm -f "$staged"' EXIT
 
 # Never write through a link: each file is staged beside its target, then renamed over it.
 publish() {
@@ -48,7 +54,6 @@ install_files() {
 }
 
 set_mode() {
-  local staged
   staged=$(mktemp)
   printf '{"mode": "%s"}\n' "$1" >"$staged"
   publish "$staged" "$config" 0644
@@ -57,7 +62,7 @@ set_mode() {
 }
 
 read_token() {
-  local value staged
+  local value
   if [[ -t 0 ]]; then printf 'Paste the fine-grained GitHub token (input hidden): ' >&2; fi
   IFS= read -rs value || true
   if [[ -t 0 ]]; then echo >&2; fi

@@ -16,7 +16,10 @@ until the owner switches:
 2. **Deploy job waits for the server.** With the repository variable `DEPLOY_PULL=true`,
    `cd.yml` uploads a `server-release-request` artifact instead of calling the dispatcher
    and waits for the agent's commit status. The owner switches the agent to `active` at
-   the same time.
+   the same time. Two constraints for that change: only the job in the `production`
+   environment may upload the request (the approvals API names no attempt, so the
+   approval is bound to an attempt only because that job cannot start without one), and
+   the job must wait longer than the agent's 40-minute lock wait plus a release.
 3. **Retire the dispatcher** after two releases through the agent: remove its workflow
    steps, scripts and tests, then the owner removes the `capital-release` account, its
    sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret.
@@ -41,8 +44,14 @@ and the agent asks the GitHub API. It releases a run only when all of these hold
 
 Each attempt of a deploy run is handled once: a marker under
 `/var/lib/capital-tracker-agent/runs/` records it before the runner starts, so a re-run
-needs a new approval. A request that is still waiting for approval, belongs to an older
-commit or comes from another workflow is ignored.
+needs a new approval. A run that is still waiting for approval or comes from another
+workflow, branch or repository is ignored. A waiting run whose commit is no longer the head
+of `main` gets a `failure` status at once, so its job ends instead of waiting.
+
+After waiting for the server lock, and again between the runner's preflight and deploy,
+the agent re-reads the run and `main`: if the job stopped waiting (cancelled, timed out,
+re-run) or `main` moved on, it stops before changing anything. If GitHub cannot be reached
+for that check, nothing is released.
 
 The consequence the owner accepted: the release scripts that run as root come from the
 approved commit, not from a copy installed by hand. Whoever controls the owner's GitHub
@@ -50,19 +59,27 @@ account and can approve a deployment can therefore run code as root on the serve
 only change the application. Keep two-factor authentication on that account and the
 required reviewer on `production`.
 
-Before the runner starts, the agent repeats the dispatcher's local checks: the runtime
+Before the runner starts, the agent repeats most of the dispatcher's local checks: the runtime
 directory `/var/snap/docker/common/capital-tracker` is root-owned without symlinks or
 group/world-writable entries (`.mfa-key` and `operator/` may belong to uid 1000),
 `.env.release` and `.backup-key` are root-owned regular files, and the dedicated registry
 configuration `/etc/capital-tracker/docker-config` has no plugins of its own. The runner
 gets a fixed environment (`DOCKER_CONFIG`, `RELEASE_*`, a clean `PATH`) and the compose
 file of the approved commit. If the daily backup holds the server lock, the agent waits
-up to 45 minutes instead of failing.
+up to 40 minutes instead of failing. Two dispatcher checks are not repeated: the Snap
+Docker plugin tree (read-only Snap files that only snapd changes) and the content of the
+PostgreSQL pins (only read for a `resume-fresh` installation, which the agent refuses).
 
 In `active` mode the agent reports on the commit as the status `production-release`:
 `pending` when it starts, then `success` or `failure` with the runner's last line and a
 link to the deploy run. The full output goes to the journal on the server
-(`journalctl -u capital-tracker-deploy-agent`).
+(`journalctl -u capital-tracker-deploy-agent`). An outcome GitHub could not take is posted
+again by later passes for a day; a release left open by a stopped pass (for example a
+reboot) is reported as `failure` and never started again.
+
+Observe mode reads the same runs, including ones that finished before a pass saw them
+(the dispatcher's release often ends within a minute of its receipt upload), never posts
+a status, never takes the server lock and never starts the runner.
 
 ## Files on the server
 
@@ -92,8 +109,10 @@ runtime directory or the containers.
    bash scripts/deploy-agent-install.sh install
    ```
 
-   It asks for the token (input hidden), installs the agent in observe mode, checks that
-   the token can read this repository's Actions and enables the timer.
+   It asks for the token (input hidden), installs the agent in observe mode, makes every
+   read a release makes (the head of `main`, the newest deploy run with its approvals and
+   artifacts, downloading its receipt when there is one, and commit statuses) and enables
+   the timer. Writing the status is first tried by the first active release.
 3. Approve the next release as usual. The dispatcher deploys it; the journal
    (`journalctl -u capital-tracker-deploy-agent`) should show
    `Observe mode: would release commit …` with the same digests as the deploy run's receipt.
@@ -122,3 +141,5 @@ journal says so; run `update` from that commit.
 Verification: `pnpm test:security` runs `tests/security/deploy_agent_test.py` (agent,
 against recorded GitHub API shapes with real git, files, archive and lock) and
 `tests/security/deploy_agent_installer_test.py` (installer, in a disposable server tree).
+The application-uid ownership case needs root; CI runs it with `sudo` in the
+Specification and Engineering Gates job.

@@ -9,6 +9,8 @@ After=network-online.target
 Type=oneshot
 ExecStart=/usr/bin/python3 -I /usr/local/libexec/capital-tracker/deploy-agent run
 UMask=0077
-# Covers waiting for the daily backup's lock, the encrypted backup, its restore check,
-# migrations and the health checks of one release.
-TimeoutStartSec=90min
+# Covers waiting up to 40 minutes for the daily backup's lock, the encrypted backup, its
+# restore check, migrations and the health checks of one release. If it ever fires, the
+# runner's rollback (application restart and health checks) gets 15 minutes before SIGKILL.
+TimeoutStartSec=2h
+TimeoutStopSec=15min

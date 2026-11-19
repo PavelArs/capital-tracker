@@ -17,8 +17,13 @@ It then runs the release runner from that clone (preflight, then deploy) and rep
 outcome as the commit status `production-release`, which the waiting deploy job reads.
 Each attempt of a deploy run is released at most once.
 
+Right before the runner starts, and again between its preflight and deploy, the agent
+checks that the run still waits and that main has not moved. An outcome GitHub could not
+take is posted again by later passes.
+
 Mode, from /etc/capital-tracker/deploy-agent.json:
-  observe  verify everything above and log what would be released; never release
+  observe  verify everything above, also for just-finished runs, and log what would be
+           released; never release, post or take the server lock
   active   release as above
 
 Usage: deploy-agent [run|check]
@@ -42,6 +47,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 
 REPOSITORY = 'PavelArs/capital-tracker'
 APPROVER = 'PavelArs'
@@ -87,9 +93,14 @@ MAX_ARTIFACT_BYTES = 1024 * 1024
 MAX_RECEIPT_BYTES = 64 * 1024
 MAX_FILE_BYTES = 1024 * 1024
 MAX_TREE_ENTRIES = 100000
-LOCK_WAIT_SECONDS = 45 * 60
+# Shorter than the deploy job's wait for the server, so a waiting job is still there.
+LOCK_WAIT_SECONDS = 40 * 60
 LOCK_RETRY_SECONDS = 30
 GIT_TIMEOUT_SECONDS = 600
+# Unreported outcomes are retried for a day; the deploy job has long given up by then.
+MARKER_RETRY_SECONDS = 24 * 60 * 60
+MARKER_STATES = ('started', 'success', 'failure', 'observed')
+STOPPED_DURING_RELEASE = 'The agent stopped during this release; see journalctl -u capital-tracker-deploy-agent'
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
@@ -367,39 +378,46 @@ def main_head(github):
     return sha
 
 
-def running_deploy_runs(github):
-    data = github.get('/repos/{}/actions/workflows/cd.yml/runs?branch=main&status=in_progress&per_page=20'.format(REPOSITORY))
+def deploy_runs(github, mode):
+    # Observe mode also looks at finished runs: the dispatcher's release often ends within
+    # a minute of its receipt upload, before a pass sees it running.
+    query = 'status=in_progress&per_page=20' if mode == 'active' else 'per_page=5'
+    data = github.get('/repos/{}/actions/workflows/cd.yml/runs?branch=main&{}'.format(REPOSITORY, query))
     runs = data.get('workflow_runs')
     if not isinstance(runs, list):
         raise Unavailable('malformed deploy run list')
     return [run for run in runs if isinstance(run, dict)]
 
 
-def check_run(run, head):
-    """Return (run id, attempt, attempt start) of a running main deploy of the head of main."""
+def check_run(run, mode):
+    """Return (run id, attempt, attempt start) of a deploy run of main in this repository."""
     if run.get('path') != DEPLOY_WORKFLOW:
         raise Refusal('not the deploy workflow')
     if _repo(run.get('repository')) != REPOSITORY or _repo(run.get('head_repository')) != REPOSITORY:
         raise Refusal('run of another repository')
     if run.get('head_branch') != 'main' or run.get('event') not in DEPLOY_EVENTS:
         raise Refusal('not a deploy of main')
-    if run.get('status') != 'in_progress':
+    if run.get('status') not in (('in_progress',) if mode == 'active' else ('in_progress', 'completed')):
         raise Refusal('run is not in progress')
-    if run.get('head_sha') != head:
-        raise Refusal('commit {} is no longer the head of main'.format(str(run.get('head_sha'))[:12]))
     run_id, attempt = run.get('id'), run.get('run_attempt')
     if type(run_id) is not int or not _full(RUN_ID, str(run_id)) or type(attempt) is not int or attempt < 1:
         raise Refusal('malformed run identity')
+    if not _full(COMMIT, run.get('head_sha')):
+        raise Refusal('malformed run commit')
     return run_id, attempt, _time(run.get('run_started_at'))
 
 
 def find_request_artifact(github, run_id, started, names):
-    """The release request uploaded by this attempt, or None while the job has not uploaded it."""
+    """The release request uploaded by this attempt, or None while the job has not uploaded it.
+
+    ``names`` are in order of preference: observe mode takes the request artifact over
+    the dispatcher's receipt when a run has both.
+    """
     data = github.get('/repos/{}/actions/runs/{}/artifacts?per_page=100'.format(REPOSITORY, run_id))
     artifacts = data.get('artifacts')
     if not isinstance(artifacts, list):
         raise Unavailable('malformed artifact list')
-    matches = []
+    found = {name: [] for name in names}
     for artifact in artifacts:
         if not isinstance(artifact, dict) or artifact.get('name') not in names:
             continue
@@ -411,10 +429,13 @@ def find_request_artifact(github, run_id, started, names):
             continue
         if type(artifact.get('id')) is not int or artifact['id'] < 1:
             raise Refusal('malformed artifact id')
-        matches.append(artifact)
-    if len(matches) > 1:
-        raise Refusal('several release requests in one attempt')
-    return matches[0] if matches else None
+        found[artifact['name']].append(artifact)
+    for name in names:
+        if len(found[name]) > 1:
+            raise Refusal('several release requests in one attempt')
+        if found[name]:
+            return found[name][0]
+    return None
 
 
 def check_approval(github, run_id):
@@ -461,7 +482,8 @@ def read_receipt_archive(data):
             raise Refusal('unexpected receipt file in the release request')
         with archive.open(member) as handle:
             content = handle.read(MAX_RECEIPT_BYTES + 1)
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, RuntimeError, EOFError) as error:
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, zlib.error, NotImplementedError, ValueError,
+            OSError, RuntimeError, EOFError) as error:
         raise Refusal('unreadable release request') from error
     if len(content) > MAX_RECEIPT_BYTES:
         raise Refusal('receipt too large')
@@ -478,6 +500,15 @@ def check_ci_run(github, receipt):
             and run.get('conclusion') == 'success' and _repo(run.get('repository')) == REPOSITORY
             and _repo(run.get('head_repository')) == REPOSITORY):
         raise Refusal('the receipt does not name a successful main CI run of this commit')
+
+
+def ensure_still_waiting(github, run_id, attempt, head):
+    """Right before the runner changes anything: the job still waits and main has not moved."""
+    run = github.get('/repos/{}/actions/runs/{}'.format(REPOSITORY, run_id))
+    if run.get('status') != 'in_progress' or run.get('run_attempt') != attempt:
+        raise Refusal('the deploy run no longer waits for this release')
+    if run.get('head_sha') != head or main_head(github) != head:
+        raise Refusal('main moved on during the release')
 
 
 # The agent's own clone of the repository, fetched at the approved commit only.
@@ -599,25 +630,93 @@ def report(github, commit, run_id, state, description):
     })
 
 
-def _marker(cfg, mode, run_id, attempt):
-    return cfg.state_dir / 'runs' / '{}-{}-{}'.format(mode, run_id, attempt)
+# Run markers: one file per handled run attempt, named <mode>-<run id>-<attempt>, holding
+# the outcome and whether GitHub has it. An existing marker means "never handle again".
 
-
-def claim(cfg, mode, run_id, attempt):
-    """Record a run attempt as handled; False when an earlier pass already handled it."""
+def _runs_dir(cfg):
     directory = cfg.state_dir / 'runs'
     try:
         os.mkdir(str(directory), 0o700)
     except FileExistsError:
         pass
     check_trusted_dir(directory, cfg, private=True)
+    return directory
+
+
+def _marker(cfg, mode, run_id, attempt):
+    return cfg.state_dir / 'runs' / '{}-{}-{}'.format(mode, run_id, attempt)
+
+
+def _write_temporary(path, marker):
+    temporary = path.with_name('.{}.{}'.format(path.name, os.getpid()))
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(str(temporary))
+    descriptor = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(descriptor, 'w') as handle:
+        json.dump(marker, handle)
+    return temporary
+
+
+def claim(cfg, mode, run_id, attempt, marker):
+    """Record a run attempt as handled; False when an earlier pass already handled it."""
+    path = _runs_dir(cfg) / _marker(cfg, mode, run_id, attempt).name
+    temporary = _write_temporary(path, marker)
     try:
-        descriptor = os.open(str(_marker(cfg, mode, run_id, attempt)),
-                             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        os.link(str(temporary), str(path))
+        return True
     except FileExistsError:
         return False
-    os.close(descriptor)
-    return True
+    finally:
+        os.unlink(str(temporary))
+
+
+def update_marker(path, marker):
+    os.replace(str(_write_temporary(path, marker)), str(path))
+
+
+def read_marker(path):
+    _, data = read_regular_file(path, MAX_RECEIPT_BYTES)
+    marker = parse_json(data)
+    if (set(marker) != {'commit', 'runId', 'state', 'description', 'reported'} or not _full(COMMIT, marker['commit'])
+            or type(marker['runId']) is not int or marker['state'] not in MARKER_STATES
+            or not isinstance(marker['description'], str) or type(marker['reported']) is not bool):
+        raise Refusal('malformed run marker {}'.format(path.name))
+    return marker
+
+
+def deliver(github, log, path, marker):
+    """Post a finished outcome; an unreachable GitHub leaves it for the next pass."""
+    try:
+        report(github, marker['commit'], marker['runId'], marker['state'], marker['description'])
+    except (Unavailable, Refusal) as error:
+        log('Could not report deploy run {} yet: {}'.format(marker['runId'], error))
+        return
+    update_marker(path, dict(marker, reported=True))
+
+
+def deliver_pending_outcomes(cfg, github, log, now=time.time):
+    """Report outcomes an earlier pass could not post, and releases a stopped pass left open."""
+    directory = cfg.state_dir / 'runs'
+    if not os.path.lexists(str(directory)):
+        return
+    _runs_dir(cfg)
+    for name in sorted(os.listdir(str(directory))):
+        path = directory / name
+        if not name.startswith('active-'):
+            continue
+        try:
+            marker = read_marker(path)
+        except Refusal as refusal:
+            log(str(refusal))
+            continue
+        if marker['reported'] or now() - os.lstat(str(path)).st_mtime > MARKER_RETRY_SECONDS:
+            continue
+        if marker['state'] == 'started':
+            # This pass holds the agent lock, so the pass that started it has stopped.
+            marker = dict(marker, state='failure', description=STOPPED_DURING_RELEASE)
+            update_marker(path, marker)
+            log('Deploy run {}: {}'.format(marker['runId'], STOPPED_DURING_RELEASE))
+        deliver(github, log, path, marker)
 
 
 def _note_agent_version(cfg, log):
@@ -632,14 +731,17 @@ def _note_agent_version(cfg, log):
 
 def run_pass(cfg, github, mode, log, popen=subprocess.Popen, sleep=time.sleep):
     names = OBSERVED_ARTIFACTS if mode == 'observe' else (REQUEST_ARTIFACT,)
+    if mode == 'active':
+        deliver_pending_outcomes(cfg, github, log)
     head = main_head(github)
-    for run in running_deploy_runs(github):
+    for run in deploy_runs(github, mode):
         try:
-            run_id, attempt, started = check_run(run, head)
+            run_id, attempt, started = check_run(run, mode)
         except Refusal as refusal:
             log('Skipping deploy run {}: {}'.format(run.get('id'), refusal))
             continue
-        if os.path.lexists(str(_marker(cfg, mode, run_id, attempt))):
+        # Observe mode reads finished runs too; only the head of main is of interest there.
+        if os.path.lexists(str(_marker(cfg, mode, run_id, attempt))) or (mode == 'observe' and run['head_sha'] != head):
             continue
         try:
             artifact = find_request_artifact(github, run_id, started, names)
@@ -649,13 +751,17 @@ def run_pass(cfg, github, mode, log, popen=subprocess.Popen, sleep=time.sleep):
         except Refusal as refusal:
             log('Skipping deploy run {}: {}'.format(run_id, refusal))
             continue
-        return handle(cfg, github, mode, log, run_id, attempt, head, artifact, popen, sleep)
+        return handle(cfg, github, mode, log, run, artifact, head, popen, sleep)
     return 0
 
 
-def handle(cfg, github, mode, log, run_id, attempt, head, artifact, popen, sleep):
+def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     """Release (or, in observe mode, check) one approved request exactly once."""
+    run_id, attempt = run['id'], run['run_attempt']
+    path = _marker(cfg, mode, run_id, attempt)
     try:
+        if run['head_sha'] != head:
+            raise Refusal('commit {} is no longer the head of main'.format(run['head_sha'][:12]))
         receipt = read_receipt_archive(github.download(
             '/repos/{}/actions/artifacts/{}/zip'.format(REPOSITORY, artifact['id'])))
         if receipt['commit'] != head:
@@ -665,43 +771,73 @@ def handle(cfg, github, mode, log, run_id, attempt, head, artifact, popen, sleep
         verify_checkout(cfg, receipt)
         check_runtime(cfg)
     except Refusal as refusal:
-        if claim(cfg, mode, run_id, attempt):
-            log('Refused deploy run {} attempt {}: {}'.format(run_id, attempt, refusal))
+        description = 'Refused: {}'.format(refusal)
+        marker = {'commit': head, 'runId': run_id, 'state': 'failure', 'description': description,
+                  'reported': mode == 'observe'}
+        if claim(cfg, mode, run_id, attempt, marker):
+            log('Deploy run {} attempt {}: {}'.format(run_id, attempt, description))
             if mode == 'active':
-                report(github, head, run_id, 'failure', 'Refused: {}'.format(refusal))
+                deliver(github, log, path, marker)
         return 2
-    if not claim(cfg, mode, run_id, attempt):
-        return 0
     identity = 'commit {} (deploy run {} attempt {}, CI run {}, approved by {})'.format(
         head, run_id, attempt, receipt['runId'], APPROVER)
-    _note_agent_version(cfg, log)
     if mode == 'observe':
-        log('Observe mode: would release {}: backend {}, frontend {}'.format(
-            identity, receipt['backend'], receipt['frontend']))
+        marker = {'commit': head, 'runId': run_id, 'state': 'observed', 'description': '', 'reported': True}
+        if claim(cfg, mode, run_id, attempt, marker):
+            _note_agent_version(cfg, log)
+            log('Observe mode: would release {}: backend {}, frontend {}'.format(
+                identity, receipt['backend'], receipt['frontend']))
         return 0
+    marker = {'commit': head, 'runId': run_id, 'state': 'started', 'description': '', 'reported': False}
+    if not claim(cfg, mode, run_id, attempt, marker):
+        return 0
+    _note_agent_version(cfg, log)
     log('Releasing {}'.format(identity))
-    report(github, head, run_id, 'pending', 'Server release started')
+    try:
+        report(github, head, run_id, 'pending', 'Server release started')
+    except (Unavailable, Refusal) as error:
+        log('Could not report the start: {}'.format(error))
     try:
         wait_for_release_lock(cfg, log, sleep=sleep)
+        ensure_still_waiting(github, run_id, attempt, head)
         code, last = run_runner(*runner_command(cfg, 'preflight', receipt), log, popen=popen)
         if code == 0:
+            ensure_still_waiting(github, run_id, attempt, head)
             code, last = run_runner(*runner_command(cfg, 'deploy', receipt), log, popen=popen)
     except Refusal as refusal:
         code, last = 2, 'Refused: {}'.format(refusal)
         log(last)
+    except Unavailable as error:
+        # Without the final check, nothing is released.
+        code, last = 2, 'Not released, GitHub unavailable for the final check: {}'.format(error)
+        log(last)
     except OSError as error:
         code, last = 1, 'The release runner could not start: {}'.format(error)
         log(last)
-    report(github, head, run_id, 'success' if code == 0 else 'failure', last)
+    marker = dict(marker, state='success' if code == 0 else 'failure', description=last)
+    update_marker(path, marker)
     log('Release {}: {}'.format('succeeded' if code == 0 else 'failed', identity))
+    deliver(github, log, path, marker)
     return 0 if code == 0 else 1
 
 
 def check(github, mode, log):
+    """Use every read a release makes: the token must reach main, runs, approvals and artifacts."""
     head = main_head(github)
-    running_deploy_runs(github)
+    data = github.get('/repos/{}/actions/workflows/cd.yml/runs?branch=main&per_page=1'.format(REPOSITORY))
+    runs = data.get('workflow_runs')
+    if isinstance(runs, list) and runs and isinstance(runs[0], dict) and type(runs[0].get('id')) is int:
+        run_id = runs[0]['id']
+        github.get('/repos/{}/actions/runs/{}/approvals'.format(REPOSITORY, run_id), kind=list)
+        artifacts = github.get('/repos/{}/actions/runs/{}/artifacts?per_page=100'.format(REPOSITORY, run_id))
+        for artifact in artifacts.get('artifacts') or []:
+            if (isinstance(artifact, dict) and artifact.get('name') in OBSERVED_ARTIFACTS
+                    and artifact.get('expired') is False and type(artifact.get('id')) is int):
+                github.download('/repos/{}/actions/artifacts/{}/zip'.format(REPOSITORY, artifact['id']))
+                log('Downloaded the release request of deploy run {}.'.format(run_id))
+                break
     github.get('/repos/{}/commits/{}/statuses?per_page=1'.format(REPOSITORY, head), kind=list)
-    log('GitHub access works: main is at {}, deploy runs and commit statuses are readable. Mode: {}.'.format(head, mode))
+    log('GitHub access works: main is at {}; deploy runs, approvals, artifacts and commit statuses are readable. Mode: {}.'.format(head, mode))
     log('Writing the {} commit status is first used by an active release.'.format(STATUS_CONTEXT))
     return 0
 

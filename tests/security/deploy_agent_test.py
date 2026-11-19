@@ -56,10 +56,14 @@ class FakeGitHub:
         self.gets = []
         self.posts = []
         self.downloads = []
+        self.failing_posts = 0
+        self.on_get = {}
 
     def get(self, path, kind=dict):
         self.gets.append(path)
         key = path.split('?')[0]
+        if key in self.on_get:
+            self.on_get.pop(key)()
         if key not in self.responses:
             raise AssertionError('unexpected GET ' + path)
         value = copy.deepcopy(self.responses[key])
@@ -68,11 +72,17 @@ class FakeGitHub:
         return value
 
     def post(self, path, body):
+        if self.failing_posts:
+            self.failing_posts -= 1
+            raise agent.Unavailable('GitHub POST {} answered 502'.format(path))
         self.posts.append((path, body))
 
     def download(self, path):
         self.downloads.append(path)
-        return self.archives[path]
+        value = self.archives[path]
+        if isinstance(value, Exception):
+            raise value
+        return value
 
 
 class FakeProcess:
@@ -177,7 +187,9 @@ class AgentFixture(unittest.TestCase):
     def serve(self, run=None, artifact=None, approvals=None, ci_run=None, receipt=None, name=None):
         responses = self.github.responses
         responses['/repos/{}/git/ref/heads/main'.format(R)] = {'object': {'sha': self.commit}}
-        responses['/repos/{}/actions/workflows/cd.yml/runs'.format(R)] = {'workflow_runs': [run or self.run_object()]}
+        run = run or self.run_object()
+        responses['/repos/{}/actions/workflows/cd.yml/runs'.format(R)] = {'workflow_runs': [run]}
+        responses['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = run
         responses['/repos/{}/actions/runs/{}/artifacts'.format(R, RUN_ID)] = {'artifacts': [artifact or {
             'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
             'created_at': '2026-11-19T10:05:00Z', 'workflow_run': {'id': RUN_ID},
@@ -288,6 +300,110 @@ class ReleasesApprovedRuns(AgentFixture):
         self.assertEqual(agent._describe('\n'), 'No output')
 
 
+class ChecksAgainRightBeforeChanging(AgentFixture):
+    def test_a_run_that_stopped_waiting_during_the_lock_wait_is_not_released(self):
+        lock = os.open(str(self.runtime / '.release.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, lock)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+
+        def job_times_out(seconds):
+            self.github.responses['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = self.run_object(status='completed')
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+        self.popen = FakePopen(0, 0)
+        code = agent.main(['run'], cfg=self.cfg, github=self.github, log=self.logs.append,
+                          popen=self.popen, sleep=job_times_out)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: the deploy run no longer waits for this release'))
+
+    def test_a_new_attempt_of_the_run_stops_the_old_one(self):
+        self.github.on_get['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = lambda: self.github.responses.update({
+            '/repos/{}/actions/runs/{}'.format(R, RUN_ID): self.run_object(run_attempt=2)})
+        self.assertEqual(self.run_agent(), 1)
+        self.assertEqual(self.popen.calls, [])
+
+    def test_main_moving_after_preflight_stops_the_deploy(self):
+        class MovesMain(FakePopen):
+            def __call__(inner, argv, env, **options):
+                self.github.responses['/repos/{}/git/ref/heads/main'.format(R)] = {'object': {'sha': 'e' * 40}}
+                return FakePopen.__call__(inner, argv, env, **options)
+
+        self.assertEqual(self.run_agent(MovesMain(0, 0)), 1)
+        self.assertEqual([call[0][2] for call in self.popen.calls], ['preflight'])
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: main moved on during the release'))
+
+    def test_without_github_for_the_final_check_nothing_is_released(self):
+        def unreachable():
+            raise agent.Unavailable('GitHub GET /repos/x answered 502')
+
+        self.github.on_get['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = unreachable
+        self.assertEqual(self.run_agent(), 1)
+        self.assertEqual(self.popen.calls, [])
+        self.assertIn('Not released, GitHub unavailable for the final check', self.statuses()[-1][1])
+
+    def test_a_stale_waiting_run_is_failed_at_once(self):
+        stale = 'e' * 40
+        self.serve(run=self.run_object(head_sha=stale))
+        self.assertEqual(self.run_agent(), 2)
+        self.assertEqual(self.github.downloads, [])
+        self.assertEqual(self.statuses(), [('failure', 'Refused: commit eeeeeeeeeeee is no longer the head of main')])
+        self.assertEqual(self.github.posts[0][0], '/repos/{}/statuses/{}'.format(R, self.commit))
+
+
+class ReportsEveryOutcome(AgentFixture):
+    def test_an_unreachable_start_report_does_not_stop_the_release(self):
+        self.github.failing_posts = 1
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(len(self.popen.calls), 2)
+        self.assertEqual(self.statuses(), [('success', 'Release verified')])
+
+    def test_an_outcome_github_could_not_take_is_posted_by_the_next_pass(self):
+        self.github.failing_posts = 2
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.github.posts, [])
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.statuses(), [('success', 'Release verified')])
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(len(self.github.posts), 1)
+
+    def test_a_release_a_stopped_pass_left_open_is_reported_and_never_rerun(self):
+        runs = self.state / 'runs'
+        runs.mkdir(mode=0o700)
+        marker = {'commit': self.commit, 'runId': RUN_ID, 'state': 'started', 'description': '', 'reported': False}
+        (runs / 'active-{}-1'.format(RUN_ID)).write_text(json.dumps(marker))
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.statuses(), [('failure', agent.STOPPED_DURING_RELEASE)])
+
+    def test_a_refusal_github_could_not_take_is_posted_by_the_next_pass(self):
+        self.serve(receipt=self.receipt(installation='fresh'))
+        self.github.failing_posts = 1
+        self.assertEqual(self.run_agent(), 2)
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.statuses(), [('failure', 'Refused: the agent releases only an existing installation')])
+
+    def test_old_unreported_outcomes_are_dropped(self):
+        runs = self.state / 'runs'
+        runs.mkdir(mode=0o700)
+        path = runs / 'active-{}-1'.format(RUN_ID)
+        path.write_text(json.dumps({'commit': self.commit, 'runId': RUN_ID, 'state': 'success',
+                                    'description': 'Release verified', 'reported': False}))
+        old = os.lstat(str(path)).st_mtime - agent.MARKER_RETRY_SECONDS - 60
+        os.utime(str(path), (old, old))
+        self.run_agent()
+        self.assertEqual(self.github.posts, [])
+
+    def test_an_unavailable_github_during_checks_is_retried(self):
+        self.github.archives['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)] = agent.Unavailable('storage')
+        self.assertEqual(self.run_agent(), 1)
+        self.assertFalse((self.state / 'runs/active-{}-1'.format(RUN_ID)).exists())
+        self.serve()
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(len(self.popen.calls), 2)
+
+
 class ObserveMode(AgentFixture):
     def setUp(self):
         super().setUp()
@@ -297,6 +413,7 @@ class ObserveMode(AgentFixture):
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(self.popen.calls, [])
         self.assertEqual(self.github.posts, [])
+        self.assertFalse((self.runtime / '.release.lock').exists())
         self.assertTrue(any(line.startswith('Observe mode: would release commit ' + self.commit) for line in self.logs))
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(len([line for line in self.logs if line.startswith('Observe mode')]), 1)
@@ -307,11 +424,33 @@ class ObserveMode(AgentFixture):
         self.run_agent()
         self.assertTrue(any(line.startswith('Observe mode: would release') for line in self.logs))
 
+    def test_sees_a_release_that_finished_before_the_pass(self):
+        self.serve(run=self.run_object(status='completed'))
+        self.run_agent()
+        self.assertTrue(any(line.startswith('Observe mode: would release') for line in self.logs))
+        self.assertIn('/repos/{}/actions/workflows/cd.yml/runs?branch=main&per_page=5'.format(R), self.github.gets)
+
+    def test_prefers_the_release_request_when_a_run_has_both(self):
+        self.github.responses['/repos/{}/actions/runs/{}/artifacts'.format(R, RUN_ID)] = {'artifacts': [
+            {'id': ARTIFACT_ID + 1, 'name': 'manual-mvp-release-receipt', 'expired': False,
+             'created_at': '2026-11-19T10:05:00Z', 'workflow_run': {'id': RUN_ID}},
+            {'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
+             'created_at': '2026-11-19T10:05:00Z', 'workflow_run': {'id': RUN_ID}},
+        ]}
+        self.run_agent()
+        self.assertEqual(self.github.downloads, ['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)])
+
+    def test_ignores_runs_of_older_commits_silently(self):
+        self.serve(run=self.run_object(head_sha='e' * 40, status='completed'))
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.logs, [])
+        self.assertEqual(self.github.downloads, [])
+
     def test_logs_a_refusal_once_without_reporting(self):
         self.serve(receipt=self.receipt(installation='fresh'))
         self.assertEqual(self.run_agent(), 2)
         self.assertEqual(self.run_agent(), 0)
-        self.assertEqual(len([line for line in self.logs if line.startswith('Refused deploy run')]), 1)
+        self.assertEqual(len([line for line in self.logs if 'Refused: the agent releases only' in line]), 1)
         self.assertEqual(self.github.posts, [])
 
     def test_active_marker_is_separate_from_observe_marker(self):
@@ -321,12 +460,15 @@ class ObserveMode(AgentFixture):
         self.assertEqual(len(self.popen.calls), 2)
 
 
-class IgnoresUnapprovedOrStaleRuns(AgentFixture):
-    def assert_ignored(self):
+class IgnoresUnapprovedOrForeignRuns(AgentFixture):
+    def assert_ignored(self, reason=None):
+        self.logs.clear()
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(self.popen.calls, [])
         self.assertEqual(self.github.downloads, [])
         self.assertEqual(self.github.posts, [])
+        if reason is not None:
+            self.assertTrue(any(reason in line for line in self.logs), self.logs)
 
     def test_active_mode_ignores_the_ssh_release_receipt(self):
         self.serve(artifact={'id': ARTIFACT_ID, 'name': 'manual-mvp-release-receipt', 'expired': False,
@@ -342,18 +484,21 @@ class IgnoresUnapprovedOrStaleRuns(AgentFixture):
         ):
             with self.subTest(approvals=approvals):
                 self.serve(approvals=approvals)
-                self.assert_ignored()
+                self.assert_ignored('has not approved this run in production')
 
-    def test_requires_a_running_deploy_of_the_head_of_main(self):
-        for change in (
-            {'head_sha': 'e' * 40}, {'status': 'completed'}, {'status': 'waiting'},
-            {'head_branch': 'release/manual-mvp'}, {'event': 'pull_request'},
-            {'path': '.github/workflows/ci.yml'}, {'repository': {'full_name': 'someone/fork'}},
-            {'head_repository': {'full_name': 'someone/fork'}}, {'id': '900'}, {'run_attempt': 0},
+    def test_requires_a_running_deploy_of_main_in_this_repository(self):
+        for change, reason in (
+            ({'status': 'completed'}, 'run is not in progress'), ({'status': 'waiting'}, 'run is not in progress'),
+            ({'head_branch': 'release/manual-mvp'}, 'not a deploy of main'), ({'event': 'pull_request'}, 'not a deploy of main'),
+            ({'path': '.github/workflows/ci.yml'}, 'not the deploy workflow'),
+            ({'repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
+            ({'head_repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
+            ({'id': '900'}, 'malformed run identity'), ({'run_attempt': 0}, 'malformed run identity'),
+            ({'head_sha': 'E' * 40}, 'malformed run commit'),
         ):
             with self.subTest(change=change):
                 self.serve(run=self.run_object(**change))
-                self.assert_ignored()
+                self.assert_ignored(reason)
 
     def test_waits_while_this_attempt_has_not_uploaded_its_request(self):
         for artifact in (
@@ -369,10 +514,17 @@ class IgnoresUnapprovedOrStaleRuns(AgentFixture):
                 self.assert_ignored()
                 self.assertFalse(any(path.endswith('/approvals') for path in self.github.gets))
 
-    def test_refuses_an_artifact_of_another_run(self):
-        self.serve(artifact={'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
-                             'created_at': '2026-11-19T10:05:00Z', 'workflow_run': {'id': RUN_ID + 1}})
-        self.assert_ignored()
+    def test_refuses_artifacts_that_are_not_one_clear_request_of_this_run(self):
+        request = {'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
+                   'created_at': '2026-11-19T10:05:00Z', 'workflow_run': {'id': RUN_ID}}
+        for artifacts, reason in (
+            ([dict(request, workflow_run={'id': RUN_ID + 1})], 'artifact of another run'),
+            ([dict(request, id='77')], 'malformed artifact id'),
+            ([request, dict(request, id=ARTIFACT_ID + 1)], 'several release requests in one attempt'),
+        ):
+            with self.subTest(reason=reason):
+                self.github.responses['/repos/{}/actions/runs/{}/artifacts'.format(R, RUN_ID)] = {'artifacts': artifacts}
+                self.assert_ignored(reason)
 
     def test_agent_lock_held_by_another_pass_does_nothing(self):
         lock = os.open(str(self.state / 'agent.lock'), os.O_RDWR | os.O_CREAT, 0o600)
@@ -383,7 +535,10 @@ class IgnoresUnapprovedOrStaleRuns(AgentFixture):
 
 
 class RefusesInvalidRequests(AgentFixture):
+    attempt = 0
+
     def assert_refused(self, reason):
+        self.github.posts.clear()
         self.assertEqual(self.run_agent(), 2)
         self.assertEqual(self.popen.calls, [])
         self.assertEqual(len(self.github.posts), 1)
@@ -393,19 +548,21 @@ class RefusesInvalidRequests(AgentFixture):
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(len(self.github.posts), 1)
 
+    def next_attempt(self, **serve):
+        self.attempt += 1
+        self.serve(run=self.run_object(run_attempt=self.attempt), **serve)
+
     def test_refuses_receipts_the_agent_must_not_release(self):
-        cases = (
+        for receipt, reason in (
             (self.receipt(installation='fresh'), 'only an existing installation'),
             (self.receipt(backend='ghcr.io/someone/backend@sha256:' + 'b' * 64), 'unpinned backend image'),
             (self.receipt(postgres='postgres:18'), 'unpinned postgres image'),
             ({**self.receipt(), 'command': 'sh'}, 'unexpected receipt fields'),
             (self.receipt(version=2), 'unsupported receipt version'),
             (self.receipt(files={'runner': 'f' * 64}), 'unexpected receipt file set'),
-        )
-        for index, (receipt, reason) in enumerate(cases):
+        ):
             with self.subTest(reason=reason):
-                self.github.posts.clear()
-                self.serve(run=self.run_object(run_attempt=index + 1), receipt=receipt)
+                self.next_attempt(receipt=receipt)
                 self.assert_refused(reason)
 
     def test_refuses_a_receipt_for_another_commit(self):
@@ -416,13 +573,16 @@ class RefusesInvalidRequests(AgentFixture):
         self.serve(name='{}-{}.json'.format(self.commit, '801'))
         self.assert_refused('name differs')
 
-    def test_refuses_archives_with_other_or_extra_files(self):
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w') as output:
+    def test_refuses_archives_that_are_not_one_receipt(self):
+        extra = io.BytesIO()
+        with zipfile.ZipFile(extra, 'w') as output:
             output.writestr('{}-{}.json'.format(self.commit, CI_RUN), json.dumps(self.receipt()))
             output.writestr('extra.json', '{}')
-        self.github.archives['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)] = buffer.getvalue()
-        self.assert_refused('exactly one receipt')
+        for data, reason in ((extra.getvalue(), 'exactly one receipt'), (b'not a zip archive', 'unreadable release request')):
+            with self.subTest(reason=reason):
+                self.next_attempt()
+                self.github.archives['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)] = data
+                self.assert_refused(reason)
 
     def test_refuses_duplicate_json_keys(self):
         content = json.dumps(self.receipt())[:-1] + ', "commit": "{}"}}'.format(self.commit)
@@ -430,14 +590,14 @@ class RefusesInvalidRequests(AgentFixture):
         self.assert_refused('duplicate JSON key')
 
     def test_refuses_without_a_successful_main_ci_run_of_the_commit(self):
-        for index, change in enumerate(({'conclusion': 'failure'}, {'head_sha': 'e' * 40},
-                                        {'event': 'pull_request'}, {'path': agent.DEPLOY_WORKFLOW})):
+        for change in ({'conclusion': 'failure'}, {'head_sha': 'e' * 40}, {'event': 'pull_request'},
+                       {'path': agent.DEPLOY_WORKFLOW}, {'status': 'in_progress'}, {'head_branch': 'feature'},
+                       {'repository': {'full_name': 'someone/fork'}}, {'head_repository': {'full_name': 'someone/fork'}}):
             with self.subTest(change=change):
-                self.github.posts.clear()
                 ci_run = {'path': agent.CI_WORKFLOW, 'event': 'push', 'head_branch': 'main', 'head_sha': self.commit,
                           'status': 'completed', 'conclusion': 'success', 'repository': {'full_name': R},
                           'head_repository': {'full_name': R}, **change}
-                self.serve(run=self.run_object(run_attempt=index + 1), ci_run=ci_run)
+                self.next_attempt(ci_run=ci_run)
                 self.assert_refused('successful main CI run')
 
     def test_refuses_server_files_that_differ_from_the_receipt(self):
@@ -457,9 +617,8 @@ class RefusesInvalidRequests(AgentFixture):
         self.assert_refused('missing or a symlink')
 
     def test_refuses_a_runtime_tree_another_account_could_redirect(self):
-        for index, damage in enumerate(('symlink', 'writable')):
+        for damage in ('symlink', 'writable'):
             with self.subTest(damage=damage):
-                self.github.posts.clear()
                 target = self.runtime / 'releases'
                 if damage == 'symlink':
                     os.symlink('/etc', str(target))
@@ -467,26 +626,65 @@ class RefusesInvalidRequests(AgentFixture):
                     target.unlink()
                     target.mkdir()
                     target.chmod(0o777)
-                self.serve(run=self.run_object(run_attempt=index + 1))
+                self.next_attempt()
                 self.assert_refused('releases')
 
-    def test_refuses_registry_configuration_with_extra_plugins(self):
+    def test_refuses_without_the_private_runtime_files(self):
+        for name in ('.env.release', '.backup-key'):
+            with self.subTest(name=name):
+                (self.runtime / name).rename(self.root / name)
+                self.next_attempt()
+                self.assert_refused(name)
+                (self.root / name).rename(self.runtime / name)
+
+    def test_an_unmanaged_installation_needs_its_legacy_env(self):
+        (self.runtime / '.release-managed-env').unlink()
+        self.next_attempt()
+        self.assert_refused('.env is missing or a symlink')
+        (self.runtime / '.env').write_text('synthetic legacy env\n')
+        self.next_attempt()
+        self.assertEqual(self.run_agent(), 0)
+
+    def test_refuses_registry_configuration_with_its_own_plugins(self):
         (self.root / 'etc/docker-config/config.json').write_text(json.dumps({'cliPluginsExtraDirs': ['/tmp/plugins']}))
+        self.next_attempt()
         self.assert_refused('unapproved extra CLI plugin directory')
+        (self.root / 'etc/docker-config/config.json').write_text('{}')
+        (self.root / 'etc/docker-config/cli-plugins').mkdir()
+        self.next_attempt()
+        self.assert_refused('must not contain CLI plugins')
 
     def test_refuses_a_clone_with_another_remote(self):
         git('remote', 'set-url', 'origin', 'https://example.invalid/fork.git', cwd=self.state / 'repo')
         self.assert_refused('unexpected remote')
 
 
+@unittest.skipUnless(os.geteuid() == 0, 'requires root to give files to the application uid')
+class ApplicationOwnership(AgentFixture):
+    def test_application_uid_is_accepted_only_at_delegated_paths(self):
+        self.cfg.application_uid = 1000
+        for path in (self.runtime / '.mfa-key', self.runtime / 'operator', self.runtime / 'operator/recovery.json'):
+            os.chown(str(path), 1000, 1000)
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(len(self.popen.calls), 2)
+        os.chown(str(self.runtime / '.release-managed-env'), 1000, 1000)
+        self.serve(run=self.run_object(run_attempt=2))
+        self.assertEqual(self.run_agent(), 2)
+        self.assertIn('.release-managed-env: untrusted owner', self.statuses()[-1][1])
+
+
 class Configuration(AgentFixture):
     def run_check(self):
         return agent.main(['check'], cfg=self.cfg, github=self.github, log=self.logs.append)
 
-    def test_check_reads_main_deploy_runs_and_statuses(self):
+    def test_check_uses_every_read_a_release_makes(self):
         self.github.responses['/repos/{}/commits/{}/statuses'.format(R, self.commit)] = []
         self.assertEqual(self.run_check(), 0)
-        self.assertIn('Mode: active', self.logs[0])
+        for path in ('/approvals', '/artifacts', '/statuses'):
+            self.assertTrue(any(path in get for get in self.github.gets), path)
+        self.assertEqual(self.github.downloads, ['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)])
+        self.assertIn('Mode: active', self.logs[-2])
+        self.assertEqual(self.github.posts, [])
 
     def test_refuses_a_token_others_can_read(self):
         (self.root / 'etc/deploy-agent.token').chmod(0o640)
