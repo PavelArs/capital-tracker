@@ -1,0 +1,14 @@
+# One pass of the pull release agent (scripts/deploy-agent.py, docs/pull-release-agent.md).
+# Installed by scripts/deploy-agent-install.sh; started once a minute by the timer.
+[Unit]
+Description=Capital Tracker release agent: release an owner-approved deploy run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/capital-tracker/deploy-agent run
+UMask=0077
+# Covers waiting for the daily backup's lock, the encrypted backup, its restore check,
+# migrations and the health checks of one release.
+TimeoutStartSec=90min

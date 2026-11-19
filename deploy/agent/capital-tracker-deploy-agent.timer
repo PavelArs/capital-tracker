@@ -1,0 +1,11 @@
+# Starts one pass of the release agent every minute. A pass still running is not
+# started twice: systemd waits for the oneshot service to finish.
+[Unit]
+Description=Ask GitHub every minute for an owner-approved Capital Tracker release
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

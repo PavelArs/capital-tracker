@@ -38,6 +38,9 @@ Do not expose an arbitrary shell/script/upload through that dispatcher.
 
 ### Restricted release dispatcher (MVP-007)
 
+Being replaced by the pull release agent (`docs/pull-release-agent.md`, owner decision
+2026-11-19). Until the owner switches to it, the dispatcher below remains the release path.
+
 Implemented, not yet installed on the host. Actions no longer uses the shared
 Docker-capable key. It reaches the server only as the Capital-only `capital-release`
 principal, which is not in the docker group. Its root-owned `authorized_keys` entry is
