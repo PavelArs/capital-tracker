@@ -51,9 +51,17 @@ describe('SNAP-REVISION: the inputs revision of an owner', () => {
   it('hashes every row of a table whose rows are updated or deleted in place', () => {
     for (const table of INPUT_TABLES.filter((name) => !APPEND_ONLY_INPUTS.has(name)))
       expect(part(table)).toContain("md5(string_agg(t::text, ',' ORDER BY t::text))");
-    expect(part('wallet_addresses')).toContain(
-      `md5(string_agg(t.id::text || ':' || coalesce(t."accountId"::text, '')`,
-    );
+    const wallets = part('wallet_addresses');
+    for (const input of [
+      'id',
+      '"accountId"',
+      '"removedAt" IS NULL',
+      '"hiddenTokens"',
+      '"shownTokens"',
+      '"tokenBackfillTo" IS NULL',
+    ])
+      expect(wallets).toContain(`t.${input}`);
+    expect(wallets).not.toContain('"scannedBlock"');
   });
 
   it('finds an in-place write to an append-only table', () => {
