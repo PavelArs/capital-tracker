@@ -129,7 +129,8 @@ describe('a snapshot computed under an earlier valuation rule', () => {
           },
         ];
       if (sql.includes('AS revision')) return [{ revision: 'a'.repeat(32) }];
-      if (sql.includes('max("fetchedAt")')) return [{ prices: fetched, rates: fetched }];
+      if (sql.includes('max("fetchedAt")'))
+        return [{ prices: fetched, rates: fetched, priorCount: '2', total: '2' }];
       if (sql.includes('FROM portfolio_snapshots'))
         return seriesInstants(now.getTime(), 0).flatMap((instant) =>
           accountingCurrencies.map((currency) => ({
