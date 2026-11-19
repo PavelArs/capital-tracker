@@ -320,8 +320,12 @@ public HTTP Swagger/documentation route.
 Anonymous and pending sessions last five minutes. Full sessions expire 24 hours after
 factor completion, measured with PostgreSQL time after relevant lock waits; there is
 no idle timeout, and the cookie `maxAge` matches. Activity cannot extend the deadline.
-Revocation and expiry survive restarts. The combined anonymous/pending pool is capped at 512 without evicting live
-entries; a full pool returns 429. Full sessions are capped at ten, retiring the oldest
+Revocation and expiry survive restarts. The combined anonymous/pending pool is capped at 512. A full pool retires its oldest
+anonymous sessions to make room: anyone can create one, and refusing new ones let a few
+clients lock the owner out (Codex Security finding #12). A pending session needs the
+password and is never retired, so a pool full of pending sessions returns 429. A client
+that keeps creating anonymous sessions fast enough can still retire the owner's own
+between the CSRF bootstrap and the password step; that takes hundreds of sessions a second. Full sessions are capped at ten, retiring the oldest
 full sessions when another successful factor completion exceeds that limit.
 
 ## Factor replay and guessing limits
