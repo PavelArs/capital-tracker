@@ -1150,7 +1150,10 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     expect(serverSteps.map((step) => step.name)).toEqual([
       'Send a data-only request to the root-owned release dispatcher',
     ]);
-    expect(serverSteps[0].if).toBe("env.RELEASE_MODE != 'promote'");
+    // With DEPLOY_PULL the server agent pulls an approved release instead (RAP-005).
+    expect(serverSteps[0].if).toBe(
+      "env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'",
+    );
     // The Docker-capable shared deployment key, uploads and remote shell execution are gone.
     expect(JSON.stringify(cd)).not.toMatch(/DEPLOY_SSH_KEY\b|DEPLOY_USER\b/);
     expect(commands).not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);

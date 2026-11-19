@@ -58,7 +58,8 @@ CI_WORKFLOW = '.github/workflows/ci.yml'
 DEPLOY_EVENTS = ('workflow_run', 'workflow_dispatch')
 API = 'https://api.github.com'
 CLONE_URL = 'https://github.com/' + REPOSITORY + '.git'
-RUN_URL = 'https://github.com/' + REPOSITORY + '/actions/runs/{}'
+# Names the attempt: the waiting job of cd.yml accepts only a status that names its own.
+RUN_URL = 'https://github.com/' + REPOSITORY + '/actions/runs/{}/attempts/{}'
 # The deploy job uploads this artifact when it waits for the agent. Observe mode also
 # watches the receipt of today's SSH release, so the agent can be checked before it acts.
 REQUEST_ARTIFACT = 'server-release-request'
@@ -672,10 +673,10 @@ def _describe(text):
     return text[:140].rstrip() or 'No output'
 
 
-def report(github, commit, run_id, state, description):
+def report(github, commit, run_id, attempt, state, description):
     github.post('/repos/{}/statuses/{}'.format(REPOSITORY, commit), {
         'state': state, 'context': STATUS_CONTEXT, 'description': _describe(description),
-        'target_url': RUN_URL.format(run_id),
+        'target_url': RUN_URL.format(run_id, attempt),
     })
 
 
@@ -735,8 +736,9 @@ def read_marker(path):
 
 def deliver(github, log, path, marker):
     """Post a finished outcome; an unreachable GitHub leaves it for the next pass."""
+    attempt = int(ACTIVE_MARKER.fullmatch(path.name).group(2))
     try:
-        report(github, marker['commit'], marker['runId'], marker['state'], marker['description'])
+        report(github, marker['commit'], marker['runId'], attempt, marker['state'], marker['description'])
     except (Unavailable, Refusal) as error:
         log('Could not report deploy run {} yet: {}'.format(marker['runId'], error))
         return
@@ -863,7 +865,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     _note_agent_version(cfg, log)
     log('Releasing {}'.format(identity))
     try:
-        report(github, head, run_id, 'pending', 'Server release started')
+        report(github, head, run_id, attempt, 'pending', 'Server release started')
     except (Unavailable, Refusal) as error:
         log('Could not report the start: {}'.format(error))
     try:

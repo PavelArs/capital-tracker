@@ -11,17 +11,22 @@ rollback to the previous pair.
 The change lands in small steps, and production keeps deploying through the dispatcher
 until the owner switches:
 
-1. **Agent in observe mode (this step).** The agent is installed next to the dispatcher.
+1. **Agent in observe mode (#452).** The owner installs the agent next to the dispatcher.
    It checks every approved release and logs what it would release; it releases nothing.
-2. **Deploy job waits for the server.** With the repository variable `DEPLOY_PULL=true`,
-   `cd.yml` uploads a `server-release-request` artifact instead of calling the dispatcher
-   and waits for the agent's commit status. The owner switches the agent to `active` at
-   the same time. Three constraints for that change: only the job in the `production`
-   environment may upload the request (the approvals API names no attempt, so the
-   approval is bound to an attempt only because that job cannot start without one); the
-   job must wait longer than the agent's 40-minute lock budget plus a deploy; and it must
-   only accept a `production-release` status created after its own upload, because a
-   re-run attempt sees the earlier attempt's status on the same commit.
+2. **Deploy job waits for the server (in place, off until the owner switches).** With the
+   repository variable `DEPLOY_PULL=true`, an approved `release` of an `existing`
+   installation in `cd.yml` uploads its promoted receipt as the `server-release-request`
+   artifact instead of calling the dispatcher, then waits for the agent's commit status
+   (see "Switching releases to the agent"). Every other mode (`inventory`, `preflight`,
+   `deploy`, `promote`) and every other installation still uses the dispatcher.
+   - Only the job in the `production` environment uploads the request. The approvals API
+     names no attempt, so the approval is bound to an attempt only because that job
+     cannot start without one.
+   - The job waits up to 150 minutes, longer than one agent pass can take (the unit stops
+     it after two hours, plus 15 minutes for the rollback).
+   - It accepts only a `production-release` status that names its own run attempt and was
+     posted with the owner's token, so an earlier attempt's result on the same commit or a
+     status written by a workflow never counts.
 3. **Retire the dispatcher** after two releases through the agent: remove its workflow
    steps, scripts and tests, then the owner removes the `capital-release` account, its
    sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret.
@@ -80,7 +85,8 @@ that only snapd changes) and the content of the PostgreSQL pins (only read for a
 
 In `active` mode the agent reports on the commit as the status `production-release`:
 `pending` when it starts, then `success` or `failure` with the runner's last line and a
-link to the deploy run. The full output goes to the journal on the server
+link to the deploy run attempt (`…/actions/runs/<id>/attempts/<n>`), which is how the
+waiting job recognises its own result. The full output goes to the journal on the server
 (`journalctl -u capital-tracker-deploy-agent`). An outcome GitHub could not take is posted
 again by later passes for a day, unless a later attempt of the same commit has an outcome
 of its own (all attempts share the status, so the older one would replace it); a release
@@ -134,7 +140,33 @@ runtime directory or the containers.
    (`journalctl -u capital-tracker-deploy-agent`) should show
    `Observe mode: would release commit …` with the same digests as the deploy run's receipt.
 
-Other commands, each run as root from a clean checkout:
+## Switching releases to the agent (step 2)
+
+Do it in this order, so a release never waits for an agent that does not release:
+
+1. As root on the server, from a clean checkout of the `main` commit that has this step,
+   refresh the agent (this step changed it) and let it release:
+
+   ```sh
+   cd /root/capital-tracker && git fetch origin && git checkout --detach origin/main
+   bash scripts/deploy-agent-install.sh update
+   bash scripts/deploy-agent-install.sh active
+   ```
+
+   Until the variable below is set, an active agent finds no request and changes nothing;
+   the dispatcher keeps releasing.
+2. In GitHub: Settings → Secrets and variables → Actions → Variables → New repository
+   variable `DEPLOY_PULL` with the value `true`.
+3. Approve the next release as usual. The deploy job's step "Wait for the server agent's
+   release" shows the agent's result, and the journal on the server shows the runner's
+   output.
+
+To go back: delete the variable (or set it to anything but `true`), then run
+`bash scripts/deploy-agent-install.sh observe`. The dispatcher is untouched until step 3.
+
+## Other commands
+
+Each runs as root from a clean checkout:
 
 ```sh
 bash scripts/deploy-agent-install.sh token     # replace the token (from standard input)
