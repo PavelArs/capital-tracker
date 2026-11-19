@@ -1119,13 +1119,26 @@ export class PortfolioSnapshotsService {
       [owner],
     );
     const [read]: { revision: string }[] = await manager.query(INPUTS_REVISION, [owner]);
-    const revision = createHash('md5').update(`${VALUATION_RULE}|${read.revision}`).digest('hex');
-    const [marks]: { prices: Date | null; rates: Date | null }[] = await manager.query(
-      `SELECT GREATEST((SELECT max("fetchedAt") FROM price_observations),
-          (SELECT max("fetchedAt") FROM broker_price_observations WHERE "ownerId"=$1)) AS prices,
-        (SELECT max("fetchedAt") FROM fx_rates) AS rates`,
-      [owner],
+    // A collector can commit behind a saved fetch time. In these append-only tables, a
+    // changed count at or below the old mark means a previously invisible row arrived there.
+    const [marks]: {
+      prices: Date | null;
+      rates: Date | null;
+      priorCount: string;
+      total: string;
+    }[] = await manager.query(
+      `SELECT greatest(m.latest, b.latest) AS prices, r.latest AS rates,
+            (m.prior + b.prior + r.prior)::text AS "priorCount", (m.total + b.total + r.total)::text AS total
+          FROM (SELECT max("fetchedAt") AS latest, count(*) AS total,
+              count(*) FILTER (WHERE "fetchedAt" <= $2) AS prior FROM price_observations) m
+          CROSS JOIN (SELECT max("fetchedAt") AS latest, count(*) AS total,
+              count(*) FILTER (WHERE "fetchedAt" <= $2) AS prior FROM broker_price_observations WHERE "ownerId"=$1) b
+          CROSS JOIN (SELECT max("fetchedAt") AS latest, count(*) AS total,
+              count(*) FILTER (WHERE "fetchedAt" <= $3) AS prior FROM fx_rates) r`,
+      [owner, state?.pricesFetchedThrough ?? null, state?.ratesFetchedThrough ?? null],
     );
+    const revision = (count: string) =>
+      createHash('md5').update(`${VALUATION_RULE}|${read.revision}|${count}`).digest('hex');
     const hourlyFrom = state ? state.hourlyFrom.getTime() : hourStart(now);
     const instants = seriesInstants(now, hourlyFrom);
     const storedRows: StoredRow[] = await manager.query(
@@ -1144,7 +1157,7 @@ export class PortfolioSnapshotsService {
       (at) => !expected.has(at),
     );
     const from =
-      !state || state.inputsRevision !== revision
+      !state || state.inputsRevision !== revision(marks.priorCount)
         ? HISTORY_FROM_MS
         : await this.earliestChange(manager, owner, state, marks, instants, existing);
     if (from === null && obsolete.length === 0) return { outcome: 'fresh' };
@@ -1177,7 +1190,7 @@ export class PortfolioSnapshotsService {
           "pricesFetchedThrough"=EXCLUDED."pricesFetchedThrough",
           "ratesFetchedThrough"=EXCLUDED."ratesFetchedThrough",
           "refreshedAt"=EXCLUDED."refreshedAt"`,
-      [owner, revision, marks.prices, marks.rates, new Date(hourlyFrom)],
+      [owner, revision(marks.total), marks.prices, marks.rates, new Date(hourlyFrom)],
     );
     return {
       outcome: 'rebuilt',
