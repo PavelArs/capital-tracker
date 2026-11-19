@@ -450,3 +450,26 @@ compromise. This is an initial threat model, not a complete ASVS mapping or
 certification. Do not restore password-only or public legacy auth as a recovery
 procedure. Any actual production upgrade needs a separately reviewed backup/release
 procedure and explicit authorization.
+
+### Accepted lockout trade-offs
+
+Two limits can keep the owner out for a while. Both are kept on purpose (owner decision
+2026-11-19, Codex Security findings #13 and #14):
+
+- **Factor lockout (#13).** Ten wrong factors in ten minutes block every TOTP and
+  recovery-code completion for ten minutes, and the hundredth failure since the last
+  success blocks them until trusted confirmation or CLI recovery, even for a correct
+  factor. Reaching the factor step at all needs the owner's password, so only someone
+  who already holds it can trigger this. Letting a correct factor through a block would
+  turn the block into a guessing oracle. The way out is `pnpm --dir backend owner:recover`
+  on the server.
+- **Claimed-email budget (#14).** Ten password attempts per ten minutes for one claimed
+  email are charged before the password is checked, so whoever knows the owner's email
+  can keep password login refused, ten requests at a time. Charging only failures, or
+  checking the password first, would let an attacker keep guessing past the budget. The
+  owner's email is not shown before sign-in and is not in the repository.
+
+A related limit with the same shape: the admission ledger holds at most 4096 live
+subjects and refuses new ones when full (see [Shared authentication
+admission](#shared-authentication-admission)), so several thousand distinct sources in
+one minute can refuse a new source, the owner's included, until windows expire.
