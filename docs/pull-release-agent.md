@@ -17,19 +17,27 @@ until the owner switches:
    repository variable `DEPLOY_PULL=true`, an approved `release` of an `existing`
    installation in `cd.yml` uploads its promoted receipt as the `server-release-request`
    artifact instead of calling the dispatcher, then waits for the agent's commit status
-   (see "Switching releases to the agent"). Every other mode (`inventory`, `preflight`,
-   `deploy`, `promote`) and every other installation still uses the dispatcher.
+   (see "Switching releases to the agent"). The manual `inventory`, `preflight` and
+   `deploy` modes and every other installation still use the dispatcher; `promote` only
+   publishes images and never reaches the server.
    - Only the job in the `production` environment uploads the request. The approvals API
      names no attempt, so the approval is bound to an attempt only because that job
      cannot start without one.
    - The job waits up to 150 minutes, longer than one agent pass can take (the unit stops
-     it after two hours, plus 15 minutes for the rollback).
+     it after two hours, plus 15 minutes for the rollback). Only a run the agent can take
+     gets the 180-minute job; every other run keeps 30 minutes.
+   - The wait prints the agent's progress. It warns once when the agent has posted nothing
+     for 10 minutes (not installed, or not in active mode), and fails at once when an agent
+     older than this step reports the run (its status names no attempt): that agent may
+     still be releasing, so check its journal and update it.
    - It accepts only a `production-release` status that names its own run attempt and was
      posted with the owner's token, so an earlier attempt's result on the same commit or a
      status written by a workflow never counts.
 3. **Retire the dispatcher** after two releases through the agent: remove its workflow
    steps, scripts and tests, then the owner removes the `capital-release` account, its
-   sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret.
+   sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret. Before that, the modes it still
+   serves (`inventory`, `preflight`, `deploy` and the `fresh` and `resume-activation`
+   installations) need a replacement, or the owner drops them.
 
 ## What the agent trusts
 

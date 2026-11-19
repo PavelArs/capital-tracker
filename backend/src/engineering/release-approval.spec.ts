@@ -313,7 +313,8 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
     ].map((name) => steps.findIndex((candidate) => candidate.name === name));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // Reading the agent's commit status needs the statuses scope and nothing more.
+    // The wait reads the agent's status with the job token: statuses: read, pinned with the
+    // rest of the deploy job's permissions in RVR-002-A (release-versions.spec.ts).
     expect(step(wait)?.env).toEqual({ GH_TOKEN: actions('github.token') });
   });
 
@@ -327,8 +328,13 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
     // A pass starts within a minute of the upload and is stopped (with its rollback) by then.
     expect(step(wait)?.['timeout-minutes']).toBe(150);
     expect(150).toBeGreaterThan(1 + start + stop);
-    // The steps before the wait (candidate download, promotion) get the rest of the job.
-    expect(job['timeout-minutes']).toBe(actions("vars.DEPLOY_PULL == 'true' && 170 || 30"));
+    // The steps before the wait (candidate download, promotion) get the rest of the job. Only
+    // a run the chooser can hand to the agent (RAP-005-A) gets the longer job.
+    expect(job['timeout-minutes']).toBe(
+      actions(
+        "vars.DEPLOY_PULL == 'true' && (github.event_name == 'workflow_run' || (inputs.mode == 'release' && inputs.installation == 'existing')) && 180 || 30",
+      ),
+    );
   });
 
   describe('RAP-005-C the wait accepts only the agent status of this run attempt', () => {
@@ -348,7 +354,7 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
       creator: { login: creator },
     });
 
-    function waitFor(responses: (unknown[] | 'fail')[]) {
+    function waitFor(responses: (unknown[] | 'fail')[], sleepLimit = 8) {
       for (const [index, response] of responses.entries())
         writeFileSync(
           join(directory, `response-${index + 1}`),
@@ -375,12 +381,13 @@ process.stdout.write(fs.readFileSync(file,'utf8'));
         `#!/usr/bin/env node
 const fs=require('node:fs');
 fs.appendFileSync(process.env.FIXTURE_DIR+'/sleeps',process.argv[2]+'\\n');
-process.exit(fs.readFileSync(process.env.FIXTURE_DIR+'/sleeps','utf8').split('\\n').length>8?9:0);
+process.exit(fs.readFileSync(process.env.FIXTURE_DIR+'/sleeps','utf8').split('\\n').length>Number(process.env.FIXTURE_SLEEPS)?9:0);
 `,
         { mode: 0o700 },
       );
       const result = runStep(wait, {
         FIXTURE_DIR: directory,
+        FIXTURE_SLEEPS: String(sleepLimit),
         GH_TOKEN: 'synthetic',
         GITHUB_SERVER_URL: 'https://github.com',
         GITHUB_REPOSITORY: 'PavelArs/capital-tracker',
@@ -421,6 +428,48 @@ process.exit(fs.readFileSync(process.env.FIXTURE_DIR+'/sleeps','utf8').split('\\
       );
     });
 
+    it('RAP-005-C goes by the newest status of this attempt and reports progress once', () => {
+      const started = [
+        status('pending', 'Server release started'),
+        status('failure', 'An older word on this attempt'),
+      ];
+      const { result, sleeps } = waitFor([
+        started,
+        started,
+        [status('success', 'Release verified'), ...started],
+      ]);
+      expect(result.status).toBe(0);
+      expect(sleeps).toHaveLength(2);
+      expect(result.stdout.match(/Server release pending: Server release started/g)).toHaveLength(
+        1,
+      );
+      expect(result.stdout).not.toContain('::warning::');
+    });
+
+    it('RAP-005-C fails at once when an agent without attempt links reports this run', () => {
+      const { result, sleeps } = waitFor([
+        [
+          {
+            ...status('pending', 'Server release started'),
+            target_url: 'https://github.com/PavelArs/capital-tracker/actions/runs/999',
+          },
+        ],
+      ]);
+      expect(result.status).toBe(1);
+      expect(sleeps).toEqual([]);
+      expect(result.stdout).toContain('::error::The server agent is out of date');
+      expect(result.stdout).toContain('scripts/deploy-agent-install.sh update');
+    });
+
+    it('RAP-005-C warns once when the agent has said nothing for ten minutes', () => {
+      const silent = Array.from({ length: 31 }, () => []);
+      const { result, sleeps } = waitFor([...silent, [status('success', 'Release verified')]], 40);
+      expect(result.status).toBe(0);
+      expect(sleeps).toHaveLength(31);
+      expect(result.stdout.match(/::warning::/g)).toHaveLength(1);
+      expect(result.stdout).toContain('scripts/deploy-agent-install.sh active');
+    });
+
     it('RAP-005-C keeps waiting through an unreachable GitHub', () => {
       const { result, sleeps } = waitFor(['fail', [status('success', 'Release verified')]]);
       expect(result.status).toBe(0);
@@ -433,6 +482,14 @@ process.exit(fs.readFileSync(process.env.FIXTURE_DIR+'/sleeps','utf8').split('\\
           status('failure', 'Refused: the deploy run no longer waits for this release', 1),
           status('success', 'Release verified', 2, 'github-actions[bot]'),
           status('success', 'Release verified', 2, 'PavelArs', 'ci'),
+          {
+            ...status('failure', 'Another run'),
+            target_url: 'https://github.com/PavelArs/capital-tracker/actions/runs/998',
+          },
+          {
+            ...status('pending', 'Server release started', 2, 'github-actions[bot]'),
+            target_url: 'https://github.com/PavelArs/capital-tracker/actions/runs/999',
+          },
         ],
       ]);
       expect(result.status).not.toBe(0);

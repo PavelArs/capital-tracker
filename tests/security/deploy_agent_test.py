@@ -263,8 +263,22 @@ class ReleasesApprovedRuns(AgentFixture):
             'id': ARTIFACT_ID, 'name': agent.REQUEST_ARTIFACT, 'expired': False,
             'created_at': '2026-11-19T11:05:00Z', 'workflow_run': {'id': RUN_ID},
         })
+        self.github.posts.clear()
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(len(self.popen.calls), 2)
+        # Both statuses name the second attempt, the one whose job now waits.
+        self.assertEqual([body['target_url'] for _, body in self.github.posts],
+                         ['https://github.com/{}/actions/runs/{}/attempts/2'.format(R, RUN_ID)] * 2)
+
+    def test_a_refused_attempt_is_reported_on_its_own_attempt(self):
+        self.serve(run=self.run_object(run_attempt=3))
+        self.github.responses['/repos/{}/git/ref/heads/main'.format(R)] = {'object': {'sha': 'e' * 40}}
+        self.assertEqual(self.run_agent(), 2)
+        self.assertEqual(self.popen.calls, [])
+        (path, body), = self.github.posts
+        self.assertEqual(path, '/repos/{}/statuses/{}'.format(R, self.commit))
+        self.assertEqual(body['state'], 'failure')
+        self.assertEqual(body['target_url'], 'https://github.com/{}/actions/runs/{}/attempts/3'.format(R, RUN_ID))
 
     def test_failed_runner_reports_failure_with_its_last_line(self):
         self.assertEqual(self.run_agent(FakePopen(0, 1)), 1)
@@ -744,6 +758,7 @@ class IgnoresUnapprovedOrForeignRuns(AgentFixture):
             ({'repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
             ({'head_repository': {'full_name': 'someone/fork'}}, 'run of another repository'),
             ({'id': '900'}, 'malformed run identity'), ({'run_attempt': 0}, 'malformed run identity'),
+            ({'run_attempt': 10 ** 20}, 'malformed run identity'),
             ({'head_sha': 'E' * 40}, 'malformed run commit'),
         ):
             with self.subTest(change=change):

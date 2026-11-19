@@ -108,7 +108,7 @@ LOCK_KEPT = 'the daily backup or another release kept the server lock'
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
-ACTIVE_MARKER = re.compile(r'active-([1-9][0-9]{0,19})-([1-9][0-9]{0,9})')
+ACTIVE_MARKER = re.compile(r'active-([1-9][0-9]{0,19})-([1-9][0-9]{0,19})')
 SHA256 = re.compile(r'[a-f0-9]{64}')
 TOKEN = re.compile(r'github_pat_[A-Za-z0-9_]{20,255}')
 RECEIPT_NAME = re.compile(r'([a-f0-9]{40})-([1-9][0-9]{0,19})\.json')
@@ -405,7 +405,9 @@ def check_run(run, mode):
     if run.get('status') not in (('in_progress',) if mode == 'active' else ('in_progress', 'completed')):
         raise Refusal('run is not in progress')
     run_id, attempt = run.get('id'), run.get('run_attempt')
-    if type(run_id) is not int or not _full(RUN_ID, str(run_id)) or type(attempt) is not int or attempt < 1:
+    # Both bounded like ACTIVE_MARKER, so every marker of a release can be read again.
+    if (type(run_id) is not int or not _full(RUN_ID, str(run_id))
+            or type(attempt) is not int or not _full(RUN_ID, str(attempt))):
         raise Refusal('malformed run identity')
     if not _full(COMMIT, run.get('head_sha')):
         raise Refusal('malformed run commit')
@@ -734,9 +736,8 @@ def read_marker(path):
     return marker
 
 
-def deliver(github, log, path, marker):
+def deliver(github, log, path, marker, attempt):
     """Post a finished outcome; an unreachable GitHub leaves it for the next pass."""
-    attempt = int(ACTIVE_MARKER.fullmatch(path.name).group(2))
     try:
         report(github, marker['commit'], marker['runId'], attempt, marker['state'], marker['description'])
     except (Unavailable, Refusal) as error:
@@ -782,7 +783,7 @@ def deliver_pending_outcomes(cfg, github, log, now=time.time):
             log('Deploy run {} attempt {}: not reported, a later attempt for commit {} supersedes it'.format(
                 order[0], order[1], marker['commit']))
             continue
-        deliver(github, log, path, marker)
+        deliver(github, log, path, marker, order[1])
 
 
 def _note_agent_version(cfg, log):
@@ -848,7 +849,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
         if claim(cfg, mode, run_id, attempt, marker):
             log('Deploy run {} attempt {}: {}'.format(run_id, attempt, description))
             if mode == 'active':
-                deliver(github, log, path, marker)
+                deliver(github, log, path, marker, attempt)
         return 2
     identity = 'commit {} (deploy run {} attempt {}, CI run {}, approved by {})'.format(
         head, run_id, attempt, receipt['runId'], APPROVER)
@@ -890,7 +891,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     marker = dict(marker, state='success' if code == 0 else 'failure', description=_describe(last))
     update_marker(path, marker)
     log('Release {}: {}'.format('succeeded' if code == 0 else 'failed', identity))
-    deliver(github, log, path, marker)
+    deliver(github, log, path, marker, attempt)
     return 0 if code == 0 else 1
 
 
