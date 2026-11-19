@@ -595,27 +595,40 @@ def run_runner(argv, environment, log, popen=subprocess.Popen):
     return process.wait(), last
 
 
-def wait_for_release_lock(cfg, log, sleep=time.sleep, clock=time.monotonic):
+def release_lock_is_free(cfg):
+    """Probe the runner's server lock (which the daily backup also takes) without keeping it."""
+    try:
+        descriptor = os.open(str(cfg.runtime_dir / '.release.lock'),
+                             os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    except OSError as error:
+        raise Refusal('the server release lock is unavailable') from error
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return True
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def wait_for_release_lock(cfg, log, deadline, sleep=time.sleep):
     """Wait while the daily backup or another release holds the runner's server lock."""
-    path = cfg.runtime_dir / '.release.lock'
-    deadline = clock() + cfg.lock_wait
-    while True:
-        try:
-            descriptor = os.open(str(path), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        except OSError as error:
-            raise Refusal('the server release lock is unavailable') from error
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            return
-        except BlockingIOError:
-            pass
-        finally:
-            os.close(descriptor)
-        if clock() >= deadline:
+    while not release_lock_is_free(cfg):
+        if time.monotonic() >= deadline:
             raise Refusal('the daily backup or another release kept the server lock')
         log('Waiting for the server release lock (daily backup or another release)')
         sleep(cfg.lock_retry)
+
+
+def ready_to_run(cfg, github, log, run_id, attempt, head, deadline, sleep):
+    """The lock is free, the job still waits and main has not moved, all just now."""
+    while True:
+        wait_for_release_lock(cfg, log, deadline, sleep=sleep)
+        ensure_still_waiting(github, run_id, attempt, head)
+        # The check above takes a moment; the daily backup may have started meanwhile.
+        if release_lock_is_free(cfg):
+            return
 
 
 def _describe(text):
@@ -702,14 +715,14 @@ def deliver_pending_outcomes(cfg, github, log, now=time.time):
     _runs_dir(cfg)
     for name in sorted(os.listdir(str(directory))):
         path = directory / name
-        if not name.startswith('active-'):
+        if not name.startswith('active-') or now() - os.lstat(str(path)).st_mtime > MARKER_RETRY_SECONDS:
             continue
         try:
             marker = read_marker(path)
         except Refusal as refusal:
             log(str(refusal))
             continue
-        if marker['reported'] or now() - os.lstat(str(path)).st_mtime > MARKER_RETRY_SECONDS:
+        if marker['reported']:
             continue
         if marker['state'] == 'started':
             # This pass holds the agent lock, so the pass that started it has stopped.
@@ -735,6 +748,9 @@ def run_pass(cfg, github, mode, log, popen=subprocess.Popen, sleep=time.sleep):
         deliver_pending_outcomes(cfg, github, log)
     head = main_head(github)
     for run in deploy_runs(github, mode):
+        # Observe mode lists every status; a run still queued or waiting for approval is not news.
+        if mode == 'observe' and run.get('status') not in ('in_progress', 'completed'):
+            continue
         try:
             run_id, attempt, started = check_run(run, mode)
         except Refusal as refusal:
@@ -771,8 +787,10 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
         verify_checkout(cfg, receipt)
         check_runtime(cfg)
     except Refusal as refusal:
-        description = 'Refused: {}'.format(refusal)
-        marker = {'commit': head, 'runId': run_id, 'state': 'failure', 'description': description,
+        # The run's own commit: that is where its waiting job looks, and the head of main
+        # must not show a failure before its own run is even approved.
+        description = _describe('Refused: {}'.format(refusal))
+        marker = {'commit': run['head_sha'], 'runId': run_id, 'state': 'failure', 'description': description,
                   'reported': mode == 'observe'}
         if claim(cfg, mode, run_id, attempt, marker):
             log('Deploy run {} attempt {}: {}'.format(run_id, attempt, description))
@@ -798,11 +816,12 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     except (Unavailable, Refusal) as error:
         log('Could not report the start: {}'.format(error))
     try:
-        wait_for_release_lock(cfg, log, sleep=sleep)
-        ensure_still_waiting(github, run_id, attempt, head)
+        # One lock wait for the whole release, so the deploy job's timeout can cover it.
+        deadline = time.monotonic() + cfg.lock_wait
+        ready_to_run(cfg, github, log, run_id, attempt, head, deadline, sleep)
         code, last = run_runner(*runner_command(cfg, 'preflight', receipt), log, popen=popen)
         if code == 0:
-            ensure_still_waiting(github, run_id, attempt, head)
+            ready_to_run(cfg, github, log, run_id, attempt, head, deadline, sleep)
             code, last = run_runner(*runner_command(cfg, 'deploy', receipt), log, popen=popen)
     except Refusal as refusal:
         code, last = 2, 'Refused: {}'.format(refusal)
@@ -814,7 +833,7 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     except OSError as error:
         code, last = 1, 'The release runner could not start: {}'.format(error)
         log(last)
-    marker = dict(marker, state='success' if code == 0 else 'failure', description=last)
+    marker = dict(marker, state='success' if code == 0 else 'failure', description=_describe(last))
     update_marker(path, marker)
     log('Release {}: {}'.format('succeeded' if code == 0 else 'failed', identity))
     deliver(github, log, path, marker)

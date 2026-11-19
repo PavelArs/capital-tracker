@@ -17,6 +17,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 import urllib.error
 import zipfile
 
@@ -295,6 +296,35 @@ class ReleasesApprovedRuns(AgentFixture):
         self.assertEqual(self.popen.calls, [])
         self.assertEqual(self.statuses()[-1], ('failure', 'Refused: the daily backup or another release kept the server lock'))
 
+    def test_the_lock_wait_is_one_budget_for_the_whole_release(self):
+        self.cfg.lock_wait = 40 * 60
+        lock = os.open(str(self.runtime / '.release.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, lock)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        clock = [1000.0]
+        sleeps = []
+
+        def half_an_hour_passes(seconds):
+            # The lock frees after the first half hour, and again after an hour after preflight.
+            sleeps.append(seconds)
+            clock[0] += 30 * 60
+            if len(sleeps) in (1, 3):
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+        class BackupStartsAfterPreflight(FakePopen):
+            def __call__(inner, argv, env, **options):
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                return FakePopen.__call__(inner, argv, env, **options)
+
+        self.popen = BackupStartsAfterPreflight(0, 0)
+        with unittest.mock.patch.object(agent.time, 'monotonic', lambda: clock[0]):
+            code = agent.main(['run'], cfg=self.cfg, github=self.github, log=self.logs.append,
+                              popen=self.popen, sleep=half_an_hour_passes)
+        self.assertEqual(code, 1)
+        self.assertEqual([call[0][2] for call in self.popen.calls], ['preflight'])
+        self.assertEqual(len(sleeps), 2)
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: the daily backup or another release kept the server lock'))
+
     def test_status_description_is_printable_and_short(self):
         self.assertEqual(agent._describe('\x1b[31mfailed\x1b[0m ' + 'x' * 200), ('[31mfailed[0m ' + 'x' * 200)[:140])
         self.assertEqual(agent._describe('\n'), 'No output')
@@ -342,13 +372,31 @@ class ChecksAgainRightBeforeChanging(AgentFixture):
         self.assertEqual(self.popen.calls, [])
         self.assertIn('Not released, GitHub unavailable for the final check', self.statuses()[-1][1])
 
-    def test_a_stale_waiting_run_is_failed_at_once(self):
+    def test_a_stale_waiting_run_is_failed_at_once_on_its_own_commit(self):
         stale = 'e' * 40
         self.serve(run=self.run_object(head_sha=stale))
         self.assertEqual(self.run_agent(), 2)
         self.assertEqual(self.github.downloads, [])
         self.assertEqual(self.statuses(), [('failure', 'Refused: commit eeeeeeeeeeee is no longer the head of main')])
-        self.assertEqual(self.github.posts[0][0], '/repos/{}/statuses/{}'.format(R, self.commit))
+        self.assertEqual([path for path, _ in self.github.posts], ['/repos/{}/statuses/{}'.format(R, stale)])
+
+    def test_the_daily_backup_starting_during_the_check_makes_the_agent_wait(self):
+        lock = os.open(str(self.runtime / '.release.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, lock)
+        self.github.on_get['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = lambda: fcntl.flock(lock, fcntl.LOCK_EX)
+
+        def backup_finishes(seconds):
+            self.sleeps.append(seconds)
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+        self.popen = FakePopen(0, 0)
+        code = agent.main(['run'], cfg=self.cfg, github=self.github, log=self.logs.append,
+                          popen=self.popen, sleep=backup_finishes)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.sleeps, [1])
+        self.assertEqual(len(self.popen.calls), 2)
+        run_checks = [path for path in self.github.gets if path == '/repos/{}/actions/runs/{}'.format(R, RUN_ID)]
+        self.assertEqual(len(run_checks), 3)
 
 
 class ReportsEveryOutcome(AgentFixture):
@@ -383,6 +431,27 @@ class ReportsEveryOutcome(AgentFixture):
         self.assertEqual(self.run_agent(), 2)
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(self.statuses(), [('failure', 'Refused: the agent releases only an existing installation')])
+
+    def test_a_long_runner_line_is_stored_short_and_delivered(self):
+        class LongLine(FakePopen):
+            def __call__(inner, argv, env, **options):
+                inner.calls.append((argv, env, options))
+                return FakeProcess([b'x' * (agent.MAX_RECEIPT_BYTES + 10) + b'\n'], inner.codes.pop(0))
+
+        self.github.failing_posts = 2
+        self.assertEqual(self.run_agent(LongLine(0, 0)), 0)
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.statuses(), [('success', 'x' * 140)])
+
+    def test_old_markers_are_not_read_again(self):
+        runs = self.state / 'runs'
+        runs.mkdir(mode=0o700)
+        path = runs / 'active-{}-1'.format(RUN_ID)
+        path.write_text('not a marker')
+        old = os.lstat(str(path)).st_mtime - agent.MARKER_RETRY_SECONDS - 60
+        os.utime(str(path), (old, old))
+        self.run_agent()
+        self.assertFalse(any('malformed run marker' in line for line in self.logs))
 
     def test_old_unreported_outcomes_are_dropped(self):
         runs = self.state / 'runs'
@@ -439,6 +508,14 @@ class ObserveMode(AgentFixture):
         ]}
         self.run_agent()
         self.assertEqual(self.github.downloads, ['/repos/{}/actions/artifacts/{}/zip'.format(R, ARTIFACT_ID)])
+
+    def test_ignores_runs_still_waiting_for_approval_silently(self):
+        for status in ('queued', 'waiting'):
+            with self.subTest(status=status):
+                self.serve(run=self.run_object(status=status))
+                self.assertEqual(self.run_agent(), 0)
+                self.assertEqual(self.logs, [])
+                self.assertFalse(any(path.endswith('/artifacts') for path in self.github.gets))
 
     def test_ignores_runs_of_older_commits_silently(self):
         self.serve(run=self.run_object(head_sha='e' * 40, status='completed'))
@@ -794,6 +871,8 @@ class SystemdUnits(unittest.TestCase):
         timer = (REPO / 'deploy/agent/capital-tracker-deploy-agent.timer').read_text()
         installer = (REPO / 'scripts/deploy-agent-install.sh').read_text()
         self.assertIn('Type=oneshot', service)
+        self.assertIn('After=network-online.target docker.service snap.docker.dockerd.service', service)
+        self.assertIn('TimeoutStopSec=15min', service)
         self.assertIn('ExecStart=/usr/bin/python3 -I /usr/local/libexec/capital-tracker/deploy-agent run', service)
         self.assertIn('agent=$libexec/deploy-agent', installer)
         self.assertIn('libexec=/usr/local/libexec/capital-tracker', installer)

@@ -46,12 +46,14 @@ Each attempt of a deploy run is handled once: a marker under
 `/var/lib/capital-tracker-agent/runs/` records it before the runner starts, so a re-run
 needs a new approval. A run that is still waiting for approval or comes from another
 workflow, branch or repository is ignored. A waiting run whose commit is no longer the head
-of `main` gets a `failure` status at once, so its job ends instead of waiting.
+of `main` gets a `failure` status on its own commit at once, so its job ends instead of
+waiting.
 
 After waiting for the server lock, and again between the runner's preflight and deploy,
 the agent re-reads the run and `main`: if the job stopped waiting (cancelled, timed out,
 re-run) or `main` moved on, it stops before changing anything. If GitHub cannot be reached
-for that check, nothing is released.
+for that check, nothing is released. It probes the lock once more after that check, so
+the daily backup starting meanwhile makes it wait instead of failing the runner.
 
 The consequence the owner accepted: the release scripts that run as root come from the
 approved commit, not from a copy installed by hand. Whoever controls the owner's GitHub
@@ -66,9 +68,10 @@ group/world-writable entries (`.mfa-key` and `operator/` may belong to uid 1000)
 configuration `/etc/capital-tracker/docker-config` has no plugins of its own. The runner
 gets a fixed environment (`DOCKER_CONFIG`, `RELEASE_*`, a clean `PATH`) and the compose
 file of the approved commit. If the daily backup holds the server lock, the agent waits
-up to 40 minutes instead of failing. Two dispatcher checks are not repeated: the Snap
-Docker plugin tree (read-only Snap files that only snapd changes) and the content of the
-PostgreSQL pins (only read for a `resume-fresh` installation, which the agent refuses).
+up to 40 minutes in all (before preflight and before deploy together) instead of failing.
+Two dispatcher checks are not repeated: the Snap Docker plugin tree (read-only Snap files
+that only snapd changes) and the content of the PostgreSQL pins (only read for a
+`resume-fresh` installation, which the agent refuses).
 
 In `active` mode the agent reports on the commit as the status `production-release`:
 `pending` when it starts, then `success` or `failure` with the runner's last line and a
