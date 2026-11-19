@@ -19,8 +19,9 @@ RUN pnpm --dir frontend build
 
 FROM nginx:1.31.9-alpine-slim@sha256:5bfced78d24d644270bedb0a9968697042e38d5c03fb6354603df025279c1cbe AS release
 
-# CVE-2026-103111: the pinned base ships pcre2 10.47-r0; require the fixed Alpine package.
-# CVE-2026-14456 and CVE-2026-45447: it also ships OpenSSL 3.5.6-r0; require 3.5.8-r0.
+# Keep the floors for CVE-2026-103111 (pcre2 10.49-r0) and CVE-2026-14456 / CVE-2026-45447
+# (OpenSSL 3.5.8-r0) so that no older base can bring the vulnerable packages back.
+# The 1.31.9 base (Alpine 3.24.4) already ships pcre2 10.49-r0 and OpenSSL 3.5.9-r0.
 RUN apk add --no-cache 'pcre2>=10.49-r0' 'libcrypto3>=3.5.8-r0' 'libssl3>=3.5.8-r0'
 
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
