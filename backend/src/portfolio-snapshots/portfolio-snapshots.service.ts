@@ -34,6 +34,7 @@ import { readEffectiveChanges, readPersonalRate } from '../inflation/inflation.s
 import { buildSeries, officialFactor, personalFactor } from '../inflation/inflation-math';
 import { errorMessage, trackJob } from '../observability/metrics';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
+import { namesItsAsset } from '../prices/market-codes';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import {
   capitalFlows,
@@ -454,21 +455,22 @@ async function readSeriesInputs(
   }[] =
     since === null
       ? await manager.query(
-          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
-            WHERE asset = ANY($1) AND "quoteCurrency" = $2`,
+          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations p
+            WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND ${namesItsAsset('p')}`,
           [marketCodes(priced), QUOTE_CURRENCY],
         )
       : await manager.query(
-          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
+          `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations p
             WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" >= $3
-              AND ($4::timestamptz IS NULL OR "observedAt" <= $4)
+              AND ($4::timestamptz IS NULL OR "observedAt" <= $4) AND ${namesItsAsset('p')}
           UNION ALL
           SELECT p.asset, p."observedAt", p.price::text, p.source, p.kind
             FROM unnest($1::text[]) a(asset)
-            CROSS JOIN LATERAL (SELECT max("observedAt") AS at FROM price_observations
-              WHERE asset = a.asset AND "quoteCurrency" = $2 AND "observedAt" < $3) last
+            CROSS JOIN LATERAL (SELECT max("observedAt") AS at FROM price_observations q
+              WHERE asset = a.asset AND "quoteCurrency" = $2 AND "observedAt" < $3
+                AND ${namesItsAsset('q')}) last
             JOIN price_observations p ON p.asset = a.asset AND p."quoteCurrency" = $2
-              AND p."observedAt" = last.at`,
+              AND p."observedAt" = last.at AND ${namesItsAsset('p')}`,
           [marketCodes(priced), QUOTE_CURRENCY, since, until],
         );
   const manual: {

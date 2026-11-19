@@ -31,6 +31,7 @@ import {
   withoutStoredYields,
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
+import { loadChainTokens, separateTokenTickers } from './chain-tokens';
 import { jsonbText } from './jsonb-text';
 import { insertTransactions } from './wallet-transactions';
 
@@ -421,9 +422,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   }
 
   private insertConverts(account: AccountRow, legs: BybitLeg[]) {
-    return this.source.transaction('READ COMMITTED', (manager) =>
-      this.insert(manager, account, legs),
-    );
+    return this.store(legs, (manager) => this.insert(manager, account, legs));
   }
 
   /**
@@ -548,7 +547,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
 
   /** Stores one window's legs and moves that list's cursor in one transaction. */
   private commit(expected: AccountRow, column: Column, legs: BybitLeg[], next: Date) {
-    return this.source.transaction('READ COMMITTED', async (manager) => {
+    return this.store(legs, async (manager) => {
       const [current]: Pick<AccountRow, Column>[] = await manager.query(
         `SELECT "${column}" FROM bybit_accounts WHERE "walletId" = $1 FOR UPDATE`,
         [expected.id],
@@ -562,6 +561,26 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       ]);
       return inserted;
     });
+  }
+
+  /**
+   * One transaction that stores records. TOKEN-TICKER: a token holding the code of a coin they
+   * name gives the code up first; the tokens are then read again once the transaction ends,
+   * committed or not, so this process names every token as stored.
+   */
+  private async store<T>(legs: BybitLeg[], work: (manager: EntityManager) => Promise<T>) {
+    let renamed = 0;
+    try {
+      return await this.source.transaction('READ COMMITTED', async (manager): Promise<T> => {
+        const codes = legs.flatMap((leg) =>
+          typeof leg.raw.quoteAsset === 'string' ? [leg.asset, leg.raw.quoteAsset] : [leg.asset],
+        );
+        renamed = await separateTokenTickers(manager, codes);
+        return work(manager);
+      });
+    } finally {
+      if (renamed > 0) await loadChainTokens(this.source.manager);
+    }
   }
 
   private async insert(manager: EntityManager, account: AccountRow, read: BybitLeg[]) {
