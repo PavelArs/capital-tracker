@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@12.9.1",
   "devDependencies": {
-    "@fission-ai/openspec": "1.16.1",
+    "@fission-ai/openspec": "2.0.0",
     "@playwright/test": "1.65.0",
     "@types/node": "^26.6.6",
     "yaml": "2.9.1"
