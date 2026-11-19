@@ -40,6 +40,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -101,6 +102,8 @@ GIT_TIMEOUT_SECONDS = 600
 MARKER_RETRY_SECONDS = 24 * 60 * 60
 MARKER_STATES = ('started', 'success', 'failure', 'observed')
 STOPPED_DURING_RELEASE = 'The agent stopped during this release; see journalctl -u capital-tracker-deploy-agent'
+STOPPING = 'the agent is stopping (shutdown, a stop or the unit timeout)'
+LOCK_KEPT = 'the daily backup or another release kept the server lock'
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
@@ -582,8 +585,31 @@ def runner_command(cfg, operation, receipt):
     return argv, environment
 
 
+class StopRequest:
+    """SIGTERM (shutdown, systemctl stop, the unit's start timeout) asks the pass to stop.
+
+    The agent does not die on it: systemd signals the runner too, and the runner's cleanup
+    (the rollback to the previous pair) writes to the agent's pipe, so the agent keeps
+    reading until the runner exits. It only starts nothing new.
+    """
+
+    def __init__(self):
+        self.requested = False
+
+    def __call__(self, signum, frame):
+        self.requested = True
+
+    def check(self):
+        if self.requested:
+            raise Refusal(STOPPING)
+
+
+STOP = StopRequest()
+
+
 def run_runner(argv, environment, log, popen=subprocess.Popen):
     """Stream the runner's output to the journal; return its exit code and last line."""
+    STOP.check()
     last = ''
     process = popen(argv, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, cwd='/')
@@ -614,26 +640,35 @@ def release_lock_is_free(cfg):
 
 def wait_for_release_lock(cfg, log, deadline, sleep=time.sleep):
     """Wait while the daily backup or another release holds the runner's server lock."""
-    while not release_lock_is_free(cfg):
+    while True:
+        STOP.check()
+        if release_lock_is_free(cfg):
+            return
         if time.monotonic() >= deadline:
-            raise Refusal('the daily backup or another release kept the server lock')
+            raise Refusal(LOCK_KEPT)
         log('Waiting for the server release lock (daily backup or another release)')
         sleep(cfg.lock_retry)
 
 
 def ready_to_run(cfg, github, log, run_id, attempt, head, deadline, sleep):
-    """The lock is free, the job still waits and main has not moved, all just now."""
+    """The lock is free, the job still waits and main has not moved, all just now.
+
+    This narrows, not closes, the window before the runner's own `flock -n`: a backup
+    starting in the moment between this probe and the runner still fails the runner.
+    """
     while True:
         wait_for_release_lock(cfg, log, deadline, sleep=sleep)
         ensure_still_waiting(github, run_id, attempt, head)
         # The check above takes a moment; the daily backup may have started meanwhile.
         if release_lock_is_free(cfg):
             return
+        if time.monotonic() >= deadline:
+            raise Refusal(LOCK_KEPT)
 
 
 def _describe(text):
     text = re.sub(r'[^\x20-\x7e]', '', text).strip()
-    return text[:140] or 'No output'
+    return text[:140].rstrip() or 'No output'
 
 
 def report(github, commit, run_id, state, description):
@@ -789,9 +824,9 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     except Refusal as refusal:
         # The run's own commit: that is where its waiting job looks, and the head of main
         # must not show a failure before its own run is even approved.
-        description = _describe('Refused: {}'.format(refusal))
-        marker = {'commit': run['head_sha'], 'runId': run_id, 'state': 'failure', 'description': description,
-                  'reported': mode == 'observe'}
+        description = 'Refused: {}'.format(refusal)
+        marker = {'commit': run['head_sha'], 'runId': run_id, 'state': 'failure',
+                  'description': _describe(description), 'reported': mode == 'observe'}
         if claim(cfg, mode, run_id, attempt, marker):
             log('Deploy run {} attempt {}: {}'.format(run_id, attempt, description))
             if mode == 'active':
@@ -816,7 +851,8 @@ def handle(cfg, github, mode, log, run, artifact, head, popen, sleep):
     except (Unavailable, Refusal) as error:
         log('Could not report the start: {}'.format(error))
     try:
-        # One lock wait for the whole release, so the deploy job's timeout can cover it.
+        # One lock wait for preflight and deploy together, so the deploy job's timeout can
+        # cover it: deploy starts within LOCK_WAIT_SECONDS of the first wait or not at all.
         deadline = time.monotonic() + cfg.lock_wait
         ready_to_run(cfg, github, log, run_id, attempt, head, deadline, sleep)
         code, last = run_runner(*runner_command(cfg, 'preflight', receipt), log, popen=popen)
@@ -895,10 +931,15 @@ def main(argv=None, cfg=None, github=None, log=_log, popen=subprocess.Popen, sle
         github = github or GitHub(read_token(cfg))
         if command == 'check':
             return check(github, mode, log)
-        with agent_lock(cfg) as acquired:
-            if not acquired:
-                return 0
-            return run_pass(cfg, github, mode, log, popen=popen, sleep=sleep)
+        STOP.requested = False
+        previous = signal.signal(signal.SIGTERM, STOP)
+        try:
+            with agent_lock(cfg) as acquired:
+                if not acquired:
+                    return 0
+                return run_pass(cfg, github, mode, log, popen=popen, sleep=sleep)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
     except Refusal as refusal:
         log('Refused: {}'.format(refusal))
         return 2

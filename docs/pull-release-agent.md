@@ -16,10 +16,12 @@ until the owner switches:
 2. **Deploy job waits for the server.** With the repository variable `DEPLOY_PULL=true`,
    `cd.yml` uploads a `server-release-request` artifact instead of calling the dispatcher
    and waits for the agent's commit status. The owner switches the agent to `active` at
-   the same time. Two constraints for that change: only the job in the `production`
+   the same time. Three constraints for that change: only the job in the `production`
    environment may upload the request (the approvals API names no attempt, so the
-   approval is bound to an attempt only because that job cannot start without one), and
-   the job must wait longer than the agent's 40-minute lock wait plus a release.
+   approval is bound to an attempt only because that job cannot start without one); the
+   job must wait longer than the agent's 40-minute lock budget plus a deploy; and it must
+   only accept a `production-release` status created after its own upload, because a
+   re-run attempt sees the earlier attempt's status on the same commit.
 3. **Retire the dispatcher** after two releases through the agent: remove its workflow
    steps, scripts and tests, then the owner removes the `capital-release` account, its
    sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret.
@@ -53,7 +55,9 @@ After waiting for the server lock, and again between the runner's preflight and 
 the agent re-reads the run and `main`: if the job stopped waiting (cancelled, timed out,
 re-run) or `main` moved on, it stops before changing anything. If GitHub cannot be reached
 for that check, nothing is released. It probes the lock once more after that check, so
-the daily backup starting meanwhile makes it wait instead of failing the runner.
+a daily backup that started meanwhile makes it wait. That narrows the window, it does not
+close it: a backup starting in the moment between that probe and the runner's own lock
+still fails the release, and the runner rolls back as usual.
 
 The consequence the owner accepted: the release scripts that run as root come from the
 approved commit, not from a copy installed by hand. Whoever controls the owner's GitHub
@@ -68,7 +72,8 @@ group/world-writable entries (`.mfa-key` and `operator/` may belong to uid 1000)
 configuration `/etc/capital-tracker/docker-config` has no plugins of its own. The runner
 gets a fixed environment (`DOCKER_CONFIG`, `RELEASE_*`, a clean `PATH`) and the compose
 file of the approved commit. If the daily backup holds the server lock, the agent waits
-up to 40 minutes in all (before preflight and before deploy together) instead of failing.
+for it instead of failing, with one 40-minute budget counted from its first wait: deploy
+starts within about 40 minutes of that (preflight included) or the release is refused.
 Two dispatcher checks are not repeated: the Snap Docker plugin tree (read-only Snap files
 that only snapd changes) and the content of the PostgreSQL pins (only read for a
 `resume-fresh` installation, which the agent refuses).
@@ -79,6 +84,13 @@ link to the deploy run. The full output goes to the journal on the server
 (`journalctl -u capital-tracker-deploy-agent`). An outcome GitHub could not take is posted
 again by later passes for a day; a release left open by a stopped pass (for example a
 reboot) is reported as `failure` and never started again.
+
+When the unit stops during a release (shutdown, `systemctl stop`, or its two-hour start
+timeout), systemd sends SIGTERM to the agent and the runner together. The agent keeps
+reading the runner's output until the runner has finished its rollback to the previous
+pair, starts nothing new, and records the release as `failure`. The unit is ordered after
+Docker, so at shutdown Docker is still running for that rollback; systemd allows it 15
+minutes. The agent never starts Docker itself.
 
 Observe mode reads the same runs, including ones that finished before a pass saw them
 (the dispatcher's release often ends within a minute of its receipt upload), never posts

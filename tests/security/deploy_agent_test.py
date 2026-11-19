@@ -14,8 +14,11 @@ import io
 import json
 import os
 import pathlib
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 import urllib.error
@@ -325,9 +328,30 @@ class ReleasesApprovedRuns(AgentFixture):
         self.assertEqual(len(sleeps), 2)
         self.assertEqual(self.statuses()[-1], ('failure', 'Refused: the daily backup or another release kept the server lock'))
 
+    def test_a_lock_that_keeps_changing_hands_still_ends_at_the_deadline(self):
+        self.cfg.lock_wait = 0
+        probes = []
+
+        def flapping(cfg):
+            # Free for each wait, taken again by the time of the re-probe.
+            probes.append(cfg)
+            if len(probes) > 10:
+                raise AssertionError('the agent kept looping past its deadline')
+            return len(probes) % 2 == 1
+
+        with unittest.mock.patch.object(agent, 'release_lock_is_free', flapping):
+            self.assertEqual(self.run_agent(), 1)
+        self.assertEqual(len(probes), 2)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: ' + agent.LOCK_KEPT))
+
     def test_status_description_is_printable_and_short(self):
         self.assertEqual(agent._describe('\x1b[31mfailed\x1b[0m ' + 'x' * 200), ('[31mfailed[0m ' + 'x' * 200)[:140])
         self.assertEqual(agent._describe('\n'), 'No output')
+        # Stored and posted descriptions agree: shortening twice changes nothing.
+        cut_at_a_space = 'a' * 139 + ' b'
+        self.assertEqual(agent._describe(cut_at_a_space), 'a' * 139)
+        self.assertEqual(agent._describe(agent._describe(cut_at_a_space)), agent._describe(cut_at_a_space))
 
 
 class ChecksAgainRightBeforeChanging(AgentFixture):
@@ -397,6 +421,122 @@ class ChecksAgainRightBeforeChanging(AgentFixture):
         self.assertEqual(len(self.popen.calls), 2)
         run_checks = [path for path in self.github.gets if path == '/repos/{}/actions/runs/{}'.format(R, RUN_ID)]
         self.assertEqual(len(run_checks), 3)
+
+
+class LetsTheRunnerFinishWhenStopped(AgentFixture):
+    """At shutdown or the unit timeout systemd signals the agent and the runner together.
+
+    The runner's cleanup (the rollback to the previous pair) writes to the agent's pipe, so
+    the agent must keep reading until the runner exits, then start nothing new.
+    """
+
+    CLEANUP = b'Release failed; previous application pair readiness and privacy verified against unchanged schema\n'
+
+    def setUp(self):
+        super().setUp()
+        # Stands in for the default action, which would end the test process.
+        self.signals = []
+        previous = signal.signal(signal.SIGTERM, lambda signum, frame: self.signals.append(signum))
+        self.addCleanup(signal.signal, signal.SIGTERM, previous)
+        self.test_handler = signal.getsignal(signal.SIGTERM)
+
+    def stopped_during(self, operation):
+        test = self
+
+        class StoppedDuring(FakePopen):
+            def __call__(inner, argv, env, **options):
+                inner.calls.append((argv, env, options))
+                code = inner.codes.pop(0)
+
+                def output():
+                    yield b'step output\n'
+                    if argv[2] == operation:
+                        os.kill(os.getpid(), signal.SIGTERM)
+                        yield test.CLEANUP
+                    else:
+                        yield b'Release verified\n'
+
+                return FakeProcess(output(), code)
+
+        return StoppedDuring
+
+    def test_the_rollback_after_a_stop_during_deploy_is_read_to_the_end(self):
+        self.assertEqual(self.run_agent(self.stopped_during('deploy')(0, 143)), 1)
+        self.assertEqual([call[0][2] for call in self.popen.calls], ['preflight', 'deploy'])
+        self.assertEqual(self.signals, [])
+        self.assertEqual(self.logs.count(self.CLEANUP.decode().strip()), 1)
+        self.assertEqual(self.statuses()[-1], ('failure', agent._describe(self.CLEANUP.decode())))
+        self.assertIs(signal.getsignal(signal.SIGTERM), self.test_handler)
+
+    def test_a_stop_during_preflight_starts_no_deploy(self):
+        self.assertEqual(self.run_agent(self.stopped_during('preflight')(0)), 1)
+        self.assertEqual([call[0][2] for call in self.popen.calls], ['preflight'])
+        self.assertEqual(self.signals, [])
+        self.assertIn(self.CLEANUP.decode().strip(), self.logs)
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: ' + agent.STOPPING))
+
+    def test_a_stop_during_the_lock_wait_starts_no_runner(self):
+        lock = os.open(str(self.runtime / '.release.lock'), os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, lock)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        self.popen = FakePopen(0, 0)
+        code = agent.main(['run'], cfg=self.cfg, github=self.github, log=self.logs.append, popen=self.popen,
+                          sleep=lambda seconds: os.kill(os.getpid(), signal.SIGTERM))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.signals, [])
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: ' + agent.STOPPING))
+
+    def test_a_stop_during_the_final_check_starts_no_runner(self):
+        self.github.on_get['/repos/{}/actions/runs/{}'.format(R, RUN_ID)] = lambda: os.kill(os.getpid(), signal.SIGTERM)
+        self.assertEqual(self.run_agent(), 1)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.signals, [])
+        self.assertEqual(self.statuses()[-1], ('failure', 'Refused: ' + agent.STOPPING))
+
+    def wait_for_sleeping_runner(self, group):
+        """The runner's step is running, like a release step at shutdown (not still starting)."""
+        for _ in range(500):
+            for entry in pathlib.Path('/proc').iterdir():
+                try:
+                    fields = (entry / 'stat').read_text().rsplit(')', 1)[1].split()
+                    name = (entry / 'comm').read_text().strip()
+                except (OSError, IndexError):
+                    continue
+                if name == 'sleep' and fields[2] == str(group):
+                    return
+            time.sleep(0.01)
+        self.fail('the runner never started its step')
+
+    def test_a_real_runner_finishes_its_cleanup_when_the_whole_unit_is_stopped(self):
+        runner = self.root / 'runner.sh'
+        runner.write_text("trap 'echo cleanup start; sleep 0.3; echo cleanup done' EXIT\necho ready\nsleep 30\n")
+        stand_in = self.root / 'agent_stand_in.py'
+        stand_in.write_text(
+            'import importlib.util, signal, sys\n'
+            'spec = importlib.util.spec_from_file_location("deploy_agent", sys.argv[1])\n'
+            'agent = importlib.util.module_from_spec(spec)\n'
+            'spec.loader.exec_module(agent)\n'
+            'signal.signal(signal.SIGTERM, agent.STOP)  # as main() does for a pass\n'
+            'code, last = agent.run_runner(["/bin/bash", sys.argv[2]], {"PATH": "/usr/bin:/bin"},\n'
+            '                              lambda line: print("runner:", line, flush=True))\n'
+            'print("exit", code, "last", last, flush=True)\n')
+        process = subprocess.Popen([sys.executable, '-I', '-B', str(stand_in), str(REPO / 'scripts/deploy-agent.py'), str(runner)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        self.addCleanup(process.stdout.close)
+        self.assertEqual(process.stdout.readline(), b'runner: ready\n')
+        self.wait_for_sleeping_runner(process.pid)
+        # What systemd does when the unit stops: SIGTERM to every process in it at once.
+        os.killpg(process.pid, signal.SIGTERM)
+        rest, _ = process.communicate(timeout=30)
+        self.assertEqual(process.returncode, 0)
+        self.assertIn(b'runner: cleanup done\n', rest)
+        self.assertTrue(rest.endswith(b'last cleanup done\n'), rest)
+
+    def test_a_new_pass_is_not_stopped_by_an_earlier_signal(self):
+        agent.STOP.requested = True
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(len(self.popen.calls), 2)
 
 
 class ReportsEveryOutcome(AgentFixture):
@@ -612,6 +752,15 @@ class IgnoresUnapprovedOrForeignRuns(AgentFixture):
 
 
 class RefusesInvalidRequests(AgentFixture):
+    def test_the_journal_keeps_the_whole_refusal_and_the_status_a_short_one(self):
+        entry = self.runtime / ('long-name-' + 'n' * 180)
+        os.symlink('/etc', str(entry))
+        self.assertEqual(self.run_agent(), 2)
+        refusal = 'Refused: {}: not a directory or regular file'.format(entry)
+        self.assertGreater(len(refusal), 140)
+        self.assertIn('Deploy run {} attempt 1: {}'.format(RUN_ID, refusal), self.logs)
+        self.assertEqual(self.statuses(), [('failure', refusal[:140])])
+
     attempt = 0
 
     def assert_refused(self, reason):
@@ -872,6 +1021,9 @@ class SystemdUnits(unittest.TestCase):
         installer = (REPO / 'scripts/deploy-agent-install.sh').read_text()
         self.assertIn('Type=oneshot', service)
         self.assertIn('After=network-online.target docker.service snap.docker.dockerd.service', service)
+        # Ordering only: a pass every minute must not start Docker the owner stopped.
+        self.assertIn('Wants=network-online.target\n', service)
+        self.assertNotIn('Wants=network-online.target docker', service)
         self.assertIn('TimeoutStopSec=15min', service)
         self.assertIn('ExecStart=/usr/bin/python3 -I /usr/local/libexec/capital-tracker/deploy-agent run', service)
         self.assertIn('agent=$libexec/deploy-agent', installer)

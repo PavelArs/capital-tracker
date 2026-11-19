@@ -2,8 +2,10 @@
 # Installed by scripts/deploy-agent-install.sh; started once a minute by the timer.
 [Unit]
 Description=Capital Tracker release agent: release an owner-approved deploy run
-Wants=network-online.target docker.service snap.docker.dockerd.service
-# Stopped before Docker at shutdown, so a release's rollback can still restart the applications.
+Wants=network-online.target
+# Ordering only (no Wants=): a pass every minute must not start Docker the owner stopped.
+# At shutdown the agent stops before Docker, so the runner's rollback can still restart the
+# applications; the agent reads the runner's output until it exits (SIGTERM starts nothing new).
 After=network-online.target docker.service snap.docker.dockerd.service
 
 [Service]
