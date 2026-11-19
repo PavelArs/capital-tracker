@@ -156,13 +156,18 @@ export const APPEND_ONLY_INPUTS: ReadonlySet<string> = new Set([
   'wallet_tron_stake_moves',
 ]);
 const digest = (row: string) => `coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '')`;
-// Only which account an address belongs to; its sync progress changes no value.
+// Wallet tracking and token visibility affect past values. Ordinary sync progress does not.
 const INPUT_PARTS: readonly [string, string][] = [
   ...INPUT_TABLES.map((table): [string, string] => [
     table,
     APPEND_ONLY_INPUTS.has(table) ? 'count(*)::text' : digest('t::text'),
   ]),
-  ['wallet_addresses', digest(`t.id::text || ':' || coalesce(t."accountId"::text, '')`)],
+  [
+    'wallet_addresses',
+    digest(
+      `ROW(t.id, t."accountId", t."removedAt" IS NULL, t."hiddenTokens", t."shownTokens", t."tokenBackfillTo" IS NULL)::text`,
+    ),
+  ],
 ];
 export const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revision FROM (${INPUT_PARTS.map(
   ([table, value]) => `SELECT '${table}:' || ${value} AS part FROM ${table} t WHERE t."ownerId"=$1`,
