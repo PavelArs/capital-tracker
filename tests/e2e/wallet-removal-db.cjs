@@ -56,11 +56,15 @@ function services(db) {
   const {
     WalletAddressService,
   } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
+  const {
+    PortfolioSnapshotsService,
+  } = require('/app/backend/dist/portfolio-snapshots/portfolio-snapshots.service.js');
   // No adapters: the probe stores raw rows itself, as a sync would.
   const sync = new WalletSyncService(db, new ConfigService({}), [], classifications);
   return {
     accounting: make('accounting.service', 'AccountingService'),
     trades,
+    snapshots: new PortfolioSnapshotsService(db, new ConfigService({})),
     portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     operations: make('operation-list.service', 'OperationListService'),
     classifications,
@@ -150,6 +154,11 @@ async function removeAddress(db, s, owner) {
   assert.equal(await count(s, owner), 1, 'B waits for an answer');
   assert.equal((await rows(s, owner)).length, 2);
   assert.deepEqual(await held(s, owner, trust), ['0.7'], 'Both addresses count');
+  const historicalValue = async () => {
+    const history = await s.snapshots.history(owner, { period: '1M', currency: 'USD' }, now);
+    return history.points.find((point) => point.at === '2026-10-01T00:00:00.000Z').value;
+  };
+  assert.equal(await historicalValue(), '42000', 'The cached chart includes both addresses');
 
   stage = 'WALLET-REMOVE removing B drops its unanswered movement from every count';
   await s.addresses.remove(owner, b);
@@ -161,6 +170,7 @@ async function removeAddress(db, s, owner) {
     "B's row is gone",
   );
   assert.deepEqual(await held(s, owner, trust), ['0.6'], "B's coins are not counted");
+  assert.equal(await historicalValue(), '36000', 'The next chart read excludes the removed address');
   assert.equal(await rawFingerprint(db, owner), before, 'Stored transactions are untouched');
   assert.equal(
     (await db.query('SELECT count(*)::int AS n FROM wallet_addresses WHERE id=$1', [b]))[0].n,
@@ -205,6 +215,7 @@ async function removeAddress(db, s, owner) {
   assert.deepEqual(await listed(s, owner), [a, b, c].sort());
   assert.equal(await count(s, owner), 1, 'B waits for an answer again');
   assert.deepEqual(await held(s, owner, trust), ['0.7']);
+  assert.equal(await historicalValue(), '42000', 'Tracking the address again restores its chart history');
   const repeat = await track(s, owner, 'b', trust);
   assert.equal(repeat.created, false, 'A tracked address is returned as it is');
   assert.equal(await rawFingerprint(db, owner), before, 'Stored transactions are untouched');
