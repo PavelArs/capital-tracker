@@ -130,7 +130,7 @@ services:
     networks: [isolated]
 
   proxy:
-    image: nginx:1.28.0-alpine
+    image: nginx:1.30.7-alpine
     ports:
       - "127.0.0.1:${CAPITAL_E2E_HTTPS_PORT:-8443}:443"
     volumes:
