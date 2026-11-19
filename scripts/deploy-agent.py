@@ -107,6 +107,7 @@ LOCK_KEPT = 'the daily backup or another release kept the server lock'
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
+ACTIVE_MARKER = re.compile(r'active-([1-9][0-9]{0,19})-([1-9][0-9]{0,9})')
 SHA256 = re.compile(r'[a-f0-9]{64}')
 TOKEN = re.compile(r'github_pat_[A-Za-z0-9_]{20,255}')
 RECEIPT_NAME = re.compile(r'([a-f0-9]{40})-([1-9][0-9]{0,19})\.json')
@@ -743,20 +744,30 @@ def deliver(github, log, path, marker):
 
 
 def deliver_pending_outcomes(cfg, github, log, now=time.time):
-    """Report outcomes an earlier pass could not post, and releases a stopped pass left open."""
+    """Report outcomes an earlier pass could not post, and releases a stopped pass left open.
+
+    Every attempt of a commit posts the same status context, so only the latest attempt
+    (highest run id, then attempt) of each commit is posted; an older one would replace it.
+    """
     directory = cfg.state_dir / 'runs'
     if not os.path.lexists(str(directory)):
         return
     _runs_dir(cfg)
-    for name in sorted(os.listdir(str(directory))):
+    markers = []
+    for name in os.listdir(str(directory)):
         path = directory / name
-        if not name.startswith('active-') or now() - os.lstat(str(path)).st_mtime > MARKER_RETRY_SECONDS:
+        match = ACTIVE_MARKER.fullmatch(name)
+        # A later attempt is always written after an earlier one, so it is never older.
+        if not match or now() - os.lstat(str(path)).st_mtime > MARKER_RETRY_SECONDS:
             continue
         try:
-            marker = read_marker(path)
+            markers.append(((int(match.group(1)), int(match.group(2))), path, read_marker(path)))
         except Refusal as refusal:
             log(str(refusal))
-            continue
+    latest = {}
+    for order, _, marker in markers:
+        latest[marker['commit']] = max(order, latest.get(marker['commit'], order))
+    for order, path, marker in sorted(markers, key=lambda item: item[0]):
         if marker['reported']:
             continue
         if marker['state'] == 'started':
@@ -764,6 +775,11 @@ def deliver_pending_outcomes(cfg, github, log, now=time.time):
             marker = dict(marker, state='failure', description=STOPPED_DURING_RELEASE)
             update_marker(path, marker)
             log('Deploy run {}: {}'.format(marker['runId'], STOPPED_DURING_RELEASE))
+        if order < latest[marker['commit']]:
+            update_marker(path, dict(marker, reported=True))
+            log('Deploy run {} attempt {}: not reported, a later attempt for commit {} supersedes it'.format(
+                order[0], order[1], marker['commit']))
+            continue
         deliver(github, log, path, marker)
 
 

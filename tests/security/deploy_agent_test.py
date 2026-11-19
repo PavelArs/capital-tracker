@@ -583,6 +583,35 @@ class ReportsEveryOutcome(AgentFixture):
         self.assertEqual(self.run_agent(), 0)
         self.assertEqual(self.statuses(), [('success', 'x' * 140)])
 
+    def write_markers(self, *markers):
+        runs = self.state / 'runs'
+        runs.mkdir(mode=0o700)
+        for name, commit, state, reported in markers:
+            (runs / name).write_text(json.dumps({'commit': commit, 'runId': int(name.split('-')[1]), 'state': state,
+                                                 'description': state, 'reported': reported}))
+        return runs
+
+    def test_an_outcome_a_later_attempt_superseded_is_not_posted(self):
+        # Run 1000 is later than run 900 although its name sorts first.
+        runs = self.write_markers(('active-{}-1'.format(RUN_ID), self.commit, 'failure', False),
+                                  ('active-1000-1', self.commit, 'success', True))
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.popen.calls, [])
+        self.assertEqual(self.github.posts, [])
+        self.assertTrue(json.loads((runs / 'active-{}-1'.format(RUN_ID)).read_text())['reported'])
+        self.assertIn('Deploy run {} attempt 1: not reported, a later attempt for commit {} supersedes it'.format(
+            RUN_ID, self.commit), self.logs)
+
+    def test_only_the_latest_pending_outcome_of_a_commit_is_posted(self):
+        other = 'e' * 40
+        self.write_markers(('active-{}-1'.format(RUN_ID), self.commit, 'started', False),
+                           ('active-{}-2'.format(RUN_ID), self.commit, 'success', False),
+                           ('active-800-1', other, 'failure', False))
+        self.assertEqual(self.run_agent(), 0)
+        self.assertEqual(self.popen.calls, [])
+        posted = sorted((path.rsplit('/', 1)[1], body['state']) for path, body in self.github.posts)
+        self.assertEqual(posted, sorted([(other, 'failure'), (self.commit, 'success')]))
+
     def test_old_markers_are_not_read_again(self):
         runs = self.state / 'runs'
         runs.mkdir(mode=0o700)

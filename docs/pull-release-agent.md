@@ -82,8 +82,10 @@ In `active` mode the agent reports on the commit as the status `production-relea
 `pending` when it starts, then `success` or `failure` with the runner's last line and a
 link to the deploy run. The full output goes to the journal on the server
 (`journalctl -u capital-tracker-deploy-agent`). An outcome GitHub could not take is posted
-again by later passes for a day; a release left open by a stopped pass (for example a
-reboot) is reported as `failure` and never started again.
+again by later passes for a day, unless a later attempt of the same commit has an outcome
+of its own (all attempts share the status, so the older one would replace it); a release
+left open by a stopped pass (for example a reboot) is reported as `failure` and never
+started again.
 
 When the unit stops during a release (shutdown, `systemctl stop`, or its two-hour start
 timeout), systemd sends SIGTERM to the agent and the runner together. The agent keeps
