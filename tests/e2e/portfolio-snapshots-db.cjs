@@ -674,6 +674,59 @@ async function estimatedStart(db, s) {
   console.log('PASS DASH-START-ESTIMATE DASH-TRADE-ESTIMATE start valued at the latest trade or first later price, stated, priced subset kept');
 }
 
+async function overlappingPrices(db, s) {
+  stage = 'SNAP-OVERLAP a market price commits after a newer broker fetch';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password)
+    VALUES ('overlapping-quotes@example.invalid','synthetic-not-a-hash') RETURNING id`);
+  const eth = await instrument(s, owner, { name: 'Ether', symbol: 'ETH', assetType: 'crypto' });
+  const bond = await instrument(s, owner, { name: 'Bond', assetType: 'manual' });
+  const target = await account(s, owner, 'Quotes', '2025-01-01T00:00:00Z');
+  await trade(s, owner, target, eth, 'buy', '2025-01-01T01:00:00Z', '1', '100');
+  const market = `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind,"fetchedAt")
+    VALUES ('ETH','USD','kraken',$1,$2,'spot',$3)`;
+  // All three clock readings follow the existing fixture data, independently of the host date.
+  const [{ start }] = await db.query('SELECT clock_timestamp()::timestamptz(3) AS start');
+  const laterFetch = new Date(start.getTime() + 2);
+  await db.query(market, ['2025-01-01T00:00:00Z', '100', start]);
+  const asOf = new Date('2025-01-05T12:30:00Z');
+  const value = async (currency = 'USD', at = '2025-01-03T00:00:00.000Z') => {
+    const history = await s.snapshots.history(owner, { period: 'ALL', currency }, asOf);
+    return history.points.find((point) => point.at === at).value;
+  };
+  assert.equal(await value(), '100');
+  const slow = db.createQueryRunner();
+  await slow.connect();
+  try {
+    await slow.startTransaction();
+    await slow.query(market, ['2025-01-02T00:00:00Z', '90', new Date(start.getTime() + 1)]);
+    await db.query(
+      `INSERT INTO broker_price_observations("ownerId","instrumentId",provider,"observedAt",price,"quoteCurrency","fetchedAt")
+        VALUES ($1,$2,'tbank','2025-01-04T00:00:00Z',10,'USD',$3)`,
+      [owner, bond, laterFetch],
+    );
+    assert.equal(await value(), '100', 'The uncommitted market quote is still invisible');
+    await slow.commitTransaction();
+  } finally {
+    if (slow.isTransactionActive) await slow.rollbackTransaction();
+    await slow.release();
+  }
+  assert.equal(await value(), '90', 'The next chart read includes the market quote committed last');
+  await db.query(market, ['2025-01-02T12:00:00Z', '80', laterFetch]);
+  assert.equal(await value(), '80', 'A new quote with the same fetch time also reaches the chart');
+  await db.query(market, ['2025-01-03T00:00:00Z', '75', laterFetch]);
+  assert.equal(await value(), '75', 'Tied fetch times within the same market feed are visible');
+
+  const rate = `INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit","fetchedAt")
+    VALUES ($1,'cbr','2025-01-04',$2,$3)`;
+  const nextDay = '2025-01-05T00:00:00.000Z';
+  await db.query(rate, ['EUR', '100', laterFetch]);
+  assert.equal(await value('RUB', nextDay), '6750', 'The last USD rate values 75 dollars at 90 rubles each');
+  await db.query(rate, ['USD', '70', start]);
+  assert.equal(await value('RUB', nextDay), '5250', 'A rate behind the saved fetch time corrects the conversion');
+  assert.deepEqual(await s.snapshots.refresh(owner, asOf), { outcome: 'fresh' });
+  console.log('PASS SNAP-OVERLAP later commits and equal fetch times update the stored chart');
+}
+
 async function inputsRevision(db, s) {
   stage = 'SNAP-REVISION an owner write changes the inputs revision; nothing else does';
   const { INPUTS_REVISION } = require(modulePath);
@@ -764,6 +817,7 @@ async function main() {
     await pricedSubset(db, s);
     await estimatedStart(db, s);
     await inputsRevision(db, s);
+    await overlappingPrices(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }
