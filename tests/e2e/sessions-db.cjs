@@ -94,39 +94,91 @@ async function createAuthenticated(service, verified) {
   return authenticated;
 }
 
-async function verifyCapacity(source, service, verified) {
-  // Fixed independent fixture rows exercise the actual creation/capacity transaction.
+async function fillPool(source, stateOf, verified) {
+  // Fixed independent fixture rows exercise the actual creation/capacity transaction. Each row
+  // is one millisecond older than the next, so the oldest one is known.
   for (let index = 0; index < 512; index++) {
+    const state = stateOf(index);
     await source.query(
-      `INSERT INTO auth_sessions("tokenHash", "csrfToken", state, "createdAt", "lastSeenAt", "expiresAt")
-      VALUES ($1,$2,'anonymous',clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '5 minutes')`,
-      [hash(randomToken()), randomToken()],
+      `INSERT INTO auth_sessions("tokenHash", "csrfToken", state, "userId", "credentialVersion",
+        "createdAt", "lastSeenAt", "expiresAt")
+      VALUES ($1,$2,$3,$4,$5,clock_timestamp()-make_interval(secs => (512-$6)/1000.0),
+        clock_timestamp(),clock_timestamp()+interval '5 minutes')`,
+      [
+        hash(randomToken()),
+        randomToken(),
+        state,
+        state === 'anonymous' ? null : verified.user.id,
+        state === 'anonymous' ? null : verified.credentialVersion,
+        index,
+      ],
     );
   }
+  return source.query('SELECT * FROM auth_sessions ORDER BY "createdAt", "tokenHash"');
+}
+
+function unchanged(after, kept, message) {
+  for (const old of kept) {
+    assert.equal(
+      fingerprint(after.find((row) => row.tokenHash === old.tokenHash)),
+      fingerprint(old),
+      message,
+    );
+  }
+}
+
+async function verifyCapacity(source, service, verified) {
+  // Codex Security #12: a pool full of anonymous sessions (anyone can make one) retires its
+  // oldest anonymous session instead of refusing the owner a new one.
+  const anonymous = await fillPool(source, () => 'anonymous', verified);
+  const bootstrapped = await service.csrf(null);
+  validateToken(bootstrapped.token);
+  let after = await rows(source);
+  assert.equal(after.length, 512, 'SES-003-A the pool stays at 512');
+  assert.ok(
+    !after.some((row) => row.tokenHash === anonymous[0].tokenHash),
+    'SES-003-A a full pool retires its oldest anonymous session',
+  );
+  assert.ok(after.some((row) => row.tokenHash === hash(bootstrapped.token)));
+  unchanged(after, anonymous.slice(1), 'Only the oldest anonymous session is retired');
+  await source.query('DELETE FROM auth_sessions');
+
+  // The oldest session pending its factor stays; the oldest anonymous one after it goes.
+  const mixed = await fillPool(source, (index) => (index === 0 ? 'pending_mfa' : 'anonymous'), verified);
+  await service.csrf(null);
+  after = await rows(source);
+  assert.equal(after.length, 512);
+  assert.ok(
+    !after.some((row) => row.tokenHash === mixed[1].tokenHash),
+    'SES-003-A the oldest anonymous session goes, even behind an older pending one',
+  );
+  unchanged(after, [mixed[0], ...mixed.slice(2)], 'A pending session is never retired');
+  await source.query('DELETE FROM auth_sessions');
+
+  // Pending sessions need the password: a pool full of them is never thinned.
+  const pending = await fillPool(source, () => 'pending_mfa', verified);
   const before = await rows(source);
-  await rejected(service.csrf(null), 429, 'SES-003-A full anonymous capacity refuses creation');
+  await rejected(
+    service.csrf(null),
+    429,
+    'SES-003-A a pool full of pending sessions refuses creation',
+  );
   assert.equal(
     fingerprint(await rows(source)),
     fingerprint(before),
     'Capacity refusal preserves every active record',
   );
-  const oldest = before[0].tokenHash;
+  const oldest = pending[0].tokenHash;
   await source.query(
     'UPDATE auth_sessions SET "expiresAt"=clock_timestamp()-interval \'1 second\' WHERE "tokenHash"=$1',
     [oldest],
   );
   const created = await service.csrf(null);
   validateToken(created.token);
-  const after = await rows(source);
+  after = await rows(source);
   assert.equal(after.length, 512);
   assert.ok(!after.some((row) => row.tokenHash === oldest), 'Expired row is pruned');
-  for (const old of before.slice(1)) {
-    assert.equal(
-      fingerprint(after.find((row) => row.tokenHash === old.tokenHash)),
-      fingerprint(old),
-      'Live sessions are never evicted to create anonymous capacity',
-    );
-  }
+  unchanged(after, pending.slice(1), 'Live pending sessions are never evicted');
   // All mutations below are limited to the newly created dedicated test database.
   await source.query('DELETE FROM auth_sessions');
   const sessions = [];
@@ -154,7 +206,7 @@ async function verifyCapacity(source, service, verified) {
   }
   await source.query('DELETE FROM auth_sessions');
   console.log(
-    'PASS SES-003-A/C capacity512 anonymous and capacity10 authenticated, live preservation and expiry pruning',
+    'PASS SES-003-A/C capacity512 retiring the oldest anonymous session, never a pending one, and capacity10 authenticated, expiry pruning',
   );
 }
 
