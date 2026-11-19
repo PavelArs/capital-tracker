@@ -1,4 +1,5 @@
 import type { EntityManager } from 'typeorm';
+import { namesItsAsset } from './market-codes';
 import { QUOTE_CURRENCY } from './price-catalog';
 
 export interface LatestMarketPrice {
@@ -30,8 +31,9 @@ export async function latestMarketPrices(
      FROM (SELECT DISTINCT unnest($1::text[]) AS asset) c
      CROSS JOIN LATERAL (
        SELECT asset, price::text AS price, "observedAt", source
-       FROM price_observations
+       FROM price_observations p
        WHERE asset = c.asset AND "quoteCurrency" = $2 AND "observedAt" <= $3
+         AND ${namesItsAsset('p')}
        ORDER BY "observedAt" DESC, kind DESC, source
        LIMIT 1
      ) p
@@ -69,9 +71,9 @@ export async function marketPricesAt(
      FROM unnest($1::text[], $2::timestamptz[]) AS r(asset, at)
      CROSS JOIN LATERAL (
        SELECT asset, price::text AS price, "observedAt", source
-       FROM price_observations
+       FROM price_observations p
        WHERE asset = r.asset AND "quoteCurrency" = $3 AND "observedAt" <= r.at
-         AND "observedAt" >= r.at - make_interval(secs => $4)
+         AND "observedAt" >= r.at - make_interval(secs => $4) AND ${namesItsAsset('p')}
        ORDER BY "observedAt" DESC, kind DESC, source
        LIMIT 1
      ) p`,

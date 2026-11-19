@@ -1041,7 +1041,9 @@ async function main() {
         [synced.result.outcome, synced.result.reason, synced.result.imported],
         ['complete', null, 5],
       );
-      const fakeTicker = `USDT${fakeUsdt.slice(2, 6).toUpperCase()}`;
+      // TOKEN-TICKER: a token's ticker is its symbol with the start of its contract, 9 characters.
+      const fakeTicker = `USDT${fakeUsdt.slice(2, 7).toUpperCase()}`;
+      const synTicker = `SYN${syn.slice(2, 8).toUpperCase()}`;
       const tokenLegs = [
         {
           txid: bare(34),
@@ -1096,7 +1098,7 @@ async function main() {
         FROM chain_tokens ORDER BY ticker`)
         ).map((row) => Object.values(row)),
         [
-          ['ethereum', syn, 'SYN', 'Synthetic Token', 18, 'SYN', null],
+          ['ethereum', syn, 'SYN', 'Synthetic Token', 18, synTicker, null],
           ['ethereum', fakeUsdt, 'USDT', 'USDT', 6, fakeTicker, null],
         ],
       );
@@ -1111,7 +1113,7 @@ async function main() {
         synced.result.address.hiddenTokens,
         [
           {
-            symbol: 'SYN',
+            symbol: synTicker,
             name: 'Synthetic Token',
             quantity: '40.000000000000000000',
             reason: 'dust',
@@ -1126,7 +1128,7 @@ async function main() {
           await db.query(
             `SELECT symbol, "priceSource", count(*)::int AS n
         FROM accounting_instruments WHERE "ownerId"=$1 AND symbol = ANY($2) GROUP BY 1, 2 ORDER BY 1`,
-            [owner, ['SYN', fakeTicker]],
+            [owner, [synTicker, fakeTicker]],
           )
         ).map((row) => Object.values(row));
       // A token the address leaves out is no coin of the portfolio: it gets no asset until it is brought back.
@@ -1155,20 +1157,20 @@ async function main() {
       const hiddenCount = (await s.classifications.needsClassificationCount(owner)).count;
       // The owner brings SYN back: its legs ask again, and the SYN send shows its ETH gas as its fee (TOKEN-FEE).
       const restored = await s.addresses.setTokenVisibility(owner, holderId, {
-        tickers: ['SYN'],
+        tickers: [synTicker],
         visibility: 'shown',
       });
       assert.deepEqual(restored.balances.at(-1), {
-        symbol: 'SYN',
+        symbol: synTicker,
         quantity: '40.000000000000000000',
         name: 'Synthetic Token',
         listed: false,
       });
-      assert.deepEqual(await instruments(), [['SYN', 'market', 1]]);
+      assert.deepEqual(await instruments(), [[synTicker, 'market', 1]]);
       assert.deepEqual(await rows(), [
-        ['SYN', 'Synthetic Token', 'ethereum', '42', null, 'needs-classification', null, null],
+        [synTicker, 'Synthetic Token', 'ethereum', '42', null, 'needs-classification', null, null],
         [fakeTicker, 'USDT', 'ethereum', '5', null, 'dust', null, null],
-        ['SYN', 'Synthetic Token', 'ethereum', '2', null, 'needs-classification', 'ETH', '0.00005'],
+        [synTicker, 'Synthetic Token', 'ethereum', '2', null, 'needs-classification', 'ETH', '0.00005'],
       ]);
       assert.equal(
         (await s.classifications.needsClassificationCount(owner)).count,
@@ -1226,7 +1228,7 @@ async function main() {
       );
       assert.deepEqual(
         backfill.result.address.balances.map((item) => item.symbol),
-        ['ETH', 'USDT', 'USDC', 'SYN'],
+        ['ETH', 'USDT', 'USDC', synTicker],
       );
       assert.deepEqual(
         backfill.result.address.hiddenTokens.map((item) => item.symbol),
@@ -1288,13 +1290,13 @@ async function main() {
         FROM chain_tokens ORDER BY ticker`)
         ).map((row) => Object.values(row));
       assert.deepEqual(await stateOf(), [
-        ['SYN', syn, true],
+        [synTicker, syn, true],
         [fakeTicker, null, true],
       ]);
-      const latest = await latestMarketPrices(db.manager, ['SYN', fakeTicker], new Date());
+      const latest = await latestMarketPrices(db.manager, [synTicker, fakeTicker], new Date());
       assert.deepEqual(
         latest.map((row) => [row.asset, row.price, row.source]),
-        [['SYN', '0.25', 'coingecko']],
+        [[synTicker, '0.25', 'coingecko']],
       );
       assert.equal(
         isUnlistedToken('ethereum', syn),
@@ -1318,14 +1320,14 @@ async function main() {
       );
       // The owner hides SYN: a hidden token is not priced either.
       await s.addresses.setTokenVisibility(owner, holderId, {
-        tickers: ['SYN'],
+        tickers: [synTicker],
         visibility: 'hidden',
       });
       const hiddenRun = await requestsOf(() => prices.collect(new Date()));
       assert.deepEqual(geckoCalls(hiddenRun.urls), []);
       // The owner brings both back: they are asked about at once, the one checked longest ago first.
       await s.addresses.setTokenVisibility(owner, holderId, {
-        tickers: ['SYN', fakeTicker],
+        tickers: [synTicker, fakeTicker],
         visibility: 'shown',
       });
       const recheck = await requestsOf(() => prices.collect(new Date()));
@@ -1347,7 +1349,7 @@ async function main() {
       );
       await prices.collect(new Date());
       assert.deepEqual(await stateOf(), [
-        ['SYN', syn, true],
+        [synTicker, syn, true],
         [fakeTicker, fakeUsdt, true],
       ]);
       assert.deepEqual(await latestMarketPrices(db.manager, [fakeTicker], new Date()), []);
@@ -1374,25 +1376,25 @@ async function main() {
             (item) => item.symbol === ticker,
           ).length;
         assert.equal(
-          await listed('SYN'),
+          await listed(synTicker),
           1,
           'A token the wallets show is an asset of the portfolio',
         );
         await s.addresses.setTokenVisibility(owner, holderId, {
-          tickers: ['SYN'],
+          tickers: [synTicker],
           visibility: 'hidden',
         });
-        assert.equal(await listed('SYN'), 0, 'A coin the wallets leave out is not listed');
+        assert.equal(await listed(synTicker), 0, 'A coin the wallets leave out is not listed');
         assert.deepEqual(
           await instruments(),
-          [['SYN', 'market', 1]],
+          [[synTicker, 'market', 1]],
           'Its asset stays; only the table skips it',
         );
         await s.addresses.setTokenVisibility(owner, holderId, {
-          tickers: ['SYN'],
+          tickers: [synTicker],
           visibility: 'shown',
         });
-        assert.equal(await listed('SYN'), 1);
+        assert.equal(await listed(synTicker), 1);
         await prices.collect(new Date());
       }
       // A token no wallet holds any more is not asked about.
@@ -1485,7 +1487,7 @@ async function main() {
         assert.equal(row.symbol, 'XRP');
         assert.equal(
           row.ticker,
-          `XRP${xrpToken.slice(2, 6).toUpperCase()}`,
+          `XRP${xrpToken.slice(2, 8).toUpperCase()}`,
           'The ticker of the market asset XRP is left to it',
         );
         console.log(
@@ -1532,7 +1534,8 @@ async function main() {
         ).value.id;
         assert.equal((await s.addresses.sync(owner, spamId)).outcome, 'complete');
         const view = async () => (await s.addresses.list(owner)).find((item) => item.id === spamId);
-        const copyTicker = `ETH${copycat.slice(2, 6).toUpperCase()}`;
+        const copyTicker = `ETH${copycat.slice(2, 8).toUpperCase()}`;
+        const wantedTicker = `WANTED${wanted.slice(2, 5).toUpperCase()}`;
         const tickerOf = (contract) =>
           db
             .query('SELECT ticker FROM chain_tokens WHERE contract=$1', [contract])
@@ -1546,7 +1549,7 @@ async function main() {
           [
             { symbol: copyTicker, name: 'Ether', quantity: '40.000000', reason: 'lookalike' },
             { symbol: frg, name: 'Forged Token', quantity: '-3000.000000', reason: 'negative' },
-            { symbol: 'WANTED', name: 'Wanted Token', quantity: '7.000000', reason: 'dust' },
+            { symbol: wantedTicker, name: 'Wanted Token', quantity: '7.000000', reason: 'dust' },
           ].sort((left, right) => left.symbol.localeCompare(right.symbol)),
         );
         assert.equal(
@@ -1579,7 +1582,7 @@ async function main() {
         const spamNeeds = (await s.classifications.needsClassificationCount(owner)).count;
         {
           const { instruments, held } = await portfolioSymbols();
-          for (const name of ['WANTED', frg, copyTicker])
+          for (const name of [wantedTicker, frg, copyTicker])
             assert.equal(
               instruments.has(name) || held.has(name),
               false,
@@ -1599,12 +1602,12 @@ async function main() {
               (await view()).hiddenTokens.map((item) => [item.symbol, item.reason]),
             );
           assert.equal(
-            (await hiddenOf()).WANTED,
+            (await hiddenOf())[wantedTicker],
             'dust',
             'Unlisted: worth nothing, with or without a threshold',
           );
           await settings.update(owner, { dustThresholdUsd: '1' });
-          assert.equal((await hiddenOf()).WANTED, 'dust');
+          assert.equal((await hiddenOf())[wantedTicker], 'dust');
           const reload = async () => {
             forgetTokens();
             await loadChainTokens(db.manager);
@@ -1614,8 +1617,8 @@ async function main() {
           const price = (value, minute) =>
             db.query(
               `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-            VALUES ('WANTED','USD','coingecko', now() - interval '${minute} minutes', $1, 'spot')`,
-              [value],
+            VALUES ($2,'USD','coingecko', now() - interval '${minute} minutes', $1, 'spot')`,
+              [value, wantedTicker],
             );
           // A listed token whose price is not known yet is not known to be dust.
           await db.query('UPDATE chain_tokens SET "coingeckoId"=$1 WHERE contract=$2', [
@@ -1623,40 +1626,40 @@ async function main() {
             wanted,
           ]);
           await reload();
-          assert.equal((await hiddenOf()).WANTED, undefined);
+          assert.equal((await hiddenOf())[wantedTicker], undefined);
           // Bind the now-listed token through the normal instrument-creation path.
           await s.addresses.update(owner, spamId, { accountId: tokenAccount });
           await price('0.01', 180);
-          assert.equal((await hiddenOf()).WANTED, undefined,
+          assert.equal((await hiddenOf())[wantedTicker], undefined,
             'TOKEN-DUST-FRESH a stale quote cannot hide a listed holding');
           const { PortfolioValuationService } = require(
             `${dist}/accounting/portfolio-valuation.service.js`,
           );
           const staleAsset = (
             await new PortfolioValuationService(db).read(owner, {}, new Date())
-          ).assets.find((item) => item.symbol === 'WANTED');
+          ).assets.find((item) => item.symbol === wantedTicker);
           assert.equal(staleAsset.price.status, 'stale',
             'The actual portfolio retains the stale-price indication');
-          assert.equal((await portfolioSymbols()).held.has('WANTED'), true,
+          assert.equal((await portfolioSymbols()).held.has(wantedTicker), true,
             'The stale-priced holding stays in provisional portfolio lots');
           // 7 tokens at 0.01 USD are worth 0.07 USD, below the threshold; at 1 USD they are worth 7 USD.
           await price('0.01', 10);
-          assert.equal((await hiddenOf()).WANTED, 'dust');
+          assert.equal((await hiddenOf())[wantedTicker], 'dust');
           await price('1', 5);
-          assert.equal((await hiddenOf()).WANTED, undefined);
+          assert.equal((await hiddenOf())[wantedTicker], undefined);
           await settings.update(owner, { dustThresholdUsd: '4.9' });
           await price('0.7', 4);
-          assert.equal((await hiddenOf()).WANTED, undefined,
+          assert.equal((await hiddenOf())[wantedTicker], undefined,
             'TOKEN-DUST-EXACT seven tokens at 0.7 equal the 4.9 threshold');
           console.log(
             'PASS TOKEN-DUST-FRESH and TOKEN-DUST-EXACT actual wallet and portfolio retain stale and threshold-equal holdings',
           );
           // Without a threshold a token with a price is never dust, listed or not: the price decides.
           await settings.update(owner, { dustThresholdUsd: null });
-          assert.equal((await hiddenOf()).WANTED, undefined);
+          assert.equal((await hiddenOf())[wantedTicker], undefined);
           await db.query('UPDATE chain_tokens SET "coingeckoId"=NULL WHERE contract=$1', [wanted]);
           await reload();
-          assert.equal((await hiddenOf()).WANTED, undefined);
+          assert.equal((await hiddenOf())[wantedTicker], undefined);
         }
         const choose = (tickers, visibility, id = spamId, who = owner) =>
           s.addresses.setTokenVisibility(who, id, { tickers, visibility });
@@ -1669,11 +1672,11 @@ async function main() {
           )[0];
 
         // The owner hides a token they do not want.
-        seen = await choose(['WANTED'], 'hidden');
+        seen = await choose([wantedTicker], 'hidden');
         assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC']);
         assert.deepEqual(
-          seen.hiddenTokens.find((item) => item.symbol === 'WANTED'),
-          { symbol: 'WANTED', name: 'Wanted Token', quantity: '7.000000', reason: 'owner' },
+          seen.hiddenTokens.find((item) => item.symbol === wantedTicker),
+          { symbol: wantedTicker, name: 'Wanted Token', quantity: '7.000000', reason: 'owner' },
         );
         assert.deepEqual(await stored(), { hiddenTokens: [wanted], shownTokens: [] });
         // The choice survives a sync, and the legs are still stored.
@@ -1699,24 +1702,24 @@ async function main() {
         });
         assert.deepEqual(await stored(), { hiddenTokens: [wanted], shownTokens: [forged] });
         // And hides it again for good; the last word wins and a token is in one list only.
-        seen = await choose([frg, 'WANTED'], 'hidden');
+        seen = await choose([frg, wantedTicker], 'hidden');
         assert.equal(seen.hiddenTokens.find((item) => item.symbol === frg).reason, 'owner');
         assert.deepEqual(await stored(), {
           hiddenTokens: [wanted, forged].sort(),
           shownTokens: [],
         });
-        seen = await choose(['WANTED', frg, copyTicker], 'shown');
+        seen = await choose([wantedTicker, frg, copyTicker], 'shown');
         assert.deepEqual(symbols(seen.balances), [
           'ETH',
           'USDT',
           'USDC',
-          ...[copyTicker, 'WANTED', frg].sort((left, right) => left.localeCompare(right)),
+          ...[copyTicker, wantedTicker, frg].sort((left, right) => left.localeCompare(right)),
         ]);
         assert.deepEqual(seen.hiddenTokens, []);
         // Brought back, the three are coins of the portfolio again and their legs ask to be classified.
         {
           const { held } = await portfolioSymbols();
-          for (const name of ['WANTED', copyTicker])
+          for (const name of [wantedTicker, copyTicker])
             assert.equal(held.has(name), true, `${name} is held again`);
           assert.deepEqual(await Promise.all(leftOutTxs.map(statusOf)), [
             'needs-classification',
@@ -1731,13 +1734,13 @@ async function main() {
 
         // Only tokens this address holds can be chosen; a wallet of another network and another owner are refused.
         await refusal(() => choose(['NOSUCH'], 'hidden'), 400);
-        await refusal(() => choose(['SYN'], 'hidden'), 400);
+        await refusal(() => choose([synTicker], 'hidden'), 400);
         await refusal(() => choose(['USDT'], 'hidden'), 400);
-        await refusal(() => choose(['WANTED'], 'gone'), 400);
+        await refusal(() => choose([wantedTicker], 'gone'), 400);
         await refusal(() => choose([], 'hidden'), 400);
         await refusal(() => choose(['wanted'], 'hidden'), 400);
-        await refusal(() => choose(['WANTED'], 'hidden', main, stranger), 404);
-        await refusal(() => choose(['WANTED'], 'hidden', randomUUID()), 404);
+        await refusal(() => choose([wantedTicker], 'hidden', main, stranger), 404);
+        await refusal(() => choose([wantedTicker], 'hidden', randomUUID()), 404);
         assert.deepEqual(await stored(), {
           hiddenTokens: [],
           shownTokens: [copycat, forged, wanted].sort(),

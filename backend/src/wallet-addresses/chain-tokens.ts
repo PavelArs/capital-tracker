@@ -30,6 +30,12 @@ export const MAX_TOKEN_DECIMALS = 30;
 // A ticker is what price_observations accepts: 2 to 15 capital letters and digits.
 const MAX_TICKER = 15;
 const MAX_TICKER_BASE = 10;
+/**
+ * TOKEN-TICKER (Codex Security #6): a new token's ticker is at least this long. An exchange coin
+ * is named by its code of 2 to 8 characters (isBybitCoin) and the market coins by shorter ones,
+ * so a token can never take a name a real coin will use, in whichever order they appear.
+ */
+export const MIN_TOKEN_TICKER = 9;
 const MAX_SYMBOL = 32;
 const MAX_NAME = 64;
 
@@ -74,9 +80,9 @@ function alphanumeric(value: string): string {
 }
 
 /**
- * The ticker a new token takes: its symbol in capitals and digits, or with the start of its
- * contract appended when another asset already has that ticker ("USDT" from a contract that is
- * not Tether's becomes "USDT1A2B").
+ * The ticker a new token takes: its symbol in capitals and digits, with as much of the start of
+ * its contract appended as makes it MIN_TOKEN_TICKER long ("SYN" becomes "SYN7F3A7F"), and more
+ * while another asset has it. A symbol that long alone stays as it is.
  */
 export function newTicker(
   symbol: string,
@@ -86,15 +92,18 @@ export function newTicker(
   let base = alphanumeric(symbol).slice(0, MAX_TICKER_BASE);
   const tail = alphanumeric(contract);
   if (base.length < 2) base = `T${base}`;
-  if (!taken(base)) return base;
-  for (let length = 4; base.length + length <= MAX_TICKER; length++) {
+  for (
+    let length = Math.max(0, MIN_TOKEN_TICKER - base.length);
+    base.length + length <= MAX_TICKER && length <= tail.length;
+    length++
+  ) {
     const ticker = `${base}${tail.slice(0, length)}`;
     if (!taken(ticker)) return ticker;
   }
   // Fifteen characters of the contract alone, then shorter bases: never two tokens alike.
   for (let cut = base.length - 1; cut >= 1; cut--) {
     const ticker = `${base.slice(0, cut)}${tail.slice(0, MAX_TICKER - cut)}`;
-    if (!taken(ticker)) return ticker;
+    if (ticker.length >= MIN_TOKEN_TICKER && !taken(ticker)) return ticker;
   }
   throw new Error('No free ticker for the token');
 }
@@ -128,13 +137,36 @@ const asAsset = (row: TokenRow): ChainAsset | null =>
       }
     : null;
 
-/** Reads every stored token into the app's list of assets. */
+// Readings of chain_tokens begun, and the latest whose rows the app remembers.
+let readings = 0;
+let remembered = 0;
+
+/**
+ * Reads every stored token into the app's list of assets. A reading that ends after one begun
+ * later is not remembered: its rows may name a token by a ticker it has since given up
+ * (TOKEN-TICKER).
+ */
 export async function loadChainTokens(manager: EntityManager): Promise<number> {
+  const reading = ++readings;
   const rows: TokenRow[] = await manager.query(
     'SELECT network, contract, symbol, name, decimals, ticker, "coingeckoId" FROM chain_tokens',
   );
-  rememberTokens(rows.flatMap((row) => asAsset(row) ?? []));
+  if (reading > remembered) {
+    remembered = reading;
+    rememberTokens(rows.flatMap((row) => asAsset(row) ?? []));
+  }
   return rows.length;
+}
+
+/** Every ticker an asset has: one asset key may name one coin only. */
+async function takenTickers(manager: EntityManager): Promise<Set<string>> {
+  const tickers: { ticker: string }[] = await manager.query(
+    // Also a market asset's ticker, a Bybit coin say.
+    `SELECT ticker FROM chain_tokens
+     UNION SELECT upper(symbol) FROM accounting_instruments
+      WHERE "assetType" = 'crypto' AND symbol IS NOT NULL`,
+  );
+  return new Set([...reservedTickers, ...tickers.map((row) => row.ticker)]);
 }
 
 /**
@@ -173,13 +205,7 @@ export async function registerChainTokens(
   });
   const added: TokenRow[] = [];
   if (fresh.length > 0) {
-    const tickers: { ticker: string }[] = await manager.query(
-      // Also a market asset's ticker, a Bybit coin say: one asset key may name one coin only.
-      `SELECT ticker FROM chain_tokens
-       UNION SELECT upper(symbol) FROM accounting_instruments
-        WHERE "assetType" = 'crypto' AND symbol IS NOT NULL`,
-    );
-    const taken = new Set([...reservedTickers, ...tickers.map((row) => row.ticker)]);
+    const taken = await takenTickers(manager);
     for (const item of fresh) {
       const ticker = newTicker(item.symbol, item.contract, (value) => taken.has(value));
       taken.add(ticker);
@@ -196,6 +222,70 @@ export async function registerChainTokens(
   // again, alike, by the next one.
   rememberTokens([...stored, ...added].flatMap((row) => asAsset(row) ?? []));
   return new Set(contracts);
+}
+
+/**
+ * TOKEN-TICKER (Codex Security #6): an exchange account is about to record coins named by
+ * `codes`. A token stored before tickers grew long (MIN_TOKEN_TICKER) may hold one of them; it
+ * gives the code up for a long ticker of its own, so the coin and the token stay two assets, each
+ * priced by its own source. The token keeps its asset (renamed, with its history) and the CoinGecko
+ * prices stored under the old ticker are stored again under the new one; those left under the
+ * old one are never read for the coin (namesItsAsset). A code the exchange already recorded
+ * before is left as it is: its history was shared with the token before this rule, and moving
+ * it would move the coin's records too. Runs in the transaction that stores the records, one
+ * writer of chain_tokens at a time. Returns how many tokens were renamed: the caller reloads the
+ * tokens (loadChainTokens) once its transaction has ended.
+ */
+export async function separateTokenTickers(
+  manager: EntityManager,
+  codes: Iterable<string>,
+): Promise<number> {
+  const short = [...new Set(codes)].filter((code) => code.length < MIN_TOKEN_TICKER).sort();
+  if (short.length === 0) return 0;
+  const read = (): Promise<TokenRow[]> =>
+    manager.query(
+      `SELECT network, contract, symbol, name, decimals, ticker, "coingeckoId" FROM chain_tokens
+        WHERE ticker = ANY($1::text[]) ORDER BY ticker`,
+      [short],
+    );
+  if ((await read()).length === 0) return 0;
+  await manager.query("SELECT pg_advisory_xact_lock(hashtext('chain_tokens'))");
+  const clashing = await read();
+  if (clashing.length === 0) return 0;
+  const recorded: { code: string }[] = await manager.query(
+    `SELECT c.code FROM unnest($1::text[]) c(code)
+      WHERE EXISTS (SELECT 1 FROM wallet_address_transactions x
+        JOIN wallet_addresses a ON a.id = x."addressId"
+        WHERE a.network = 'bybit' AND (x.asset = c.code OR x.raw->>'quoteAsset' = c.code))`,
+    [clashing.map((row) => row.ticker)],
+  );
+  const shared = new Set(recorded.map((row) => row.code));
+  const taken = await takenTickers(manager);
+  let renamed = 0;
+  for (const row of clashing) {
+    if (shared.has(row.ticker)) continue;
+    const ticker = newTicker(row.symbol, row.contract, (value) => taken.has(value));
+    taken.add(ticker);
+    await manager.query(
+      'UPDATE chain_tokens SET ticker = $3 WHERE network = $1 AND contract = $2',
+      [row.network, row.contract, ticker],
+    );
+    await manager.query(
+      `UPDATE accounting_instruments SET symbol = $2
+        WHERE "assetType" = 'crypto' AND "priceSource" = 'market' AND upper(symbol) = $1`,
+      [row.ticker, ticker],
+    );
+    // Stored prices are append-only: the token's history is stored again under its new ticker.
+    await manager.query(
+      `INSERT INTO price_observations (asset, "quoteCurrency", source, "observedAt", price, kind)
+        SELECT $2, "quoteCurrency", source, "observedAt", price, kind FROM price_observations
+          WHERE asset = $1 AND source = 'coingecko'
+        ON CONFLICT DO NOTHING`,
+      [row.ticker, ticker],
+    );
+    renamed++;
+  }
+  return renamed;
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { EntityManager } from 'typeorm';
 import { type AccountingCurrency, FxConverter, type FxRates } from '../fx-rates/fx-conversion';
+import { namesItsAsset } from '../prices/market-codes';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import { parseDecimal } from './input';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
@@ -159,7 +160,7 @@ export async function readNearPrices(
           NULL::timestamptz AS "fetchedAt"
         FROM price_observations p
         WHERE i."priceSource"='market' AND p.asset=upper(i.symbol) AND p."quoteCurrency"=$4
-          AND p."observedAt"${compare}r.at
+          AND p."observedAt"${compare}r.at AND ${namesItsAsset('p')}
         ORDER BY p."observedAt" ${order} LIMIT 1)
       UNION ALL
       (SELECT h."priceUsd"::text, h."observedAt", 'manual', h."quoteCurrency", NULL::timestamptz

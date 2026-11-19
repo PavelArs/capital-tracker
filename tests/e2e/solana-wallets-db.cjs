@@ -1066,16 +1066,19 @@ async function main() {
         },
       ].sort((left, right) => right.slot - left.slot || (left.txid < right.txid ? -1 : 1));
       assertLegs(await stored(db, holderId), tokenLegs);
-      const fakeTicker = `USDT${fakeMint.slice(0, 4).toUpperCase()}`;
-      assert.match(fakeTicker, /^[A-Z0-9]{8}$/);
+      // TOKEN-TICKER: a token's ticker is its symbol with the start of its mint, 9 characters.
+      const fakeTicker = `USDT${fakeMint.slice(0, 5).toUpperCase()}`;
+      const synTicker = `SYN${synMint.slice(0, 6).toUpperCase()}`;
+      const ttTicker = `TT${twentyTwo.slice(0, 7).toUpperCase()}`;
+      assert.match(fakeTicker, /^[A-Z0-9]{9}$/);
       assert.deepEqual(
         (
           await db.query(`SELECT network, contract, symbol, name, decimals, ticker FROM chain_tokens
         ORDER BY ticker`)
         ).map((row) => Object.values(row)),
         [
-          ['solana', synMint, 'SYN', 'Synthetic Token', 9, 'SYN'],
-          ['solana', twentyTwo, 'TT', 'Twenty Two', 2, 'TT'],
+          ['solana', synMint, 'SYN', 'Synthetic Token', 9, synTicker],
+          ['solana', twentyTwo, 'TT', 'Twenty Two', 2, ttTicker],
           ['solana', fakeMint, 'USDT', 'Tether USD', 6, fakeTicker],
         ],
       );
@@ -1088,8 +1091,8 @@ async function main() {
       assert.deepEqual(
         synced.result.address.hiddenTokens,
         [
-          { symbol: 'SYN', name: 'Synthetic Token', quantity: '40.000000000', reason: 'dust' },
-          { symbol: 'TT', name: 'Twenty Two', quantity: '7.00', reason: 'dust' },
+          { symbol: synTicker, name: 'Synthetic Token', quantity: '40.000000000', reason: 'dust' },
+          { symbol: ttTicker, name: 'Twenty Two', quantity: '7.00', reason: 'dust' },
           { symbol: fakeTicker, name: 'Tether USD', quantity: '5.000000', reason: 'lookalike' },
         ].sort((left, right) => left.symbol.localeCompare(right.symbol)),
       );
@@ -1118,14 +1121,14 @@ async function main() {
       const hiddenCount = (await s.classifications.needsClassificationCount(owner)).count;
       // The owner brings SYN and TT back: their legs ask again, and the SYN send shows its SOL fee (TOKEN-FEE).
       await s.addresses.setTokenVisibility(owner, holderId, {
-        tickers: ['SYN', 'TT'],
+        tickers: [synTicker, ttTicker],
         visibility: 'shown',
       });
       assert.deepEqual(await rows(), [
-        ['SYN', 'Synthetic Token', 'solana', '42', 'needs-classification', null, null],
+        [synTicker, 'Synthetic Token', 'solana', '42', 'needs-classification', null, null],
         [fakeTicker, 'Tether USD', 'solana', '5', 'dust', null, null],
-        ['TT', 'Twenty Two', 'solana', '7', 'needs-classification', null, null],
-        ['SYN', 'Synthetic Token', 'solana', '2', 'needs-classification', 'SOL', '0.000005'],
+        [ttTicker, 'Twenty Two', 'solana', '7', 'needs-classification', null, null],
+        [synTicker, 'Synthetic Token', 'solana', '2', 'needs-classification', 'SOL', '0.000005'],
       ]);
       assert.equal(
         (await s.classifications.needsClassificationCount(owner)).count,

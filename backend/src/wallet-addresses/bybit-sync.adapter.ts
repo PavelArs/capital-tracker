@@ -31,6 +31,7 @@ import {
   withoutStoredYields,
 } from './bybit-records';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
+import { loadChainTokens, separateTokenTickers } from './chain-tokens';
 import { jsonbText } from './jsonb-text';
 import { insertTransactions } from './wallet-transactions';
 
@@ -185,6 +186,12 @@ function holdFrom(stream: Stream<unknown>, items: readonly unknown[], start: num
 // sync-bybit-account (M22, PR-EXC-1): the account's spot trades, deposits, withdrawals, Earn
 // yield and converts as raw legs, then the balances Bybit reports, all read with the owner's
 // read-only key.
+/** TOKEN-TICKER: the codes of the coins records name: the coin moved and a trade's quote coin. */
+const legCodes = (legs: readonly BybitLeg[]): string[] =>
+  legs.flatMap((leg) =>
+    typeof leg.raw.quoteAsset === 'string' ? [leg.asset, leg.raw.quoteAsset] : [leg.asset],
+  );
+
 @Injectable()
 export class BybitSyncAdapter implements ChainSyncAdapter {
   readonly network = 'bybit';
@@ -421,9 +428,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   }
 
   private insertConverts(account: AccountRow, legs: BybitLeg[]) {
-    return this.source.transaction('READ COMMITTED', (manager) =>
-      this.insert(manager, account, legs),
-    );
+    return this.store(legCodes(legs), (manager) => this.insert(manager, account, legs));
   }
 
   /**
@@ -465,32 +470,16 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
    * from the start of its history; stored records are never written twice.
    */
   private async countEveryCoin(account: AccountRow) {
-    const reset = await this.source.transaction('READ COMMITTED', async (manager) => {
+    // TOKEN-TICKER: the coins these trades move now are recorded as any other record is.
+    const completed = async (manager: EntityManager) =>
+      legCodes(await this.completedTrades(manager, account.id));
+    const reset = await this.store(completed, async (manager) => {
       const [current]: { everyCoinAt: Date | null }[] = await manager.query(
         `SELECT "everyCoinAt" FROM bybit_accounts WHERE "walletId" = $1 FOR UPDATE`,
         [account.id],
       );
       if (!current || current.everyCoinAt !== null) return false;
-      const trades: { txid: string; blockTime: Date; raw: Record<string, unknown> }[] =
-        await manager.query(
-          `SELECT t.txid, t."blockTime", t.raw FROM wallet_address_transactions t
-            WHERE t."addressId" = $1 AND t.raw->>'kind' = 'trade' AND NOT t.raw ? 'quoteAsset'
-              AND t.asset = t.raw->'trade'->>'quote'
-              AND NOT EXISTS (SELECT 1 FROM chain_transaction_classifications h
-                WHERE h."addressId" = t."addressId" AND h.txid = t.txid)
-            ORDER BY t."blockTime", t.txid`,
-          [account.id],
-        );
-      for (const trade of trades) {
-        let leg: BybitLeg | null;
-        try {
-          leg = completedTradeLeg(trade.raw, trade.blockTime);
-        } catch (error) {
-          // A stored amount that cannot be read again stays the leg it was.
-          if (!(error instanceof UnreadableAmount)) throw error;
-          leg = null;
-        }
-        if (!leg) continue;
+      for (const leg of await this.completedTrades(manager, account.id)) {
         await manager.query(
           `UPDATE wallet_address_transactions SET asset = $3, "receivedUnits" = $4::numeric,
               "sentUnits" = $5::numeric, direction = $6, raw = $7::jsonb
@@ -525,6 +514,29 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     account.onchainReadTo = null;
   }
 
+  /** The stored trades that moved only USDT or USDC, unanswered, as they read now. */
+  private async completedTrades(manager: EntityManager, addressId: string): Promise<BybitLeg[]> {
+    const trades: { txid: string; blockTime: Date; raw: Record<string, unknown> }[] =
+      await manager.query(
+        `SELECT t.txid, t."blockTime", t.raw FROM wallet_address_transactions t
+          WHERE t."addressId" = $1 AND t.raw->>'kind' = 'trade' AND NOT t.raw ? 'quoteAsset'
+            AND t.asset = t.raw->'trade'->>'quote'
+            AND NOT EXISTS (SELECT 1 FROM chain_transaction_classifications h
+              WHERE h."addressId" = t."addressId" AND h.txid = t.txid)
+          ORDER BY t."blockTime", t.txid`,
+        [addressId],
+      );
+    return trades.flatMap((trade) => {
+      try {
+        return completedTradeLeg(trade.raw, trade.blockTime) ?? [];
+      } catch (error) {
+        // A stored amount that cannot be read again stays the leg it was.
+        if (!(error instanceof UnreadableAmount)) throw error;
+        return [];
+      }
+    });
+  }
+
   /** BYBIT-EARN: the key cannot read Earn; its positions are not counted until it can. */
   private async denyEarn(account: AccountRow) {
     await this.source.query(
@@ -548,7 +560,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
 
   /** Stores one window's legs and moves that list's cursor in one transaction. */
   private commit(expected: AccountRow, column: Column, legs: BybitLeg[], next: Date) {
-    return this.source.transaction('READ COMMITTED', async (manager) => {
+    return this.store(legCodes(legs), async (manager) => {
       const [current]: Pick<AccountRow, Column>[] = await manager.query(
         `SELECT "${column}" FROM bybit_accounts WHERE "walletId" = $1 FOR UPDATE`,
         [expected.id],
@@ -562,6 +574,30 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       ]);
       return inserted;
     });
+  }
+
+  /**
+   * One transaction that stores records. TOKEN-TICKER: a token holding the code of a coin they
+   * name gives the code up first; the tokens are then read again once the transaction ends,
+   * committed or not, so this process names every token as stored.
+   */
+  private async store<T>(
+    codes: string[] | ((manager: EntityManager) => Promise<string[]>),
+    work: (manager: EntityManager) => Promise<T>,
+  ) {
+    let renamed = 0;
+    try {
+      return await this.source.transaction('READ COMMITTED', async (manager): Promise<T> => {
+        // Before any row lock, in the order every writer of chain_tokens takes them.
+        renamed = await separateTokenTickers(
+          manager,
+          typeof codes === 'function' ? await codes(manager) : codes,
+        );
+        return work(manager);
+      });
+    } finally {
+      if (renamed > 0) await loadChainTokens(this.source.manager);
+    }
   }
 
   private async insert(manager: EntityManager, account: AccountRow, read: BybitLeg[]) {

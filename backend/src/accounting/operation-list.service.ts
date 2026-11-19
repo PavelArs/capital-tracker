@@ -8,6 +8,7 @@ import {
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
+import { namesItsAsset } from '../prices/market-codes';
 import { latestMarketPrices, priceAt, storedPricesAt } from '../prices/market-price.store';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import { chainFacts } from '../wallet-addresses/bybit-records';
@@ -631,7 +632,7 @@ async function firstPrices(
     `SELECT i.id, LEAST(
         CASE WHEN i."priceSource"='market' THEN (
           SELECT min(p."observedAt") FROM price_observations p
-          WHERE p.asset=upper(i.symbol) AND p."quoteCurrency"=$3)
+          WHERE p.asset=upper(i.symbol) AND p."quoteCurrency"=$3 AND ${namesItsAsset('p')})
         ELSE LEAST(
           -- A hand value voided later no longer prices its point.
           (SELECT min(h."observedAt") FROM (
@@ -668,7 +669,7 @@ async function firstMarketPrices(
   if (symbols.length === 0) return new Map();
   const rows: { symbol: string; first: Date | null }[] = await manager.query(
     `SELECT s.symbol, (SELECT min(p."observedAt") FROM price_observations p
-        WHERE p.asset=s.symbol AND p."quoteCurrency"=$2) AS first
+        WHERE p.asset=s.symbol AND p."quoteCurrency"=$2 AND ${namesItsAsset('p')}) AS first
       FROM unnest($1::text[]) s(symbol)`,
     [symbols, QUOTE_CURRENCY],
   );

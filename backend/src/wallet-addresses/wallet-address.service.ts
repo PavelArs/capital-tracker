@@ -30,6 +30,7 @@ import {
   otherTokenByTicker,
 } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
+import { loadChainTokens, separateTokenTickers } from './chain-tokens';
 import { jsonbText } from './jsonb-text';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
@@ -960,35 +961,44 @@ export class WalletAddressService {
     const owner = parseUuid(ownerId);
     const addressId = parseUuid(id);
     const gap = parseBalanceGap(raw);
-    const value = await this.source.transaction('READ COMMITTED', async (manager) => {
-      const row = await this.address(manager, owner, addressId);
-      if (!row.exchange || row.accountId === null)
-        throw new UnprocessableEntityException('Only a Bybit account in a wallet can count a gap');
-      checkGap(row.exchange, gap);
-      const leg = gapLeg(
-        gap,
-        new Date(),
-        row.exchange.balancesAt ? new Date(row.exchange.balancesAt) : null,
-      );
-      await manager.query(
-        `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight",
+    let renamed = 0;
+    const value = await this.source
+      .transaction('READ COMMITTED', async (manager) => {
+        const row = await this.address(manager, owner, addressId);
+        if (!row.exchange || row.accountId === null)
+          throw new UnprocessableEntityException(
+            'Only a Bybit account in a wallet can count a gap',
+          );
+        checkGap(row.exchange, gap);
+        const leg = gapLeg(
+          gap,
+          new Date(),
+          row.exchange.balancesAt ? new Date(row.exchange.balancesAt) : null,
+        );
+        // TOKEN-TICKER: a token holding the coin's code gives it up before the coin is recorded.
+        renamed = await separateTokenTickers(manager, [leg.asset]);
+        await manager.query(
+          `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight",
           "blockHash", "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
           VALUES ($1, $2, $3, 0, NULL, $4, $5::numeric, $6::numeric, 0, $7, $8::jsonb, $9)
           ON CONFLICT ("addressId", txid) DO NOTHING`,
-        [
-          owner,
-          addressId,
-          leg.txid,
-          leg.blockTime,
-          leg.receivedUnits.toString(),
-          leg.sentUnits.toString(),
-          leg.direction,
-          jsonbText({ ...leg.raw, txid: leg.txid }),
-          leg.asset,
-        ],
-      );
-      return summary(await this.address(manager, owner, addressId));
-    });
+          [
+            owner,
+            addressId,
+            leg.txid,
+            leg.blockTime,
+            leg.receivedUnits.toString(),
+            leg.sentUnits.toString(),
+            leg.direction,
+            jsonbText({ ...leg.raw, txid: leg.txid }),
+            leg.asset,
+          ],
+        );
+        return summary(await this.address(manager, owner, addressId));
+      })
+      .finally(async () => {
+        if (renamed > 0) await loadChainTokens(this.source.manager);
+      });
     // The new record's coin needs its asset before it counts (D1).
     await this.walletSync.linkOwnTransfers(owner);
     return value;

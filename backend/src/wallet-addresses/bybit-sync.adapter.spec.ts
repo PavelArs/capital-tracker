@@ -117,6 +117,8 @@ function harness(
     const column = /SELECT "(\w+)" FROM bybit_accounts WHERE "walletId" = \$1 FOR UPDATE/.exec(sql);
     if (column) return [{ [column[1]]: columns[column[1]] }];
     if (sql.includes("raw->>'balanceGap' = 'true'")) return [];
+    // TOKEN-TICKER: no token holds the code of a coin these records name.
+    if (sql.includes('FROM chain_tokens')) return [];
     if (sql.includes('INSERT INTO wallet_address_transactions')) {
       const txids = args.filter((_, index) => index % 10 === 2);
       events.push(['insert', ...txids]);

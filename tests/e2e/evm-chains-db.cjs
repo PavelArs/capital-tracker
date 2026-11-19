@@ -355,8 +355,9 @@ async function main() {
     assert.deepEqual(
       (await hidden(ids.base)).map((item) => [item.symbol, item.quantity, item.reason]),
       [
-        ['MEME', '5.000000000000000000', 'dust'],
-        ['USDCA0B8', '9.000000', 'lookalike'],
+        // TOKEN-TICKER: each ticker is the symbol with the start of the contract, 9 characters.
+        [`MEME${memeToken.slice(2, 7).toUpperCase()}`, '5.000000000000000000', 'dust'],
+        ['USDCA0B86', '9.000000', 'lookalike'],
       ],
     );
     assert.deepEqual((await balances(ids.arbitrum)).slice(0, 2), [

@@ -1375,6 +1375,37 @@ async function main() {
       "PASS BYBIT-CONVERT without Exchange History no convert is asked; once ticked on the same key, a convert into USDT is a Sell and one from USDT a Buy, recorded without asking; processing, failed and untracked converts are left out; older coin exchanges count, newer ones come from the convert history only; Bybit's balance then matches the records",
     );
 
+    // TOKEN-TICKER (Codex Security #6): a token stored before tickers grew long holds the
+    // code TON, as such a token could: an unlisted copy no wallet holds any more, with its own
+    // asset and a CoinGecko price stored under that ticker five minutes ago. Bybit has not
+    // recorded TON yet.
+    const tonToken = `0x${'7e'.repeat(20)}`;
+    const tonTicker = 'TON7E7E7E';
+    const tonTokenAsset = randomUUID();
+    await db.query(
+      `INSERT INTO chain_tokens (network, contract, symbol, name, decimals, ticker)
+        VALUES ('ethereum', $1, 'TON', 'Synthetic TON copy', 18, 'TON')`,
+      [tonToken],
+    );
+    await db.query(
+      `INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload","assetType","valuationCurrency","priceSource")
+        VALUES($1,$2,'Synthetic TON copy','TON',$3,$4,'crypto','USD','market')`,
+      [
+        tonTokenAsset,
+        owner,
+        randomUUID(),
+        JSON.stringify({ name: 'Synthetic TON copy', symbol: 'TON' }),
+      ],
+    );
+    // One price five minutes ago, one 60 days ago: before Bybit's daily history of TON begins.
+    const tonTokenPriceAt = new Date(Date.now() - 5 * 60_000);
+    const tonTokenFirstAt = new Date(Date.now() - 60 * DAY);
+    await db.query(
+      `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+        VALUES ('TON','USD','coingecko',$1,'0.0001','spot'), ('TON','USD','coingecko',$2,'0.0002','spot')`,
+      [tonTokenPriceAt, tonTokenFirstAt],
+    );
+
     // BYBIT-ANY-COIN: an account read while the app tracked only BTC, ETH, SOL, USDT and USDC.
     // It stored 15 XRP bought for 30 USDT as the 30 USDT spent, and 8 DOGE sold for 4 USDT as
     // the 4 USDT received, which the owner answered as Other; 40 TON and 7 NOPE deposited long
@@ -1659,6 +1690,116 @@ async function main() {
       "PASS BYBIT-ANY-COIN-PRICE the coins no catalog provider is asked for get Bybit's last closed hourly candle and, once, its daily candles against USDT, without a key; a coin without a Bybit market stays unpriced and is named; the source check admits bybit only besides kraken and coingecko",
     );
 
+    // TOKEN-TICKER: recording TON made the token give the code up for a long ticker of its own;
+    // its asset, renamed, keeps its history, and its CoinGecko price is stored again under the
+    // new ticker. The coin is priced from Bybit alone: the token's price under TON is not read.
+    {
+      const { chainAsset } = require(`${dist}/wallet-addresses/chain-assets.js`);
+      const [token] = await db.query('SELECT ticker FROM chain_tokens WHERE contract=$1', [
+        tonToken,
+      ]);
+      assert.equal(token.ticker, tonTicker);
+      assert.equal(chainAsset('ethereum', tonToken).symbol, tonTicker, 'The app names it so now');
+      const assets = await db.query(
+        `SELECT id, symbol FROM accounting_instruments WHERE "ownerId"=$1 AND symbol IN ('TON',$2)
+          ORDER BY symbol`,
+        [owner, tonTicker],
+      );
+      assert.equal(assets.length, 2, 'The coin and the token are two assets');
+      assert.equal(assets.find((row) => row.symbol === tonTicker).id, tonTokenAsset);
+      assert.notEqual(assets.find((row) => row.symbol === 'TON').id, tonTokenAsset);
+      const tokenPrices = await db.query(
+        `SELECT asset, source, trim_scale(price)::text AS price, "observedAt" FROM price_observations
+          WHERE source='coingecko' AND asset IN ('TON',$1) ORDER BY asset`,
+        [tonTicker],
+      );
+      assert.deepEqual(
+        tokenPrices
+          .map((row) => [row.asset, row.source, row.price, row.observedAt.getTime()])
+          .sort((left, right) => left[0].localeCompare(right[0]) || left[3] - right[3]),
+        [
+          ['TON', 'coingecko', '0.0002', tonTokenFirstAt.getTime()],
+          ['TON', 'coingecko', '0.0001', tonTokenPriceAt.getTime()],
+          [tonTicker, 'coingecko', '0.0002', tonTokenFirstAt.getTime()],
+          [tonTicker, 'coingecko', '0.0001', tonTokenPriceAt.getTime()],
+        ],
+      );
+      // EST-AT-TIME: 50 days ago the coin has no price before (the token's is not its own), so
+      // the first Bybit close after counts; the token keeps its own price from before.
+      const { readNearPrices, nearKey } = require(`${dist}/accounting/estimated-cost.js`);
+      const coinAsset = assets.find((row) => row.symbol === 'TON').id;
+      const fiftyDaysAgo = new Date(Date.now() - 50 * DAY).toISOString();
+      const near = await readNearPrices(db.manager, owner, [
+        { instrumentId: coinAsset, at: fiftyDaysAgo },
+        { instrumentId: tonTokenAsset, at: fiftyDaysAgo },
+      ]);
+      assert.deepEqual(
+        [near.get(nearKey(coinAsset, fiftyDaysAgo)), near.get(nearKey(tonTokenAsset, fiftyDaysAgo))]
+          .map((price) => [price.source, price.priceUsd]),
+        [
+          ['bybit', '3'],
+          ['coingecko', '0.0002'],
+        ],
+      );
+      const { marketPricesAt } = require(`${dist}/prices/market-price.store.js`);
+      const at = new Date(tonTokenPriceAt.getTime() + 1000).toISOString();
+      const pricedAt = await marketPricesAt(db.manager, [
+        { asset: 'TON', at },
+        { asset: tonTicker, at },
+      ]);
+      assert.deepEqual(
+        pricedAt
+          .map((row) => [row.asset, row.price, row.source])
+          .sort((left, right) => left[0].localeCompare(right[0])),
+        [
+          ['TON', '3', 'bybit'],
+          [tonTicker, '0.0001', 'coingecko'],
+        ],
+      );
+      // A code Bybit had recorded before this rule is left as it is: its history was shared.
+      const { separateTokenTickers } = require(`${dist}/wallet-addresses/chain-tokens.js`);
+      const kept = Symbol('kept');
+      await assert.rejects(
+        () =>
+          db.transaction(async (manager) => {
+            await manager.query(
+              `INSERT INTO chain_tokens (network, contract, symbol, name, decimals, ticker)
+                VALUES ('ethereum', $1, 'XRP', 'Synthetic XRP copy', 18, 'XRP')`,
+              [`0x${'7f'.repeat(20)}`],
+            );
+            assert.equal(await separateTokenTickers(manager, ['XRP', 'TON']), 0);
+            const [row] = await manager.query(
+              "SELECT ticker FROM chain_tokens WHERE symbol='XRP'",
+            );
+            assert.equal(row.ticker, 'XRP');
+            throw kept;
+          }),
+        (error) => error === kept,
+      );
+    }
+    console.log(
+      'PASS TOKEN-TICKER a token that held the code TON from before tickers grew long gives it up when Bybit first records TON: two assets, the token renamed with its history and its CoinGecko price stored again under its new ticker, the coin priced from Bybit only; a code Bybit recorded before is left as it is',
+    );
+
+    // TOKEN-TICKER: another such token holds DOT, which Bybit has not recorded, with its asset.
+    const dotToken = `0x${'6d'.repeat(20)}`;
+    const dotTokenAsset = randomUUID();
+    await db.query(
+      `INSERT INTO chain_tokens (network, contract, symbol, name, decimals, ticker)
+        VALUES ('ethereum', $1, 'DOT', 'Synthetic DOT copy', 18, 'DOT')`,
+      [dotToken],
+    );
+    await db.query(
+      `INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload","assetType","valuationCurrency","priceSource")
+        VALUES($1,$2,'Synthetic DOT copy','DOT',$3,$4,'crypto','USD','market')`,
+      [
+        dotTokenAsset,
+        owner,
+        randomUUID(),
+        JSON.stringify({ name: 'Synthetic DOT copy', symbol: 'DOT' }),
+      ],
+    );
+
     // BYBIT-COUNT-GAP: Bybit holds 3 DOT no record explains (a purchase the API never lists)
     // and 5 TON fewer than the records. The owner counts each difference: one more record of the
     // account, unanswered, counted at once; the same request twice stores one record.
@@ -1858,6 +1999,29 @@ async function main() {
     assert.equal((await legsOf(db, wallet)).filter((row) => row.txid.includes('-gap-')).length, 2);
     console.log(
       "PASS BYBIT-COUNT-GAP a difference between Bybit's balance and the records is counted as one more record of the account: 3 DOT Bybit holds without a record become a deposit, 5 TON it holds fewer a withdrawal, both counting at once without a purchase price and with a market-priced asset; the same request stores one record; a balance Bybit no longer reports, a difference larger than the balance and bad input store nothing",
+    );
+
+    // TOKEN-TICKER: counting the DOT difference by hand made the token give the code up too;
+    // the counted DOT is an asset of its own, the token's asset carries its new ticker.
+    const dotTicker = `DOT${'6D'.repeat(3)}`;
+    assert.deepEqual(
+      await db.query('SELECT ticker FROM chain_tokens WHERE contract=$1', [dotToken]),
+      [{ ticker: dotTicker }],
+    );
+    const dotAssets = await db.query(
+      `SELECT id, symbol FROM accounting_instruments WHERE "ownerId"=$1 AND symbol IN ('DOT',$2)
+        ORDER BY symbol`,
+      [owner, dotTicker],
+    );
+    assert.deepEqual(
+      dotAssets.map((row) => [row.symbol, row.id === dotTokenAsset]),
+      [
+        ['DOT', false],
+        [dotTicker, true],
+      ],
+    );
+    console.log(
+      'PASS TOKEN-TICKER-GAP a token holding the code of a coin the owner counts by hand gives the code up: the counted DOT is an asset of its own and the token keeps its asset under its new ticker',
     );
 
     // BYBIT-GAP-COVERED: the TON difference counted above was counted from the balance Bybit

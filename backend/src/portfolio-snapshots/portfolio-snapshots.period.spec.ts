@@ -210,7 +210,7 @@ describe('DASH-CHART characterization of a period read', () => {
     );
     expect(result).toMatchObject({ startEstimatedAssetCount: 1 });
     expect(digest({ calls, result })).toBe(
-      '271d32f31f6773c34eef80410a5cb73d93a5e04cbff8021fab7afafb424157bf',
+      'b20846ad254afd16f2ea61c033f3c0415253ebf2c0314a05a23030c35247fb25',
     );
   });
 
@@ -218,7 +218,7 @@ describe('DASH-CHART characterization of a period read', () => {
     const { calls, result } = await run({ snapshots: midnights }, {}, true);
     expect(result).toMatchObject({ scope: { excluded: { set: ['btc'] } } });
     expect(digest({ calls, result })).toBe(
-      '5a27b1a0383324e4fd21e938cd29af766cd8fd25fa0273cd6c50572bddacb428',
+      '362bf1d8f93bf8c54603f71a92db0c9424f5322cc7342f3fb3fda46263f85d50',
     );
   });
 
@@ -230,7 +230,7 @@ describe('DASH-CHART characterization of a period read', () => {
     );
     expect(result).toMatchObject({ currency: 'USD' });
     expect(digest({ calls, result })).toBe(
-      'bafef96ac4fde230f10d9beea0bf0d85e3a82b8c8a3f21baf5cdc1f9270a99f2',
+      '24e4c785a383a4221e1c82d0ac8627ed6b29fb699525514102547052b1f05606',
     );
   });
 
@@ -242,7 +242,7 @@ describe('DASH-CHART characterization of a period read', () => {
     );
     expect(result).toMatchObject({ transfersAcross: 0 });
     expect(digest({ calls, result })).toBe(
-      '911bb977ae5936505c72ecbb17f0088b6fdf9ca44f1722a47d726650ca2b9806',
+      'ed18fb41430ba5f923c1bb5b14981689d66d2cf93dd8f8b35e2d4cf90339a3b6',
     );
   });
 
@@ -253,7 +253,7 @@ describe('DASH-CHART characterization of a period read', () => {
       false,
     );
     expect(digest({ calls, result })).toBe(
-      'a273e6f201e994d29819f5cb4f2d40e924b221c3bfb6c3d3e8dc0558722c4377',
+      '34134466258702bb8d452ee012232396d099562e0b23b5bb8bfea5097469c036',
     );
   });
 });
