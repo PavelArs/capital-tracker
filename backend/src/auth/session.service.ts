@@ -18,6 +18,8 @@ export const COOKIE_OPTIONS = {
   path: '/',
 };
 const ANONYMOUS_MS = 5 * 60 * 1000;
+// Anonymous and pending sessions together.
+const SESSION_POOL = 512;
 // A full session lasts one day from factor completion; there is no idle timeout.
 export const FULL_SESSION_MS = 24 * 60 * 60 * 1000;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
@@ -159,6 +161,30 @@ export class SessionService {
           AND o."credentialVersion" = s."credentialVersion")))`);
   }
 
+  /**
+   * SES-003-A: room for one more anonymous or pending session in a pool of SESSION_POOL. A full
+   * pool retires its oldest anonymous sessions: they hold nothing but a CSRF token, and anyone
+   * can make one, so keeping every one let a few clients lock the owner out of signing in
+   * (Codex Security finding #12). A pending session needs the password and is never retired;
+   * a pool full of them answers 429. Caller holds the creation lock.
+   */
+  private async makeRoom(manager: EntityManager): Promise<void> {
+    const [{ count }] = await manager.query(
+      "SELECT count(*)::int AS count FROM auth_sessions WHERE state <> 'authenticated'",
+    );
+    const excess = count - SESSION_POOL + 1;
+    if (excess <= 0) return;
+    const oldest: { tokenHash: string }[] = await manager.query(
+      `SELECT "tokenHash" FROM auth_sessions WHERE state = 'anonymous'
+      ORDER BY "createdAt", "tokenHash" LIMIT $1 FOR UPDATE SKIP LOCKED`,
+      [excess],
+    );
+    if (oldest.length < excess) throw new HttpException('Too many sessions', 429);
+    await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = ANY($1)', [
+      oldest.map((row) => row.tokenHash),
+    ]);
+  }
+
   private async insert(
     manager: EntityManager,
     owner?: ValidatedOwner,
@@ -190,16 +216,13 @@ export class SessionService {
 
   async csrf(token: string | null): Promise<{ token?: string; csrfToken: string }> {
     return this.source.transaction(async (manager) => {
-      // Serialize creation; never evict a valid anonymous session.
+      // Serialize creation.
       await this.creationLock(manager);
       if (token && tokenPattern.test(token)) {
         const existing = await this.row(manager, sessionHash(token));
         if (this.valid(existing)) return { csrfToken: existing.csrfToken };
       }
-      const [{ count }] = await manager.query(
-        "SELECT count(*)::int AS count FROM auth_sessions WHERE state <> 'authenticated'",
-      );
-      if (count >= 512) throw new HttpException('Too many sessions', 429);
+      await this.makeRoom(manager);
       return this.insert(manager);
     });
   }
@@ -265,10 +288,7 @@ export class SessionService {
       const previous = await this.row(manager, hash);
       if (!this.valid(previous)) throw new ForbiddenException();
       await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [hash]);
-      const [{ count }] = await manager.query(
-        "SELECT count(*)::int AS count FROM auth_sessions WHERE state <> 'authenticated'",
-      );
-      if (count >= 512) throw new HttpException('Too many sessions', 429);
+      await this.makeRoom(manager);
       return this.insert(manager, verified);
     });
   }
