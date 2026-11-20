@@ -14,12 +14,15 @@ import { Button } from '@/ui/Button';
 import Drawer, { DrawerFooter, DrawerHeader } from '@/ui/Drawer';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
+import { dayText, utcClockText } from '@/utils/dates';
+import { sumDecimals } from '@/utils/decimal';
 import { newRequestId, useAttempt } from '../accounting/feedback';
-import { dependentOf } from '../portfolio/AddTransactionDialog';
+import { dependentOf, type PurchasePreset } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity, type Rounding } from '../portfolio/format';
 import CopyValue from '../shell/CopyValue';
 import { Icon } from '../shell/icons';
+import { useMainCurrency } from '../shell/main-currency';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import {
   amount,
@@ -45,6 +48,7 @@ import {
   typeLabel,
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
+import { minuteBefore, waitingBuys, waitingFill } from './waiting-fill';
 
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
@@ -816,6 +820,71 @@ const isStakeMove = (operation: Operation) =>
  * Guidance on what the buttons below can do; not a note of its own (role none), so the drawer's
  * one note stays the verdict on this transaction.
  */
+/**
+ * BYBIT-P2P: a Bybit trade still waiting for what it spent. A buy offers to add the coin it paid
+ * with (USDT bought on P2P is never in Bybit's API), dated before the first buy waiting for it.
+ */
+function WaitingFill({
+  operation,
+  operations,
+  currency,
+  onAddPurchase,
+}: {
+  operation: Operation;
+  operations: readonly Operation[];
+  currency: AccountingCurrency;
+  onAddPurchase?: (preset: PurchasePreset) => void;
+}) {
+  const { main } = useMainCurrency();
+  const fill = waitingFill(operation);
+  if (!fill || !operation.account) return null;
+  const coin = operation.asset.symbol ?? operation.asset.name;
+  const account = operation.account.name;
+  if (fill.side === 'sell')
+    return (
+      <Banner tone="info" title={`Waiting for ${coin}`}>
+        <p>
+          Bybit sold this {coin} for {quantity(fill.amount)} {fill.currency}, but your records of{' '}
+          {account} don't hold that {coin} yet. Classify the deposit or transfer that brought it
+          there, and this trade becomes a Sell by itself.
+        </p>
+      </Banner>
+    );
+  const buys = waitingBuys(operation, operations);
+  if (!buys) return null;
+  const paid = fill.currency;
+  const others = buys.count - 1;
+  const first = `${dayText(buys.first)}, ${utcClockText(buys.first)} UTC`;
+  const trades = buys.count === 1 ? 'this trade' : `these ${buys.count} trades`;
+  const preset: PurchasePreset = {
+    accountId: buys.accountId,
+    symbol: paid,
+    ...minuteBefore(buys.first),
+    // P2P is paid in the owner's own money, most likely their main currency.
+    currency: main ?? currency,
+    note: `Bybit doesn't report P2P purchases. Enter the ${paid} you bought there and what you paid for it, dated before ${first}: ${trades} in ${account} waiting for ${quantity(buys.total)} ${paid} then become Buys by themselves.`,
+  };
+  return (
+    <Banner tone="info" title={`Waiting for ${paid}`}>
+      <p>
+        Bybit bought this {coin} for {quantity(sumDecimals([fill.amount, fill.fee]))} {paid}, fee
+        included, but your records of {account} don't hold that {paid} yet. Bybit doesn't report P2P
+        purchases: add the {paid} you bought there, and{' '}
+        {others === 0
+          ? 'this trade becomes a Buy by itself.'
+          : `this trade and ${others} more waiting for ${paid} (${quantity(buys.total)} ${paid} in all) become Buys by themselves.`}
+      </p>
+      {onAddPurchase && (
+        <p className="transactions-waiting__add">
+          <Button size="sm" variant="secondary" onClick={() => onAddPurchase(preset)}>
+            Add {paid} purchase
+          </Button>
+        </p>
+      )}
+    </Banner>
+  );
+}
+
 function ChainGuidance({ operation }: { operation: Operation }) {
   if (isStakeMove(operation)) return null;
   // BYBIT-GAP-DELETE: a counted difference is the owner's own record, so it can be deleted.
@@ -1029,6 +1098,8 @@ interface Props {
   onClose: () => void;
   onEdit?: (operation: Operation) => void;
   onDeleted?: () => void;
+  /** BYBIT-P2P: add the purchase a waiting Bybit trade paid with. */
+  onAddPurchase?: (preset: PurchasePreset) => void;
   /** Blockchain transactions still to classify, this one included. */
   left?: number;
   /** A blockchain transaction got its answer: "Buy", "hidden" or "included". */
@@ -1046,6 +1117,7 @@ export default function OperationDrawer({
   onClose,
   onEdit,
   onDeleted,
+  onAddPurchase,
   left = 0,
   onClassified,
   notice = null,
@@ -1186,6 +1258,12 @@ export default function OperationDrawer({
       {notice && <Banner tone="pos">{notice}</Banner>}
       <Hero operation={operation} currency={currency} />
       <Notes operation={operation} record={record} />
+      <WaitingFill
+        operation={operation}
+        operations={operations}
+        currency={currency}
+        onAddPurchase={onAddPurchase}
+      />
       <Facts rows={facts(operation, currency, record)} compact={compact} />
     </>
   );

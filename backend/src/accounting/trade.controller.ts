@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
+import { ChainClassificationService } from './chain-classification.service';
 import { HistoricalAccountingService } from './historical-accounting.service';
 import { TradeService } from './trade.service';
 
@@ -9,6 +10,7 @@ export class TradeController {
   constructor(
     private readonly trades: TradeService,
     private readonly history: HistoricalAccountingService,
+    private readonly classifications: ChainClassificationService,
   ) {}
 
   @Post('trade-journal')
@@ -31,6 +33,7 @@ export class TradeController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.trades.create(owner.userId, id, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -44,6 +47,7 @@ export class TradeController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.trades.correct(owner.userId, id, tradeId, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -57,6 +61,7 @@ export class TradeController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.trades.void(owner.userId, id, tradeId, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }

@@ -8,7 +8,7 @@ import {
   unitsToAtoms,
 } from '../wallet-addresses/chain-assets';
 import { tokenKey } from '../wallet-addresses/token-visibility';
-import type { ChainType, Classification } from './chain-classification';
+import type { ChainType, Classification, ExchangeFill } from './chain-classification';
 import { isDust } from './chain-dust';
 import {
   byPoolOrder,
@@ -203,6 +203,8 @@ export interface ChainOperationInput {
   call?: ContractCall | null;
   /** BYBIT-CHAIN-FACTS: a Bybit deposit or withdrawal on a blockchain, as Bybit recorded it. */
   exchange?: ExchangeChainFacts | null;
+  /** BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC, as it is recorded once paid. */
+  fill?: ExchangeFill | null;
   classification?: ChainClassificationInput | null;
 }
 /** SWAP-ONE-TX: a contract call, named by its method as the explorer decodes it, or null. */
@@ -309,6 +311,11 @@ export interface Operation {
     call?: ContractCall;
     /** BYBIT-CHAIN-FACTS: the chain, address and hash of a Bybit deposit or withdrawal. */
     exchange?: ExchangeChainFacts;
+    /**
+     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC: what it paid or got. Unanswered,
+     * it waits for the account's records to hold what it spent.
+     */
+    fill?: ExchangeFill;
     /**
      * SWAP-ONE-TX-SUGGEST: the one leg of the same transaction that moved another coin the
      * other way, as the suggested other side of a swap; only while both are unanswered.
@@ -634,6 +641,7 @@ function chainRow(
       direction: leg,
       pairedTxid: null,
       ...(row.exchange ? { exchange: row.exchange } : {}),
+      ...(row.fill ? { fill: row.fill } : {}),
     },
     status: 'needs-classification',
     source: 'chain',

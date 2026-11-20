@@ -784,6 +784,13 @@ function failure(
   const status = error.response.status;
   const message = (error.response.data as { message?: unknown } | undefined)?.message;
   if (status === 422) return refusalText(message);
+  // BYBIT-P2P: a Buy in the fill's own coin needs the records to hold that coin first.
+  const quote =
+    status === 409 && typeof message === 'string'
+      ? /^The account's records do not hold the (\w+) this trade paid with/.exec(message)?.[1]
+      : undefined;
+  if (quote)
+    return `${operation.account?.name ?? 'The account'} doesn't hold the ${quote} this trade paid with in your records, so it can't be a Buy paid in ${quote} yet. Bybit doesn't report P2P purchases: use Add ${quote} purchase above, and this trade is recorded by itself.`;
   if (status === 409 && message === 'That record changed; reload and try again')
     return 'That record changed or was already used. Close this window, reload and try again.';
   if (status === 409)

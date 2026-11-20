@@ -2102,6 +2102,69 @@ async function main() {
       'PASS BYBIT-KEY a key later given the Withdraw permission is deleted at the next sync before anything else is asked; the account then has no key until a read-only one is added again, which resumes it',
     );
 
+    // BYBIT-P2P: a fill paid in USDT the records do not hold (bought on P2P, which Bybit's API
+    // never lists) waits and says what it paid. The purchase entered by hand, dated before it,
+    // records it as an automatic Buy at once, without another sync.
+    {
+      const fillAt = ago(20 * 60_000);
+      const p2pTxid = 'bybit-trade-2100000000000000201';
+      const solFill = {
+        ...fill,
+        symbol: 'SOLUSDT',
+        execId: '2100000000000000201',
+        execPrice: '200',
+        execQty: '500',
+        execValue: '100000',
+        execFee: '0.5',
+        feeCurrency: 'SOL',
+        execTime: String(fillAt),
+      };
+      await post('bybit', { append: true, executions: [{ at: fillAt, row: solFill }] });
+      assert.equal((await syncUntilComplete(s, owner, wallet)).at(-1).result.outcome, 'complete');
+      const fillRow = async () => (await listOf()).find((item) => item.chain?.txid === p2pTxid);
+      const waiting = await fillRow();
+      // 0.5 SOL of fee at 200 is 100 USDT; the 99,900 left bought 499.5 SOL.
+      assert.deepEqual(
+        [waiting.status, waiting.asset.symbol, waiting.quantity, waiting.chain.fill],
+        [
+          'needs-classification',
+          'SOL',
+          '499.5',
+          { side: 'buy', currency: 'USDT', amount: '99900', fee: '100' },
+        ],
+      );
+      const { TradeController } = require(`${dist}/accounting/trade.controller.js`);
+      const tradeRoutes = new TradeController(s.trades, null, s.classifications);
+      const p2pJournal = await s.trades.getJournal(owner, exchange);
+      const p2p = {
+        requestId: randomUUID(),
+        expectedJournalRevision: p2pJournal.journal.journalRevision,
+        instrumentId: usdt,
+        side: 'buy',
+        occurredAt: new Date(fillAt - 60_000).toISOString(),
+        orderWithinTimestamp: 0,
+        quantity: '100000',
+        grossUsd: '100000',
+        feeUsd: '0',
+      };
+      const statuses = [];
+      const response = { status: (code) => statuses.push(code) };
+      const caller = { userId: owner, email: 'bybit-owner@example.invalid' };
+      await tradeRoutes.create(caller, exchange, p2p, response);
+      const paid = await fillRow();
+      assert.deepEqual(
+        [paid.status, paid.type, paid.classification?.automatic, paid.valueUsd, paid.feeUsd],
+        ['recorded', 'buy', true, '99900', '100'],
+      );
+      // The same request again saves nothing more.
+      await tradeRoutes.create(caller, exchange, p2p, response);
+      assert.deepEqual(statuses, [201, 200]);
+      assert.equal((await listOf()).filter((item) => item.chain?.txid === p2pTxid).length, 1);
+      console.log(
+        'PASS BYBIT-P2P a SOL fill paid with 100,000 USDT the records do not hold waits and lists its fill (99,900 + 100 fee in USDT); the 100,000 USDT P2P purchase entered by hand a minute before records it as an automatic Buy at once; the same request again saves nothing',
+      );
+    }
+
     // Constraints and privacy.
     await assert.rejects(
       () =>

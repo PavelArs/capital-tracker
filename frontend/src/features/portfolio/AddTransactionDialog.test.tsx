@@ -320,6 +320,52 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     });
   });
 
+  it('BYBIT-P2P a purchase started from a waiting Bybit trade opens in its account, of its coin, before it, in rubles', async () => {
+    const user = userEvent.setup();
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
+    const onSaved = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          preset={{
+            accountId: id(13),
+            symbol: 'usdt',
+            date: '2025-06-08',
+            time: '18:04',
+            currency: 'RUB',
+            note: 'Synthetic note on what the purchase pays for.',
+          }}
+        />
+      </MemoryRouter>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    const view = within(dialog);
+    await view.findByRole('group', { name: 'Asset' });
+    expect(view.getByText('Synthetic note on what the purchase pays for.')).toBeInTheDocument();
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    expect(view.getByLabelText('Date')).toHaveValue('2025-06-08');
+    expect(view.getByLabelText('Time, UTC (optional)')).toHaveValue('18:04');
+    expect(await view.findByDisplayValue('78.5')).toBe(view.getByLabelText('Exchange rate'));
+    // The account is the trade's, not the one holding the most of the first asset.
+    expect(available).not.toHaveBeenCalledWith(id(11), expect.anything());
+    await user.type(view.getByLabelText('Amount'), '1000');
+    await user.type(view.getByLabelText('Total paid'), '81000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(id(13), {
+      instrumentId: tether.id,
+      side: 'buy',
+      occurredAt: '2025-06-08T18:04:00.000Z',
+      quantity: '1000',
+      paid: { currency: 'RUB', gross: '81000', fee: '0' },
+      settlementCurrency: 'RUB',
+      requestId: expect.any(String),
+      expectedJournalRevision: 7,
+    });
+  });
+
   it('CASH-CONVERT does not swap in the Convert form while another type is being saved', async () => {
     const user = userEvent.setup();
     let finish: (receipt: TradeReceipt) => void = () => undefined;

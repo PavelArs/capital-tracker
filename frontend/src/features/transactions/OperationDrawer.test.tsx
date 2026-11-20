@@ -568,3 +568,131 @@ describe('OperationDrawer commands', () => {
     expect(screen.getByRole('button', { name: 'Hide from calculations' })).toBeEnabled();
   });
 });
+
+describe('BYBIT-P2P: a Bybit trade waiting for what it spent', () => {
+  const eth = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+  const other = { id: id(12), name: 'Second exchange' };
+  // A Bybit fill as the list sends it: still to classify, with what it paid.
+  const waiting = (
+    n: number,
+    occurredAt: string,
+    fill: NonNullable<NonNullable<Operation['chain']>['fill']>,
+    changes: Partial<Operation> = {},
+  ) =>
+    operation({
+      id: `chain:${bybitWallet.id}:bybit-trade-21000000000000000${n}`,
+      type: null,
+      status: 'needs-classification',
+      wallet: bybitWallet,
+      occurredAt,
+      chain: {
+        txid: `bybit-trade-21000000000000000${n}`,
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: fill.side === 'buy' ? 'in' : 'out',
+        fill,
+      },
+      ...changes,
+    });
+  const btcBuy = waiting(11, '2026-11-20T18:05:37.000Z', {
+    side: 'buy',
+    currency: 'USDT',
+    amount: '299.45',
+    fee: '0.3',
+  });
+  const ethBuy = waiting(
+    12,
+    '2026-11-20T18:06:02.000Z',
+    { side: 'buy', currency: 'USDT', amount: '298.77', fee: '0.3' },
+    { asset: eth, quantity: '0.18' },
+  );
+  // Not this account's, not this coin, or already recorded: none of them is counted.
+  const elsewhere = waiting(
+    13,
+    '2026-11-20T17:00:00.000Z',
+    { side: 'buy', currency: 'USDT', amount: '50', fee: '0' },
+    { account: other },
+  );
+  const inUsdc = waiting(14, '2026-11-20T17:30:00.000Z', {
+    side: 'buy',
+    currency: 'USDC',
+    amount: '40',
+    fee: '0',
+  });
+  const recorded = waiting(
+    15,
+    '2026-11-20T17:45:00.000Z',
+    { side: 'buy', currency: 'USDT', amount: '10.58', fee: '0' },
+    { status: 'recorded', type: 'buy' },
+  );
+  const list = [elsewhere, inUsdc, recorded, ethBuy, btcBuy];
+
+  /** The banner's words under its title. */
+  const noteUnder = (title: string) =>
+    screen.getByText(title).parentElement?.querySelector('p')?.textContent;
+
+  function renderWaiting(subject: Operation) {
+    const onAddPurchase = vi.fn();
+    render(
+      <MemoryRouter>
+        <OperationDrawer
+          operation={subject}
+          operations={list}
+          currency="RUB"
+          onClose={() => undefined}
+          onAddPurchase={onAddPurchase}
+        />
+      </MemoryRouter>,
+    );
+    return { user: userEvent.setup(), onAddPurchase };
+  }
+
+  it('BYBIT-P2P a buy says what it paid and that the account holds no USDT for it', () => {
+    renderWaiting(btcBuy);
+    expect(noteUnder('Waiting for USDT')).toBe(
+      "Bybit bought this BTC for 299.75 USDT, fee included, but your records of Bybit don't hold that USDT yet. Bybit doesn't report P2P purchases: add the USDT you bought there, and this trade and 1 more waiting for USDT (598.82 USDT in all) become Buys by themselves.",
+    );
+  });
+
+  it('BYBIT-P2P Add USDT purchase starts the purchase in that account a minute before the first waiting buy', async () => {
+    const { user, onAddPurchase } = renderWaiting(ethBuy);
+    await user.click(screen.getByRole('button', { name: 'Add USDT purchase' }));
+    expect(onAddPurchase).toHaveBeenCalledWith({
+      accountId: bybit.id,
+      symbol: 'USDT',
+      date: '2026-11-20',
+      time: '18:04',
+      currency: 'RUB',
+      note: "Bybit doesn't report P2P purchases. Enter the USDT you bought there and what you paid for it, dated before Nov 20, 2026, 18:05 UTC: these 2 trades in Bybit waiting for 598.82 USDT then become Buys by themselves.",
+    });
+  });
+
+  it('BYBIT-P2P a single buy waiting for USDC offers a USDC purchase', () => {
+    renderWaiting(inUsdc);
+    expect(noteUnder('Waiting for USDC')).toBe(
+      "Bybit bought this BTC for 40 USDC, fee included, but your records of Bybit don't hold that USDC yet. Bybit doesn't report P2P purchases: add the USDC you bought there, and this trade becomes a Buy by itself.",
+    );
+    expect(screen.getByRole('button', { name: 'Add USDC purchase' })).toBeInTheDocument();
+  });
+
+  it('BYBIT-P2P a sale waits for the coin it sold, with nothing to purchase', () => {
+    renderWaiting(
+      waiting(16, '2026-11-20T18:10:00.000Z', {
+        side: 'sell',
+        currency: 'USDT',
+        amount: '99.8',
+        fee: '0.1',
+      }),
+    );
+    expect(noteUnder('Waiting for BTC')).toBe(
+      "Bybit sold this BTC for 99.8 USDT, but your records of Bybit don't hold that BTC yet. Classify the deposit or transfer that brought it there, and this trade becomes a Sell by itself.",
+    );
+    expect(screen.queryByRole('button', { name: /purchase$/ })).toBeNull();
+  });
+
+  it('BYBIT-P2P a recorded Bybit buy waits for nothing', () => {
+    renderWaiting(recorded);
+    expect(screen.queryByText(/^Waiting for/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add USDT purchase' })).toBeNull();
+  });
+});

@@ -227,11 +227,30 @@ export async function journalAccounts(): Promise<Account[]> {
   });
 }
 
+/**
+ * BYBIT-P2P: a purchase started from a Bybit trade that waits for the coin it paid with, such
+ * as USDT bought on P2P, which Bybit's API never lists.
+ */
+export interface PurchasePreset {
+  accountId: string;
+  /** The coin bought: USDT or USDC. */
+  symbol: string;
+  /** The UTC date and HH:MM time, before the first trade it pays for. */
+  date: string;
+  time: string;
+  /** What it was most likely paid in. */
+  currency: PaidIn;
+  /** What the purchase is for, above the form. */
+  note: string;
+}
+
 interface Props {
   onClose: () => void;
   onSaved: () => void;
   /** A recorded operation to correct (OPS-EDIT); without it the window adds one. */
   editing?: Operation;
+  /** A new purchase with its account, coin, moment and currency chosen (BYBIT-P2P). */
+  preset?: PurchasePreset;
 }
 
 /** What an asset without a ticker (a property, a painting) is counted in. */
@@ -286,6 +305,14 @@ const valueHints: Partial<Record<EntryKind, string>> = {
   reward: 'Becomes the cost of these coins and counts as a gain. Leave it empty if unknown.',
   airdrop: 'Becomes the cost of these coins and counts as a gain. Leave it empty if unknown.',
 };
+
+/** BYBIT-P2P: a new entry at the preset's moment, in its currency. */
+const presetEntry = (entry: TransactionEntry, preset: PurchasePreset | undefined) =>
+  preset ? { ...entry, date: preset.date, time: preset.time, currency: preset.currency } : entry;
+
+/** A crypto asset by its ticker, whatever its case. */
+const isCoin = (asset: PortfolioAsset, symbol: string) =>
+  asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === symbol.toUpperCase();
 
 const blankEntry = (): TransactionEntry => ({
   side: 'buy',
@@ -664,8 +691,12 @@ const wording = {
 } as const;
 
 // "Add transaction" from the accepted prototype: buy or sell, paid in USD, USDT, USDC, EUR or RUB.
-export default function AddTransactionDialog({ onClose, onSaved, editing }: Props) {
-  const [initial] = useState(() => (editing ? entryFromOperation(editing) : blankEntry()));
+export default function AddTransactionDialog({ onClose, onSaved, editing, preset }: Props) {
+  // A preset is read once: the window keeps what the owner changes.
+  const [start] = useState(() => (editing ? undefined : preset));
+  const [initial] = useState(() =>
+    editing ? entryFromOperation(editing) : presetEntry(blankEntry(), start),
+  );
   const [kind, setKind] = useState<EntryKind>(() => (editing && entryKind(editing)) || 'buy');
   const [moreShown, setMoreShown] = useState(() => isMoreKind(kind));
   // A transfer's receiving account; the sending one is the account below.
@@ -753,6 +784,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           setAccountId(from);
           setToAccountId(withJournal.find((account) => account.id !== from)?.id ?? '');
         };
+        // BYBIT-P2P: the purchase goes into the trade's account, of the coin it waits for.
+        if (start) {
+          accountTouched.current = true;
+          assetTouched.current = true;
+          const own = withJournal.some((account) => account.id === start.accountId);
+          startFrom(own ? start.accountId : (withJournal[0]?.id ?? ''));
+          const coin = tradable.find((asset) => isCoin(asset, start.symbol));
+          setEntry((current) => ({ ...current, instrumentId: coin?.id ?? first }));
+          return;
+        }
         startFrom(withJournal[0]?.id ?? '');
         setEntry((current) => ({ ...current, instrumentId: first }));
         // The form shows at once. The first asset's largest holder then becomes the account it
@@ -765,7 +806,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     return () => {
       live = false;
     };
-  }, [editing, initial.instrumentId]);
+  }, [editing, initial.instrumentId, start]);
 
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
   const rateKey = rateKeyOf(entry.currency, settled, Boolean(editing));
@@ -1001,6 +1042,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             closeDisabled={saving}
           />
           <ModalBody>
+            {start && <Banner tone="info">{start.note}</Banner>}
             {typeField}
             {loadFailed || empty ? (
               <LoadNotice failed={loadFailed} accounts={accounts} assets={assets} />

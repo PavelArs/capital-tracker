@@ -749,6 +749,16 @@ export class ChainClassificationService {
   }
 
   /**
+   * BYBIT-P2P: a trade, transfer or reward the owner just saved by hand can supply the coins
+   * Bybit trades wait for, such as USDT bought on P2P, which Bybit's API never lists. Those
+   * trades are recorded right away rather than at the next sync; a replayed request changes
+   * nothing, so it starts nothing.
+   */
+  async afterManualWrite(ownerId: string, result: { created: boolean }): Promise<void> {
+    if (result.created) await this.linkQuietly(ownerId);
+  }
+
+  /**
    * BYBIT-TRADES (M22): records every Bybit spot fill that is certainly a Buy or Sell as one,
    * without asking, oldest first, each in its own transaction. A buy waits until the account's
    * records hold the USDT or USDC it spent (a transfer in, an answered deposit, a P2P purchase

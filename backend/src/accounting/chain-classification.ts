@@ -407,6 +407,29 @@ export function exchangeTrade(raw: unknown): PricedClassification | null {
   };
 }
 
+/**
+ * BYBIT-P2P: what a Bybit spot fill paid (a buy) or got (a sale) in USDT or USDC, as its
+ * automatic answer records it: the amount and the trading fee beside it.
+ */
+export interface ExchangeFill {
+  side: 'buy' | 'sell';
+  currency: 'USDT' | 'USDC';
+  amount: string;
+  fee: string;
+}
+
+/** The fill a stored Bybit trade leg is, when `exchangeTrade` can tell it for certain. */
+export function exchangeFill(raw: unknown): ExchangeFill | null {
+  const answer = exchangeTrade(raw);
+  if (!answer || (answer.currency !== 'USDT' && answer.currency !== 'USDC')) return null;
+  return {
+    side: answer.type,
+    currency: answer.currency,
+    amount: answer.amount,
+    fee: answer.fee ?? '0',
+  };
+}
+
 /** The text fields of a Bybit spot fill of a coin against USDT or USDC, or null. */
 function spotFill(raw: unknown): {
   side: 'buy' | 'sell';

@@ -34,6 +34,14 @@ export interface OperationAsset {
   network?: Exclude<OperationWallet['network'], 'bybit'>;
 }
 
+/** BYBIT-P2P: a Bybit spot fill as its automatic Buy or Sell records it. */
+export interface ExchangeFill {
+  side: 'buy' | 'sell';
+  currency: 'USDT' | 'USDC';
+  amount: string;
+  fee: string;
+}
+
 export interface OperationPlace {
   id: string;
   name: string;
@@ -131,6 +139,12 @@ export interface Operation {
     };
     /** SWAP-ONE-TX-SUGGEST: the other leg of the same transaction, as the other side of a swap. */
     swapWith?: { addressId: string; txid: string };
+    /**
+     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC: what a buy paid or a sale got,
+     * with the trading fee beside it. Unanswered, it waits for the account's records to hold
+     * what it spent, then is recorded by itself.
+     */
+    fill?: ExchangeFill;
   } | null;
   /**
    * A pool withdrawal: what its deposit put in, and what came back above what was still in the

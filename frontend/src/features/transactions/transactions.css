@@ -313,3 +313,8 @@
     align-items: stretch;
   }
 }
+
+/* BYBIT-P2P: "Add USDT purchase" under the words of a Bybit trade waiting for it. */
+.ui-banner__text > p.transactions-waiting__add {
+  margin-top: var(--sp-2);
+}

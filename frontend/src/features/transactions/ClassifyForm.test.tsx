@@ -267,6 +267,14 @@ describe('ClassifyForm refusals', () => {
       'This type does not fit the direction of the transaction.',
     ],
     [
+      'BYBIT-P2P the records do not hold the USDT a Bybit buy paid with',
+      httpError(409, {
+        message:
+          "The account's records do not hold the USDT this trade paid with yet; answer the USDT deposit or transfer first",
+      }),
+      "Cold storage doesn't hold the USDT this trade paid with in your records, so it can't be a Buy paid in USDT yet. Bybit doesn't report P2P purchases: use Add USDT purchase above, and this trade is recorded by itself.",
+    ],
+    [
       'a conflict',
       httpError(409, { message: 'Something else' }),
       'This could not be saved: it was changed elsewhere, or the account would not hold enough on that date. Close this window, reload and try again.',

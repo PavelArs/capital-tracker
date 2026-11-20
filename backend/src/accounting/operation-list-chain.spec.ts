@@ -39,6 +39,7 @@ function row(overrides: Record<string, unknown> = {}) {
     contractCall: null,
     callMethod: null,
     bybitRecord: null,
+    bybitTrade: null,
     classificationVersion: null,
     classificationStatus: null,
     classificationType: null,
@@ -96,6 +97,7 @@ const base = {
   stakeUnits: '0',
   call: null,
   exchange: null,
+  fill: null,
   classification: null,
 };
 
@@ -140,6 +142,36 @@ describe('OPS-CHAIN-INPUT: a stored chain row as the input of the operations lis
       fromAddress: null,
       hash: '0x00000000000000000000000000000000000000000000000000000000000000f1',
     });
+  });
+
+  // A Bybit spot fill as bybit-records.ts stores it: 0.01 BTC bought at 65,000 USDT, the fee
+  // charged in BTC.
+  const trade = {
+    side: 'buy',
+    base: 'BTC',
+    quote: 'USDT',
+    price: '65000',
+    quantity: '0.01',
+    value: '650',
+    fee: '0.00001',
+    feeCoin: 'BTC',
+  };
+  it('BYBIT-P2P shows what a Bybit fill paid, as its automatic Buy records it', async () => {
+    const [input] = await chainInputs([
+      row({ network: 'bybit', asset: 'BTC', bybitTrade: { trade } }),
+    ]);
+    expect(input.fill).toEqual({ side: 'buy', currency: 'USDT', amount: '649.35', fee: '0.65' });
+  });
+
+  it.each([
+    ['its fee is in a third coin', { ...trade, feeCoin: 'MNT' }],
+    ['it is quoted in BTC', { ...trade, base: 'ETH', quote: 'BTC', feeCoin: 'ETH' }],
+    ['its side is unknown', { ...trade, side: 'borrow' }],
+  ])('BYBIT-P2P shows no fill when %s: it is never recorded by itself', async (_case, fill) => {
+    const [input] = await chainInputs([
+      row({ network: 'bybit', asset: 'BTC', bybitTrade: { trade: fill } }),
+    ]);
+    expect(input.fill).toBeNull();
   });
 
   it.each([
