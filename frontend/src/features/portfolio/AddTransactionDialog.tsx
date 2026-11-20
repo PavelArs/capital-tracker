@@ -805,8 +805,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing, preset
           const own = withJournal.some((account) => account.id === start.accountId);
           setStartShut(!own);
           startFrom(own ? start.accountId : (withJournal[0]?.id ?? ''));
-          const coin = quoteCoin(tradable, start.symbol);
-          setEntry((current) => ({ ...current, instrumentId: coin?.id ?? '' }));
+          // The coin the records count, from every asset: a hidden one is not offered, and a
+          // newer one would not pay for the trades.
+          const coin = quoteCoin(allAssets, start.symbol);
+          const offeredCoin = tradable.some((asset) => asset.id === coin?.id);
+          setEntry((current) => ({ ...current, instrumentId: offeredCoin && coin ? coin.id : '' }));
           return;
         }
         startFrom(withJournal[0]?.id ?? '');
@@ -1209,7 +1212,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing, preset
             <Button
               type="submit"
               variant="primary"
-              disabled={saving || (priced && rateLoading) || empty || fewAccounts}
+              disabled={saving || (priced && rateLoading) || empty || fewAccounts || startShut}
             >
               {words.save}
             </Button>

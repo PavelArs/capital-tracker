@@ -838,7 +838,8 @@ function WaitingFill({
   const { main } = useMainCurrency();
   const fill = waitingFill(operation);
   const wholeNeeded = periodOnly && fill?.side === 'buy';
-  // Until the whole list arrives, or if it can't be read, the figures are this trade's alone.
+  // Until the whole list arrives, or if it can't be read, the figures are this trade's alone and
+  // no purchase is offered.
   const [whole, setWhole] = useState<readonly Operation[] | null>(null);
   useEffect(() => {
     if (!wholeNeeded) return;
@@ -865,7 +866,8 @@ function WaitingFill({
         </p>
       </Banner>
     );
-  const buys = waitingBuys(operation, periodOnly ? (whole ?? [operation]) : operations);
+  const known = periodOnly ? whole : operations;
+  const buys = waitingBuys(operation, known ?? [operation]);
   if (!buys) return null;
   const paid = fill.currency;
   const others = buys.count - 1;
@@ -895,7 +897,8 @@ function WaitingFill({
           ? 'this trade becomes a Buy by itself.'
           : `this trade and ${others} more waiting for ${paid} (${total} ${paid} in all) become Buys by themselves.`}
       </p>
-      {onAddPurchase && (
+      {/* The purchase is dated before the first waiting buy, so it waits for the whole list. */}
+      {onAddPurchase && known && (
         <p className="transactions-waiting__add">
           <Button size="sm" variant="secondary" onClick={() => onAddPurchase(preset)}>
             Add {paid} purchase

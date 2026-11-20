@@ -1,6 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { assetRewardsApi, type RewardReceipt } from '@api/asset-rewards.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import type { Operation } from '@api/operations.api';
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
@@ -463,6 +464,34 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(
       view.queryByText('Synthetic note on what the purchase pays for.'),
     ).not.toBeInTheDocument();
+    // Nor does it go into another account in its place.
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('BYBIT-P2P a hidden USDT the trades are paid from is not swapped for a newer one', async () => {
+    const later = {
+      ...asset(6, 'Tether again', 'USDT', 'crypto'),
+      createdAt: '2025-06-01T00:00:00.000Z',
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, tether, later]);
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([
+      { instrumentId: tether.id } as HiddenAsset,
+    ]);
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    const group = view.getByRole('group', { name: 'Asset' });
+    await waitFor(() => expect(within(group).queryAllByText('USDT')).toHaveLength(1));
+    for (const chip of within(group).getAllByRole('button'))
+      expect(chip).not.toHaveAttribute('aria-pressed', 'true');
   });
 
   it('CASH-CONVERT does not swap in the Convert form while another type is being saved', async () => {

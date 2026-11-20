@@ -726,6 +726,8 @@ describe('BYBIT-P2P: a Bybit trade waiting for what it spent', () => {
       operations: [...list, earlier],
     } as Awaited<ReturnType<typeof operationsApi.list>>);
     const { user, onAddPurchase } = renderWaiting(btcBuy, [btcBuy], true);
+    // Nothing is offered on this trade's figures alone: the earlier buys would keep waiting.
+    expect(screen.queryByRole('button', { name: 'Add USDT purchase' })).toBeNull();
     await waitFor(() =>
       expect(noteUnder('Waiting for USDT')).toContain(
         'this trade and 2 more waiting for USDT (698.92 USDT in all) become Buys by themselves.',
