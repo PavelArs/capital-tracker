@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
+import { ChainClassificationService } from './chain-classification.service';
 import { OwnedTransferService } from './owned-transfer.service';
 
 @Controller('accounting/transfers')
 export class OwnedTransferController {
-  constructor(private readonly transfers: OwnedTransferService) {}
+  constructor(
+    private readonly transfers: OwnedTransferService,
+    private readonly classifications: ChainClassificationService,
+  ) {}
 
   @Post()
   async create(
@@ -14,6 +18,7 @@ export class OwnedTransferController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.transfers.create(owner.userId, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -26,6 +31,7 @@ export class OwnedTransferController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.transfers.correct(owner.userId, id, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -38,6 +44,7 @@ export class OwnedTransferController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.transfers.void(owner.userId, id, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }

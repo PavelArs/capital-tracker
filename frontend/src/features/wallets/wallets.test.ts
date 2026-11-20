@@ -169,12 +169,87 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
   it('is negative when the records hold more than the chain', () => {
     const result = reconcile(
       [address(1, { chainBalance: '0.00000000' })],
-      portfolio([{ accountId: trust, quantity: '0.000000001' }]),
+      portfolio([{ accountId: trust, quantity: '0.00000002' }]),
       trust,
     );
     expect(result).toMatchObject({
       state: 'differs',
-      assets: [{ symbol: 'BTC', difference: '-0.000000001' }],
+      assets: [{ symbol: 'BTC', difference: '-0.00000002' }],
+    });
+  });
+
+  // SYNC-RECONCILE-DUST: amounts show to 8 decimals, so a difference below 0.00000001 would read
+  // "<0.00000001 BTC", a notice with nothing to explain; it is no difference. Synthetic amounts.
+  it.each([
+    ['records hold a little more', '0.00507285', '0.0050728549'],
+    ['the chain holds a little more', '0.01', '0.009999999'],
+    ['an 18-decimal remainder', '0.01', '0.010000000000000001'],
+  ])('SYNC-RECONCILE-DUST a difference below 0.00000001 is none: %s', (_case, chain, held) => {
+    expect(
+      reconcile(
+        [address(1, { chainBalance: chain })],
+        portfolio([{ accountId: trust, quantity: held }]),
+        trust,
+      ),
+    ).toEqual({ state: 'match' });
+  });
+
+  it.each([
+    ['0.01', '0.00999999', '0.00000001'],
+    ['0.00999999', '0.01', '-0.00000001'],
+    ['0.01', '0.0099999899', '0.0000000101'],
+  ])(
+    'SYNC-RECONCILE-DUST a difference of 0.00000001 or more stays exact: %s against %s',
+    (chain, held, difference) => {
+      expect(
+        reconcile(
+          [address(1, { chainBalance: chain })],
+          portfolio([{ accountId: trust, quantity: held }]),
+          trust,
+        ),
+      ).toEqual({
+        state: 'differs',
+        assets: [{ symbol: 'BTC', chain, recorded: held, difference, exchange: false }],
+      });
+    },
+  );
+
+  it('SYNC-RECONCILE-DUST drops only the coin whose difference is too small to show', () => {
+    const bybit = address(1, {
+      network: 'bybit',
+      address: '123456789',
+      chainBalance: null,
+      balances: [
+        { symbol: 'BTC', quantity: '0.00507285' },
+        { symbol: 'ETH', quantity: '0.07' },
+      ],
+      exchange: {
+        keyHint: 'ab12',
+        ipBound: true,
+        keyExpiresAt: null,
+        reportedAt: null,
+        untracked: [],
+        historyFrom: '2024-10-01T00:00:00.000Z',
+        hidden: [],
+      },
+    });
+    const records = {
+      assets: [
+        ...portfolio([{ accountId: trust, quantity: '0.0050728549' }]).assets,
+        {
+          instrumentId: id(3),
+          name: 'Ethereum',
+          symbol: 'ETH',
+          assetType: 'crypto',
+          holdings: [{ accountId: trust, accountName: 'x', quantity: '0.06', value: null }],
+        },
+      ],
+    } as unknown as PortfolioValuation;
+    expect(reconcile([bybit], records, trust)).toEqual({
+      state: 'differs',
+      assets: [
+        { symbol: 'ETH', chain: '0.07', recorded: '0.06', difference: '0.01', exchange: true },
+      ],
     });
   });
 

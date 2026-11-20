@@ -280,6 +280,19 @@ describe('DASH-ATTENTION: what needs the owner on the dashboard', () => {
     ]);
   });
 
+  it('SYNC-RECONCILE-DUST: a difference too small to show is no balance difference', () => {
+    const records = (quantity: string) =>
+      portfolio([
+        asset({
+          holdings: [{ accountId: trust, accountName: 'Trust Wallet', quantity, value: '800' }],
+        }),
+      ]);
+    expect(collectAttention(input({ portfolio: records('0.0099999951') })).items).toEqual([]);
+    expect(collectAttention(input({ portfolio: records('0.00999999') })).items).toMatchObject([
+      { detail: 'The blockchain shows 0.00000001 BTC more than your transactions.' },
+    ]);
+  });
+
   it('ASSET-HIDE: a hidden coin is no balance difference', () => {
     const records = portfolio([
       asset({

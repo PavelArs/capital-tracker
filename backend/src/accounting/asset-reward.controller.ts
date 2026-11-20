@@ -2,10 +2,14 @@ import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { AssetRewardService } from './asset-reward.service';
+import { ChainClassificationService } from './chain-classification.service';
 
 @Controller('accounting/accounts/:accountId/rewards')
 export class AssetRewardController {
-  constructor(private readonly rewards: AssetRewardService) {}
+  constructor(
+    private readonly rewards: AssetRewardService,
+    private readonly classifications: ChainClassificationService,
+  ) {}
 
   @Post()
   async create(
@@ -15,6 +19,7 @@ export class AssetRewardController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.rewards.create(owner.userId, account, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -28,6 +33,7 @@ export class AssetRewardController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.rewards.correct(owner.userId, account, id, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }
@@ -41,6 +47,7 @@ export class AssetRewardController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.rewards.void(owner.userId, account, id, input);
+    await this.classifications.afterManualWrite(owner.userId, result);
     response.status(result.created ? 201 : 200);
     return result.value;
   }

@@ -13,7 +13,7 @@ import { Chip, ChipGroup } from '@/ui/Chip';
 import { ErrorState } from '@/ui/ErrorState';
 import { Input, Select } from '@/ui/inputs';
 import { useRowsLayout } from '@/ui/useMediaQuery';
-import AddTransactionDialog from '../portfolio/AddTransactionDialog';
+import AddTransactionDialog, { type PurchasePreset } from '../portfolio/AddTransactionDialog';
 import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
@@ -939,7 +939,11 @@ export default function TransactionsPage() {
   // OPS-OPEN: a link from another page (the wallet page) names the transaction to open.
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
-  const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
+  const [dialog, setDialog] = useState<{
+    editing?: Operation;
+    /** BYBIT-P2P: a purchase a waiting Bybit trade paid with. */
+    preset?: PurchasePreset;
+  } | null>(null);
   const attention = useAttention();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
@@ -1310,6 +1314,7 @@ export default function TransactionsPage() {
           onClassified={(label) => void classified(label)}
           currency={currency}
           operations={operations}
+          periodOnly={readRange !== undefined}
           dustThresholdUsd={list?.dustThresholdUsd ?? null}
           onClose={() => {
             const closed = opened.id;
@@ -1322,12 +1327,18 @@ export default function TransactionsPage() {
             setOpenId(null);
             setDialog({ editing: operation });
           }}
+          onAddPurchase={(preset) => {
+            setOpenId(null);
+            setNotice(null);
+            setDialog({ preset });
+          }}
           onDeleted={() => void changed('Transaction deleted', opened)}
         />
       )}
       {dialog && (
         <AddTransactionDialog
           editing={dialog.editing}
+          preset={dialog.preset}
           onClose={() => setDialog(null)}
           onSaved={() => void changed(dialog.editing ? 'Transaction updated' : 'Transaction added')}
         />
