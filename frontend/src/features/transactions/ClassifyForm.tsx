@@ -39,6 +39,7 @@ import {
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
 import { Glyph, type GlyphName } from './TypeIcon';
+import { waitingFill } from './waiting-fill';
 
 type ChainType = ChainClassification['type'];
 type Currency = Extract<ChainClassification, { currency: string }>['currency'];
@@ -789,8 +790,14 @@ function failure(
     status === 409 && typeof message === 'string'
       ? /^The account's records do not hold the (\w+) this trade paid with/.exec(message)?.[1]
       : undefined;
-  if (quote)
-    return `${operation.account?.name ?? 'The account'} doesn't hold the ${quote} this trade paid with in your records, so it can't be a Buy paid in ${quote} yet. Bybit doesn't report P2P purchases: use Add ${quote} purchase above, and this trade is recorded by itself.`;
+  if (quote) {
+    const missing = `${operation.account?.name ?? 'The account'} doesn't hold the ${quote} this trade paid with in your records, so it can't be a Buy paid in ${quote} yet.`;
+    // Only a buy still recorded by itself offers Add purchase (OperationDrawer's WaitingFill).
+    const fill = waitingFill(operation);
+    return fill?.side === 'buy' && fill.currency === quote
+      ? `${missing} Bybit doesn't report P2P purchases: use Add ${quote} purchase above, and this trade is recorded by itself.`
+      : `${missing} Add the ${quote} deposit, transfer or purchase that brought it there first.`;
+  }
   if (status === 409 && message === 'That record changed; reload and try again')
     return 'That record changed or was already used. Close this window, reload and try again.';
   if (status === 409)

@@ -817,62 +817,83 @@ const isStakeMove = (operation: Operation) =>
   operation.type === 'stake' || operation.type === 'unstake';
 
 /**
- * Guidance on what the buttons below can do; not a note of its own (role none), so the drawer's
- * one note stays the verdict on this transaction.
- */
-/**
  * BYBIT-P2P: a Bybit trade still waiting for what it spent. A buy offers to add the coin it paid
  * with (USDT bought on P2P is never in Bybit's API), dated before the first buy waiting for it.
+ * Guidance, not a note of its own (role none): the drawer's one note stays the verdict.
  */
 function WaitingFill({
   operation,
   operations,
+  periodOnly,
   currency,
   onAddPurchase,
 }: {
   operation: Operation;
   operations: readonly Operation[];
+  /** The list on screen is one period's; the buys waiting before it count too. */
+  periodOnly: boolean;
   currency: AccountingCurrency;
   onAddPurchase?: (preset: PurchasePreset) => void;
 }) {
   const { main } = useMainCurrency();
   const fill = waitingFill(operation);
+  const wholeNeeded = periodOnly && fill?.side === 'buy';
+  // Until the whole list arrives, or if it can't be read, the figures are this trade's alone.
+  const [whole, setWhole] = useState<readonly Operation[] | null>(null);
+  useEffect(() => {
+    if (!wholeNeeded) return;
+    let live = true;
+    cachedReads.operations
+      .load()
+      .then((list) => live && setWhole(list.operations))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [wholeNeeded]);
   if (!fill || !operation.account) return null;
   const coin = operation.asset.symbol ?? operation.asset.name;
   const account = operation.account.name;
   if (fill.side === 'sell')
     return (
-      <Banner tone="info" title={`Waiting for ${coin}`}>
+      <Banner tone="info" role="none" title={`Waiting for ${coin}`}>
         <p>
-          Bybit sold this {coin} for {quantity(fill.amount)} {fill.currency}, but your records of{' '}
-          {account} don't hold that {coin} yet. Classify the deposit or transfer that brought it
-          there, and this trade becomes a Sell by itself.
+          Bybit sold this {coin} for {quantity(sumDecimals([fill.amount, `-${fill.fee}`]))}{' '}
+          {fill.currency} after the fee, but your records of {account} don't hold that {coin} yet.
+          Classify the deposit or transfer that brought it there, and this trade becomes a Sell by
+          itself.
         </p>
       </Banner>
     );
-  const buys = waitingBuys(operation, operations);
+  const buys = waitingBuys(operation, periodOnly ? (whole ?? [operation]) : operations);
   if (!buys) return null;
   const paid = fill.currency;
   const others = buys.count - 1;
   const first = `${dayText(buys.first)}, ${utcClockText(buys.first)} UTC`;
-  const trades = buys.count === 1 ? 'this trade' : `these ${buys.count} trades`;
+  // What is still missing is rounded up: entering the amount shown is enough.
+  const total = quantity(buys.total, 'up');
+  const trades =
+    buys.count === 1
+      ? `this trade in ${account} waiting for ${total} ${paid} then becomes a Buy by itself.`
+      : `these ${buys.count} trades in ${account} waiting for ${total} ${paid} then become Buys by themselves.`;
   const preset: PurchasePreset = {
     accountId: buys.accountId,
+    accountName: account,
     symbol: paid,
     ...minuteBefore(buys.first),
     // P2P is paid in the owner's own money, most likely their main currency.
     currency: main ?? currency,
-    note: `Bybit doesn't report P2P purchases. Enter the ${paid} you bought there and what you paid for it, dated before ${first}: ${trades} in ${account} waiting for ${quantity(buys.total)} ${paid} then become Buys by themselves.`,
+    note: `Bybit doesn't report P2P purchases. Enter the ${paid} you bought there and what you paid for it, dated before ${first}: ${trades}`,
   };
   return (
-    <Banner tone="info" title={`Waiting for ${paid}`}>
+    <Banner tone="info" role="none" title={`Waiting for ${paid}`}>
       <p>
-        Bybit bought this {coin} for {quantity(sumDecimals([fill.amount, fill.fee]))} {paid}, fee
-        included, but your records of {account} don't hold that {paid} yet. Bybit doesn't report P2P
-        purchases: add the {paid} you bought there, and{' '}
+        Bybit bought this {coin} for {quantity(sumDecimals([fill.amount, fill.fee]), 'up')} {paid},
+        fee included, but your records of {account} don't hold that {paid} yet. Bybit doesn't report
+        P2P purchases: add the {paid} you bought there, and{' '}
         {others === 0
           ? 'this trade becomes a Buy by itself.'
-          : `this trade and ${others} more waiting for ${paid} (${quantity(buys.total)} ${paid} in all) become Buys by themselves.`}
+          : `this trade and ${others} more waiting for ${paid} (${total} ${paid} in all) become Buys by themselves.`}
       </p>
       {onAddPurchase && (
         <p className="transactions-waiting__add">
@@ -885,6 +906,10 @@ function WaitingFill({
   );
 }
 
+/**
+ * Guidance on what the buttons below can do; not a note of its own (role none), so the drawer's
+ * one note stays the verdict on this transaction.
+ */
 function ChainGuidance({ operation }: { operation: Operation }) {
   if (isStakeMove(operation)) return null;
   // BYBIT-GAP-DELETE: a counted difference is the owner's own record, so it can be deleted.
@@ -1093,6 +1118,8 @@ interface Props {
   currency?: AccountingCurrency;
   /** The whole list, to name the operation that depends on this one. */
   operations?: Operation[];
+  /** BYBIT-P2P: `operations` are one period's, not every operation. */
+  periodOnly?: boolean;
   /** CLS-DUST: the list's dust threshold, kept out of a swap's choices. Null: off. */
   dustThresholdUsd?: string | null;
   onClose: () => void;
@@ -1113,6 +1140,7 @@ export default function OperationDrawer({
   operation,
   currency = 'USD',
   operations = [],
+  periodOnly = false,
   dustThresholdUsd = null,
   onClose,
   onEdit,
@@ -1261,6 +1289,7 @@ export default function OperationDrawer({
       <WaitingFill
         operation={operation}
         operations={operations}
+        periodOnly={periodOnly}
         currency={currency}
         onAddPurchase={onAddPurchase}
       />

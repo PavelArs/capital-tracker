@@ -253,7 +253,8 @@ function chainOperation(row: ChainRow): ChainOperationInput {
     stakeUnits: row.stakeUnits,
     call: row.contractCall ? { method: row.callMethod } : null,
     exchange: chainFacts(row.bybitRecord),
-    fill: exchangeFill(row.bybitTrade),
+    // BYBIT-P2P: only a fill nobody answered is still recorded by itself (recognizeExchangeTrades).
+    fill: row.classificationVersion === null ? exchangeFill(row.bybitTrade) : null,
     classification: chainClassification(row),
   };
 }

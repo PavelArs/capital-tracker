@@ -631,13 +631,14 @@ describe('BYBIT-P2P: a Bybit trade waiting for what it spent', () => {
   const noteUnder = (title: string) =>
     screen.getByText(title).parentElement?.querySelector('p')?.textContent;
 
-  function renderWaiting(subject: Operation) {
+  function renderWaiting(subject: Operation, shown: Operation[] = list, periodOnly = false) {
     const onAddPurchase = vi.fn();
     render(
       <MemoryRouter>
         <OperationDrawer
           operation={subject}
-          operations={list}
+          operations={shown}
+          periodOnly={periodOnly}
           currency="RUB"
           onClose={() => undefined}
           onAddPurchase={onAddPurchase}
@@ -659,6 +660,7 @@ describe('BYBIT-P2P: a Bybit trade waiting for what it spent', () => {
     await user.click(screen.getByRole('button', { name: 'Add USDT purchase' }));
     expect(onAddPurchase).toHaveBeenCalledWith({
       accountId: bybit.id,
+      accountName: 'Bybit',
       symbol: 'USDT',
       date: '2026-11-20',
       time: '18:04',
@@ -685,9 +687,54 @@ describe('BYBIT-P2P: a Bybit trade waiting for what it spent', () => {
       }),
     );
     expect(noteUnder('Waiting for BTC')).toBe(
-      "Bybit sold this BTC for 99.8 USDT, but your records of Bybit don't hold that BTC yet. Classify the deposit or transfer that brought it there, and this trade becomes a Sell by itself.",
+      "Bybit sold this BTC for 99.7 USDT after the fee, but your records of Bybit don't hold that BTC yet. Classify the deposit or transfer that brought it there, and this trade becomes a Sell by itself.",
     );
     expect(screen.queryByRole('button', { name: /purchase$/ })).toBeNull();
+  });
+
+  // What is still missing rounds up: entering the amount shown records the trade.
+  it('BYBIT-P2P what a buy still needs is rounded up to the 8 decimals shown', async () => {
+    const third = { id: id(14), name: 'Third exchange' };
+    const fine = waiting(
+      18,
+      '2026-11-20T18:20:00.000Z',
+      { side: 'buy', currency: 'USDT', amount: '10.000000001', fee: '0.0000000005' },
+      { account: third },
+    );
+    const { user, onAddPurchase } = renderWaiting(fine, [fine]);
+    expect(noteUnder('Waiting for USDT')).toBe(
+      "Bybit bought this BTC for 10.00000001 USDT, fee included, but your records of Third exchange don't hold that USDT yet. Bybit doesn't report P2P purchases: add the USDT you bought there, and this trade becomes a Buy by itself.",
+    );
+    await user.click(screen.getByRole('button', { name: 'Add USDT purchase' }));
+    expect(onAddPurchase.mock.calls[0][0].note).toContain(
+      'this trade in Third exchange waiting for 10.00000001 USDT then becomes a Buy by itself.',
+    );
+  });
+
+  it('BYBIT-P2P a period on screen still counts the buys waiting before it', async () => {
+    const earlier = waiting(17, '2026-11-19T09:00:00.000Z', {
+      side: 'buy',
+      currency: 'USDT',
+      amount: '100',
+      fee: '0.1',
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({
+      at: '2026-11-20T19:00:00.000Z',
+      quoteCurrency: 'RUB',
+      needsClassificationCount: 6,
+      dustThresholdUsd: null,
+      operations: [...list, earlier],
+    } as Awaited<ReturnType<typeof operationsApi.list>>);
+    const { user, onAddPurchase } = renderWaiting(btcBuy, [btcBuy], true);
+    await waitFor(() =>
+      expect(noteUnder('Waiting for USDT')).toContain(
+        'this trade and 2 more waiting for USDT (698.92 USDT in all) become Buys by themselves.',
+      ),
+    );
+    await user.click(screen.getByRole('button', { name: 'Add USDT purchase' }));
+    expect(onAddPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ date: '2026-11-19', time: '08:59' }),
+    );
   });
 
   it('BYBIT-P2P a recorded Bybit buy waits for nothing', () => {

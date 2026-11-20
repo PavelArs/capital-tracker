@@ -331,6 +331,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
           onSaved={onSaved}
           preset={{
             accountId: id(13),
+            accountName: 'Exchange',
             symbol: 'usdt',
             date: '2025-06-08',
             time: '18:04',
@@ -364,6 +365,104 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       requestId: expect.any(String),
       expectedJournalRevision: 7,
     });
+  });
+
+  const p2p = (accountId: string, accountName: string) => ({
+    accountId,
+    accountName,
+    symbol: 'USDT',
+    date: '2025-06-08',
+    time: '18:04',
+    currency: 'RUB' as const,
+    note: 'Synthetic note on what the purchase pays for.',
+  });
+
+  it('BYBIT-P2P the purchase is of the USDT the trades wait for: the oldest priced by the market, never one priced by hand', async () => {
+    const user = userEvent.setup();
+    const byHand = {
+      ...asset(5, 'Tether by hand', 'USDT', 'crypto'),
+      priceSource: 'manual' as const,
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+    const later = {
+      ...asset(6, 'Tether again', 'USDT', 'crypto'),
+      createdAt: '2025-06-01T00:00:00.000Z',
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, byHand, later, tether]);
+    const onSaved = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    await user.type(view.getByLabelText('Amount'), '1000');
+    await user.type(view.getByLabelText('Total paid'), '81000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(
+      id(13),
+      expect.objectContaining({ instrumentId: tether.id }),
+    );
+  });
+
+  it('BYBIT-P2P with no USDT priced by the market, no other coin is chosen for the purchase', async () => {
+    const byHand = {
+      ...asset(5, 'Tether by hand', 'USDT', 'crypto'),
+      priceSource: 'manual' as const,
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, byHand]);
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    const group = view.getByRole('group', { name: 'Asset' });
+    for (const chip of within(group).getAllByRole('button'))
+      expect(chip).not.toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('BYBIT-P2P an account whose records have not started says so instead of the purchase note', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, tether]);
+    vi.mocked(tradesApi.state).mockImplementation(async (account) =>
+      account === id(12)
+        ? ({
+            accountId: account,
+            eligible: false,
+            ineligibilityReason: null,
+            journal: null,
+          } as JournalState)
+        : journal(account, 7),
+    );
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(12), 'Old exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    expect(
+      await view.findByText(
+        "The records of Old exchange have not started: it was opened with balances, so start them on Manual accounts first. This purchase can't go there until then.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      view.queryByText('Synthetic note on what the purchase pays for.'),
+    ).not.toBeInTheDocument();
   });
 
   it('CASH-CONVERT does not swap in the Convert form while another type is being saved', async () => {

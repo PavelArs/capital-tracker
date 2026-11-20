@@ -55,6 +55,8 @@ const receipt: Operation = {
   feeValue: null,
 };
 
+const quoteMissing =
+  "The account's records do not hold the USDT this trade paid with yet; answer the USDT deposit or transfer first";
 const httpError = (status: number, data: object = {}) =>
   new AxiosError('refused', String(status), undefined, undefined, {
     status,
@@ -267,12 +269,9 @@ describe('ClassifyForm refusals', () => {
       'This type does not fit the direction of the transaction.',
     ],
     [
-      'BYBIT-P2P the records do not hold the USDT a Bybit buy paid with',
-      httpError(409, {
-        message:
-          "The account's records do not hold the USDT this trade paid with yet; answer the USDT deposit or transfer first",
-      }),
-      "Cold storage doesn't hold the USDT this trade paid with in your records, so it can't be a Buy paid in USDT yet. Bybit doesn't report P2P purchases: use Add USDT purchase above, and this trade is recorded by itself.",
+      'BYBIT-P2P the records do not hold the USDT a trade never recorded by itself paid with',
+      httpError(409, { message: quoteMissing }),
+      "Cold storage doesn't hold the USDT this trade paid with in your records, so it can't be a Buy paid in USDT yet. Add the USDT deposit, transfer or purchase that brought it there first.",
     ],
     [
       'a conflict',
@@ -288,6 +287,24 @@ describe('ClassifyForm refusals', () => {
     const banner = await screen.findByRole('alert');
     expect(banner.textContent).toBe(text);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('BYBIT-P2P a Bybit buy waiting for USDT points to Add USDT purchase', async () => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      httpError(409, { message: quoteMissing }),
+    );
+    const { user } = renderForm({
+      ...receipt,
+      chain: {
+        ...(receipt.chain as NonNullable<Operation['chain']>),
+        fill: { side: 'buy', currency: 'USDT', amount: '599.4', fee: '0.6' },
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Other' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      "Cold storage doesn't hold the USDT this trade paid with in your records, so it can't be a Buy paid in USDT yet. Bybit doesn't report P2P purchases: use Add USDT purchase above, and this trade is recorded by itself.",
+    );
   });
 
   it('a wallet without an account links to the wallets', async () => {

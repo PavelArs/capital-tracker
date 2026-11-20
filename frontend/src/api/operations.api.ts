@@ -140,9 +140,10 @@ export interface Operation {
     /** SWAP-ONE-TX-SUGGEST: the other leg of the same transaction, as the other side of a swap. */
     swapWith?: { addressId: string; txid: string };
     /**
-     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC: what a buy paid or a sale got,
-     * with the trading fee beside it. Unanswered, it waits for the account's records to hold
-     * what it spent, then is recorded by itself.
+     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC nobody answered yet: what a buy
+     * paid or a sale got, with the trading fee beside it. It waits for the account's records to
+     * hold what it spent, then is recorded by itself. Absent once answered, even if set back to
+     * classify.
      */
     fill?: ExchangeFill;
   } | null;

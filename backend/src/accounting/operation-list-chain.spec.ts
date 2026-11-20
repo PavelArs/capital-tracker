@@ -174,6 +174,30 @@ describe('OPS-CHAIN-INPUT: a stored chain row as the input of the operations lis
     expect(input.fill).toBeNull();
   });
 
+  // Recognition records only a fill nobody answered; one set back to classify, or left
+  // unclassified when its record was deleted, waits for the owner, not for coins.
+  it.each([
+    ['set back to classify', 'unclassified'],
+    ['answered', 'classified'],
+    ['hidden', 'hidden'],
+  ])(
+    'BYBIT-P2P shows no fill once it was %s: it is never recorded by itself',
+    async (_case, status) => {
+      const [input] = await chainInputs([
+        row({
+          network: 'bybit',
+          asset: 'BTC',
+          bybitTrade: { trade },
+          classificationVersion: 2,
+          classificationStatus: status,
+          classificationType: status === 'classified' ? 'other' : null,
+          classificationDetails: status === 'classified' ? { note: 'synthetic' } : null,
+        }),
+      ]);
+      expect(input.fill).toBeNull();
+    },
+  );
+
   it.each([
     [{ classificationVersion: 2, classificationStatus: null }],
     [{ classificationVersion: null, classificationStatus: 'classified' }],

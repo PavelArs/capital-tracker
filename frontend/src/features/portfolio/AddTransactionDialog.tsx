@@ -233,6 +233,7 @@ export async function journalAccounts(): Promise<Account[]> {
  */
 export interface PurchasePreset {
   accountId: string;
+  accountName: string;
   /** The coin bought: USDT or USDC. */
   symbol: string;
   /** The UTC date and HH:MM time, before the first trade it pays for. */
@@ -310,9 +311,19 @@ const valueHints: Partial<Record<EntryKind, string>> = {
 const presetEntry = (entry: TransactionEntry, preset: PurchasePreset | undefined) =>
   preset ? { ...entry, date: preset.date, time: preset.time, currency: preset.currency } : entry;
 
-/** A crypto asset by its ticker, whatever its case. */
-const isCoin = (asset: PortfolioAsset, symbol: string) =>
-  asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === symbol.toUpperCase();
+/**
+ * The coin a Bybit trade pays with, as the account's records count it: the oldest crypto asset
+ * of that ticker priced by the market (findOrCreateInstrument). One priced by hand never is.
+ */
+const quoteCoin = (assets: readonly PortfolioAsset[], symbol: string) =>
+  assets
+    .filter(
+      (asset) =>
+        asset.assetType === 'crypto' &&
+        asset.priceSource === 'market' &&
+        asset.symbol?.toUpperCase() === symbol.toUpperCase(),
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
 
 const blankEntry = (): TransactionEntry => ({
   side: 'buy',
@@ -694,6 +705,8 @@ const wording = {
 export default function AddTransactionDialog({ onClose, onSaved, editing, preset }: Props) {
   // A preset is read once: the window keeps what the owner changes.
   const [start] = useState(() => (editing ? undefined : preset));
+  // BYBIT-P2P: the trade's account takes no entries until its records start.
+  const [startShut, setStartShut] = useState(false);
   const [initial] = useState(() =>
     editing ? entryFromOperation(editing) : presetEntry(blankEntry(), start),
   );
@@ -784,14 +797,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing, preset
           setAccountId(from);
           setToAccountId(withJournal.find((account) => account.id !== from)?.id ?? '');
         };
-        // BYBIT-P2P: the purchase goes into the trade's account, of the coin it waits for.
+        // BYBIT-P2P: the purchase goes into the trade's account, of the coin it waits for; no
+        // other account or coin stands in for them.
         if (start) {
           accountTouched.current = true;
           assetTouched.current = true;
           const own = withJournal.some((account) => account.id === start.accountId);
+          setStartShut(!own);
           startFrom(own ? start.accountId : (withJournal[0]?.id ?? ''));
-          const coin = tradable.find((asset) => isCoin(asset, start.symbol));
-          setEntry((current) => ({ ...current, instrumentId: coin?.id ?? first }));
+          const coin = quoteCoin(tradable, start.symbol);
+          setEntry((current) => ({ ...current, instrumentId: coin?.id ?? '' }));
           return;
         }
         startFrom(withJournal[0]?.id ?? '');
@@ -1042,7 +1057,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing, preset
             closeDisabled={saving}
           />
           <ModalBody>
-            {start && <Banner tone="info">{start.note}</Banner>}
+            {start &&
+              (startShut ? (
+                <Banner tone="warn">
+                  {`The records of ${start.accountName} have not started: it was opened with balances, so start them on Manual accounts first. This purchase can't go there until then.`}
+                </Banner>
+              ) : (
+                <Banner tone="info">{start.note}</Banner>
+              ))}
             {typeField}
             {loadFailed || empty ? (
               <LoadNotice failed={loadFailed} accounts={accounts} assets={assets} />

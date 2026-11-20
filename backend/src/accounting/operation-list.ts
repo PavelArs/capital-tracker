@@ -203,7 +203,10 @@ export interface ChainOperationInput {
   call?: ContractCall | null;
   /** BYBIT-CHAIN-FACTS: a Bybit deposit or withdrawal on a blockchain, as Bybit recorded it. */
   exchange?: ExchangeChainFacts | null;
-  /** BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC, as it is recorded once paid. */
+  /**
+   * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC nobody answered yet, as it is
+   * recorded by itself once paid; null for any other row.
+   */
   fill?: ExchangeFill | null;
   classification?: ChainClassificationInput | null;
 }
@@ -312,8 +315,9 @@ export interface Operation {
     /** BYBIT-CHAIN-FACTS: the chain, address and hash of a Bybit deposit or withdrawal. */
     exchange?: ExchangeChainFacts;
     /**
-     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC: what it paid or got. Unanswered,
-     * it waits for the account's records to hold what it spent.
+     * BYBIT-P2P: a Bybit spot fill of a coin for USDT or USDC nobody answered yet: what it paid
+     * or got. It waits for the account's records to hold what it spent, then is recorded by
+     * itself. Absent once answered, even if set back to classify: then it waits for the owner.
      */
     fill?: ExchangeFill;
     /**

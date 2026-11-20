@@ -57,6 +57,13 @@ describe('a shown figure is never above the real one (AGENTS: round what the own
     expect(quantity('9007199254740993')).toBe('9,007,199,254,740,993');
     expect(quantity('1.999999999')).toBe('1.99999999');
   });
+
+  it('BYBIT-P2P rounds a quantity still missing up, so the amount shown is enough', () => {
+    expect(quantity('10.0000000015', 'up')).toBe('10.00000001');
+    expect(quantity('1.999999999', 'up')).toBe('2');
+    expect(quantity('0.000000001', 'up')).toBe('0.00000001');
+    expect(quantity('598.82', 'up')).toBe('598.82');
+  });
 });
 
 // Owner decision (2026-10-15): rubles are whole, rounded down, with ₽ before the number as the

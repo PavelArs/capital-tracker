@@ -2156,6 +2156,8 @@ async function main() {
         [paid.status, paid.type, paid.classification?.automatic, paid.valueUsd, paid.feeUsd],
         ['recorded', 'buy', true, '99900', '100'],
       );
+      // Answered, the fill waits for nothing more.
+      assert.equal(paid.chain.fill, undefined);
       // The same request again saves nothing more.
       await tradeRoutes.create(caller, exchange, p2p, response);
       assert.deepEqual(statuses, [201, 200]);
