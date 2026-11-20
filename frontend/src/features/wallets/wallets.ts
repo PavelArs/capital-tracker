@@ -9,6 +9,8 @@ import { addressAssets, networkOf } from './networks';
 // Exact decimal arithmetic for comparing balances; display rounding happens in format.ts.
 const SCALE = 30;
 const ONE = 10n ** BigInt(SCALE);
+/** 0.00000001, the smallest quantity format.ts shows: a smaller difference reads "<0.00000001". */
+const SHOWN = 10n ** BigInt(SCALE - 8);
 
 function units(value: string): bigint {
   const match = /^(-)?(\d+)(?:\.(\d+))?$/.exec(value);
@@ -112,6 +114,7 @@ export type Reconciliation =
  * whole history; a partly loaded address would show a false difference. The coins the owner hid
  * (`hidden`, tickers in capitals) are left out of the check: the portfolio no longer counts them.
  * A ticker the portfolio still counts through another, visible coin is checked as before.
+ * A difference below 0.00000001, the smallest amount shown, is left out (SYNC-RECONCILE-DUST).
  */
 export function reconcile(
   addresses: readonly WalletAddress[],
@@ -160,9 +163,11 @@ export function reconcile(
           .map((item) => item.quantity),
       ),
     );
-    const difference = decimal(units(chain) - units(recorded) - units(heldBack));
+    const gap = units(chain) - units(recorded) - units(heldBack);
+    // SYNC-RECONCILE-DUST: a difference too small to show is no difference to explain.
+    if ((gap < 0n ? -gap : gap) < SHOWN) return [];
     const exchange = own.every((address) => networkOf(address).exchange === true);
-    return difference === '0' ? [] : [{ symbol, chain, recorded, difference, exchange }];
+    return [{ symbol, chain, recorded, difference: decimal(gap), exchange }];
   });
   return assets.length === 0 ? { state: 'match' } : { state: 'differs', assets };
 }
