@@ -25,8 +25,10 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:?Set the existing database password}
+      # The runtime role, with data access only, once the owner created it
+      # (scripts/db-app-role-install.sh); until then the migration role.
+      DB_USERNAME: ${DB_APP_USERNAME:-${DB_USERNAME:-postgres}}
+      DB_PASSWORD: ${DB_APP_PASSWORD:-${DB_PASSWORD:?Set the existing database password}}
       DB_NAME: ${DB_NAME:-capital_tracker}
       PORT: 3000
       NODE_ENV: production
@@ -69,6 +71,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - capital-tracker-network
+
+  # Run only by the release (scripts/manual-mvp-release.sh) for migrate.js: the migration role,
+  # which the long-running backend never receives. It grants the runtime role its data access.
+  migrate:
+    image: ${BACKEND_IMAGE:-ghcr.io/pavelars/capital-tracker-backend:latest}
+    profiles: [release]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Set the existing database password}
+      DB_NAME: ${DB_NAME:-capital_tracker}
+      DB_APP_USERNAME: ${DB_APP_USERNAME:-}
+      NODE_ENV: production
     networks:
       - capital-tracker-network
 

@@ -40,6 +40,14 @@ x-backend: &backend
     - ./.runtime/mfa-key:/run/secrets/ct-mfa-key:ro
     - ./.runtime/provider-tls/fullchain.pem:/run/acceptance/provider-ca.pem:ro
 
+# The backends run as the runtime role, as on the server with DB_APP_USERNAME set
+# (docs/manual-mvp-release.md): data access only, granted by the migrate step. Tools and probes
+# keep the migration role.
+x-runtime-environment: &runtime-environment
+  <<: *backend-environment
+  DB_USERNAME: capital_e2e_app
+  DB_PASSWORD: capital_e2e_app
+
 services:
   postgres:
     # The official PostgreSQL image, pulled by digest and tagged by scripts/acceptance.mjs.
@@ -52,6 +60,9 @@ services:
       PGDATA: /var/lib/postgresql/18/docker
     tmpfs:
       - /var/lib/postgresql
+    volumes:
+      # Creates the runtime role when the database is initialized, as the owner does once.
+      - ./postgres-app-role.sql:/docker-entrypoint-initdb.d/app-role.sql:ro
     networks: [isolated]
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U capital_e2e -d capital_tracker_e2e"]
@@ -82,7 +93,9 @@ services:
   migrate:
     <<: *backend
     profiles: [tools]
-    command: [node, backend/dist/migrate.js]
+    # Grants the runtime role its data access after migrating, as a release does. Probes that
+    # reuse this service with a command of their own run without it.
+    command: [env, DB_APP_USERNAME=capital_e2e_app, node, backend/dist/migrate.js]
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +117,7 @@ services:
 
   backend:
     <<: *backend
+    environment: *runtime-environment
     networks:
       isolated:
         ipv4_address: 172.30.91.10
@@ -115,6 +129,7 @@ services:
 
   backend-replica:
     <<: *backend
+    environment: *runtime-environment
     networks:
       isolated:
         ipv4_address: 172.30.91.11

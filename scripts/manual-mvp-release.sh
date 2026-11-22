@@ -98,6 +98,32 @@ compare_resume() {
 }
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
 jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/null
+# The backend's database role: a separate data-only role once the owner created one
+# (DB_APP_USERNAME and DB_APP_PASSWORD, docs/manual-mvp-release.md), else the migration role.
+# Compared inside jq, so no password reaches the shell. migrate.js checks the role again and
+# grants it data access.
+jq -e '(.services.backend.environment.DB_USERNAME == .services.postgres.environment.POSTGRES_USER) == (.services.backend.environment.DB_PASSWORD == .services.postgres.environment.POSTGRES_PASSWORD)' <<<"$config" >/dev/null || { echo 'Set DB_APP_USERNAME and DB_APP_PASSWORD together'; exit 1; }
+app_role=$(jq -er '.services.backend.environment.DB_USERNAME' <<<"$config")
+if [[ $app_role != "$(jq -er '.services.postgres.environment.POSTGRES_USER' <<<"$config")" ]]; then
+  [[ $app_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || { echo 'Invalid DB_APP_USERNAME'; exit 1; }
+  [[ $installation == existing ]] || { echo 'Create the runtime database role after the installation is activated; leave DB_APP_USERNAME unset until then'; exit 1; }
+  role_state=$(docker exec -i "$db" sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<SQL
+SELECT CASE
+  WHEN r.oid IS NULL THEN 'does not exist'
+  WHEN NOT r.rolcanlogin THEN 'cannot log in'
+  WHEN r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN 'has administrative attributes (superuser, createdb, createrole, replication or bypassrls)'
+  WHEN EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) THEN 'is a member of another role'
+  WHEN EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid) THEN 'owns database objects'
+  WHEN has_database_privilege(r.oid, current_database(), 'CREATE') THEN 'may create schemas in the database'
+  ELSE 'ok' END
+FROM (VALUES (1)) AS one LEFT JOIN pg_roles r ON r.rolname = '$app_role'
+SQL
+)
+  [[ $role_state == ok ]] || { echo "Runtime database role refused: $app_role $role_state"; exit 1; }
+  echo "Runtime database role: $app_role (data access only)"
+else
+  echo 'Runtime database role: the migration role (DB_APP_USERNAME not set)'
+fi
 # Anonymous checks never authenticate with owner factors or expose private response bodies.
 smoke() {
   [[ $(curl --fail --silent --show-error --max-time 10 "$origin/health") == '{"status":"ok"}' ]] || return 1
@@ -268,7 +294,8 @@ fingerprint() {
 compare_resume
 printf '%s\n' "$before" >"$state/migrations-before"
 printf '%s\n%s\n' "$previous_backend" "$previous_frontend" >"$state/previous-images"
-BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc run --rm --no-deps backend node backend/dist/migrate.js
+# The migrate service has the migration role; the backend service has the runtime role.
+BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc run --rm --no-deps migrate node backend/dist/migrate.js
 ledger >"$state/migrations-after"
 if [[ $installation == fresh || $installation == resume-fresh ]]; then
   # Real production CLIs provision the owner and confirm a separately generated factor.

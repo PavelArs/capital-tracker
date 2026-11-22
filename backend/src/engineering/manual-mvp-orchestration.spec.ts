@@ -39,7 +39,9 @@ if(tool==='jq'){
  // Every fixture jq call uses stdin (a pipe or here-string); consume it before returning output.
  fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
- if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
+ if(q==='.services.backend.environment.DB_USERNAME')v=mode.startsWith('app-role')?(mode==='app-role-invalid'?'Capital-App':'capital_app'):'true';
+ else if(q.includes('POSTGRES_PASSWORD')&&mode==='app-role-unpaired'){process.stdout.write('false');process.exit(1);}
+ else if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
  else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major')?'18':'16';
  else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
  else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
@@ -106,7 +108,12 @@ if(tool==='docker'){
    }
    process.exit(0);
   }
-  if(s.includes('PG_VERSION'))process.stdout.write(['resume-fresh','resume-activation'].includes(process.env.RELEASE_INSTALLATION)?'18':'16');
+  if(s.endsWith(' -At')){
+   // The runtime role check: SQL on stdin, one word of state back.
+   fs.writeFileSync(path.join(root,'role-check.sql'),fs.readFileSync(0,'utf8'));
+   process.stdout.write(mode==='app-role-admin'?'has administrative attributes (superuser, createdb, createrole, replication or bypassrls)\\n':'ok\\n');
+  }
+  else if(s.includes('PG_VERSION'))process.stdout.write(['resume-fresh','resume-activation'].includes(process.env.RELEASE_INSTALLATION)?'18':'16');
   else if(s.includes('owner_auth WHERE id=1'))process.stdout.write(mode==='no-owner'?'':'11111111-1111-1111-1111-111111111111');
   else if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore'||(mode==='restore-temp-window'&&!fs.existsSync(path.join(root,'final-restore-ready'))))process.exit(1);}
@@ -705,6 +712,79 @@ describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
         '# Synthetic previous configuration\n',
       );
       expect(existsSync(join(directory, '.env.images'))).toBe(false);
+    },
+  );
+});
+
+describe('DBROLE-001: the backend runs as a separate data-only role once the owner creates it', () => {
+  const stops = (call: Command) =>
+    call.tool === 'docker' &&
+    call.args[0] === 'compose' &&
+    ['stop', 'pull', 'run', 'up'].some((step) => call.args.includes(step));
+  const roleCheck = (call: Command) =>
+    call.tool === 'docker' && call.args[0] === 'exec' && call.args.at(-1)?.endsWith(' -At');
+
+  it('DBROLE-001-A keeps the migration role until DB_APP_USERNAME is set, and migrates as it', () => {
+    const { result, calls } = release('success');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      'Runtime database role: the migration role (DB_APP_USERNAME not set)',
+    );
+    expect(calls.filter(roleCheck)).toEqual([]);
+    const migrations = calls.filter(migration);
+    expect(migrations).toHaveLength(1);
+    // The migrate service carries the migration role; the backend service never does.
+    expect(migrations[0].args.slice(-6)).toEqual([
+      'run',
+      '--rm',
+      '--no-deps',
+      'migrate',
+      'node',
+      'backend/dist/migrate.js',
+    ]);
+  });
+
+  it('DBROLE-001-A checks a runtime role read-only in preflight', () => {
+    const { result, calls } = release('app-role-ok', 'existing', 'preflight');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Runtime database role: capital_app (data access only)');
+    expect(calls.filter(roleCheck)).toHaveLength(1);
+    expect(readFileSync(join(directory, 'role-check.sql'), 'utf8')).toContain(
+      "r.rolname = 'capital_app'",
+    );
+    expect(calls.filter(stops)).toEqual([]);
+  });
+
+  it('DBROLE-001-A releases with a checked runtime role', () => {
+    const { result, calls } = release('app-role-ok');
+    expect(result.status).toBe(0);
+    expect(calls.filter(roleCheck)).toHaveLength(1);
+    expect(calls.findIndex(roleCheck)).toBeLessThan(calls.findIndex(stops));
+    expect(calls.filter(migration)).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'app-role-admin',
+      'existing',
+      'Runtime database role refused: capital_app has administrative attributes (superuser, createdb, createrole, replication or bypassrls)',
+    ],
+    ['app-role-unpaired', 'existing', 'Set DB_APP_USERNAME and DB_APP_PASSWORD together'],
+    ['app-role-invalid', 'existing', 'Invalid DB_APP_USERNAME'],
+    [
+      'app-role-ok',
+      'fresh',
+      'Create the runtime database role after the installation is activated; leave DB_APP_USERNAME unset until then',
+    ],
+  ])(
+    'DBROLE-001-B refuses %s (%s) before stopping or changing anything',
+    (failure, installation, message) => {
+      const { result, calls } = release(failure, installation);
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toContain(message);
+      expect(calls.filter(stops)).toEqual([]);
+      expect(calls.filter(migration)).toEqual([]);
+      if (failure !== 'app-role-admin') expect(calls.filter(roleCheck)).toEqual([]);
     },
   );
 });
