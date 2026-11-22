@@ -57,7 +57,7 @@ base_env=(--env-file "$root/.env")
 [[ $installation == existing && ! -f "$root/.release-managed-env" ]] || base_env=()
 dc() { docker compose --project-directory "$root" -p "$project" "${base_env[@]}" --env-file "$runtime" "${image_env[@]}" -f "$candidate" "$@"; }
 # Never print rendered configuration, which contains passwords.
-config=$(dc config --format json)
+config=$(dc --profile release config --format json)
 postgres_ref=$(jq -er '.services.postgres.image' <<<"$config")
 expected_major=$(jq -er '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR' <<<"$config")
 candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume" and .source=="postgres_data") | .target' <<<"$config")
@@ -98,6 +98,37 @@ compare_resume() {
 }
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
 jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/null
+# The backend's database role: a separate data-only role once the owner created one
+# (DB_APP_USERNAME and DB_APP_PASSWORD, docs/manual-mvp-release.md), else the migration role.
+# Only the migrate service, rendered with the release profile, carries DB_APP_USERNAME itself.
+# Passwords are compared inside jq, so none reaches the shell, and no output names the role.
+# migrate.js checks the role again and grants it data access.
+app_role=$(jq -r '.services.migrate.environment.DB_APP_USERNAME // ""' <<<"$config")
+if [[ -n $app_role ]]; then
+  [[ $app_role =~ ^[a-z_][a-z0-9_]{0,62}$ ]] || { echo 'Invalid DB_APP_USERNAME'; exit 1; }
+  [[ $app_role != "$(jq -er '.services.postgres.environment.POSTGRES_USER' <<<"$config")" ]] || { echo 'DB_APP_USERNAME must differ from DB_USERNAME'; exit 1; }
+fi
+jq -e --arg role "$app_role" '.services as $s | ($s.backend.environment.DB_USERNAME == (if $role == "" then $s.postgres.environment.POSTGRES_USER else $role end)) and (($s.backend.environment.DB_PASSWORD == $s.postgres.environment.POSTGRES_PASSWORD) == ($role == ""))' <<<"$config" >/dev/null || { echo 'Set DB_APP_USERNAME and DB_APP_PASSWORD together'; exit 1; }
+if [[ -n $app_role ]]; then
+  [[ $installation == existing ]] || { echo 'Create the runtime database role after the installation is activated; leave DB_APP_USERNAME unset until then'; exit 1; }
+  role_state=$(docker exec -i "$db" sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<SQL
+SELECT CASE
+  WHEN r.oid IS NULL THEN 'does not exist'
+  WHEN NOT r.rolcanlogin THEN 'cannot log in'
+  WHEN r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN 'has administrative attributes (superuser, createdb, createrole, replication or bypassrls)'
+  WHEN EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) THEN 'is a member of another role'
+  WHEN EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid) OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.proowner = r.oid) OR EXISTS (SELECT 1 FROM pg_type t WHERE t.typowner = r.oid) THEN 'owns database objects'
+  WHEN has_database_privilege(r.oid, current_database(), 'CREATE') THEN 'may create schemas in the database'
+  WHEN has_schema_privilege(r.oid, 'public', 'CREATE') THEN 'may create objects in schema public'
+  ELSE 'ok' END
+FROM (VALUES (1)) AS one LEFT JOIN pg_roles r ON r.rolname = '$app_role'
+SQL
+)
+  [[ $role_state == ok ]] || { echo "Runtime database role refused: DB_APP_USERNAME $role_state"; exit 1; }
+  echo 'Runtime database role: DB_APP_USERNAME (data access only)'
+else
+  echo 'Runtime database role: the migration role (DB_APP_USERNAME not set)'
+fi
 # Anonymous checks never authenticate with owner factors or expose private response bodies.
 smoke() {
   [[ $(curl --fail --silent --show-error --max-time 10 "$origin/health") == '{"status":"ok"}' ]] || return 1
@@ -268,7 +299,8 @@ fingerprint() {
 compare_resume
 printf '%s\n' "$before" >"$state/migrations-before"
 printf '%s\n%s\n' "$previous_backend" "$previous_frontend" >"$state/previous-images"
-BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc run --rm --no-deps backend node backend/dist/migrate.js
+# The migrate service has the migration role; the backend service has the runtime role.
+BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc run --rm --no-deps migrate node backend/dist/migrate.js
 ledger >"$state/migrations-after"
 if [[ $installation == fresh || $installation == resume-fresh ]]; then
   # Real production CLIs provision the owner and confirm a separately generated factor.

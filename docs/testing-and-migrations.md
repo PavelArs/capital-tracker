@@ -285,7 +285,10 @@ configuration and is not copied into an image.
 Application startup uses synchronize:false, migrationsRun:false and
 installExtensions:false. Startup cannot replace an explicit migration step.
 The CLI requires DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD and DB_NAME; there are
-no default connection credentials and no implicit .env loading. Supply values
+no default connection credentials and no implicit .env loading. With the optional
+DB_APP_USERNAME, `run` checks that runtime role first (login, no administrative attribute,
+membership or ownership) and grants it read and write access to every table except the
+ledger after migrating (docs/manual-mvp-release.md, "Runtime database role"). Supply values
 through the process environment or explicit Node environment-file option:
 
 ```sh

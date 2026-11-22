@@ -63,6 +63,51 @@ const mountsByDestination = (container) =>
   [...container.Mounts].sort((a, b) => a.Destination.localeCompare(b.Destination));
 assert.deepEqual(mountsByDestination(replica), mountsByDestination(backend));
 assert.equal(replica.Config.User, backend.Config.User);
+// The backends run as the runtime role, which reads and writes rows and nothing else
+// (migrate.js grants it; docs/manual-mvp-release.md).
+for (const container of [backend, replica]) {
+  assert.ok(container.Config.Env.includes('DB_USERNAME=capital_e2e_app'));
+}
+const psql = (user, sql) =>
+  docker(
+    ...compose,
+    'exec',
+    '-T',
+    'postgres',
+    'psql',
+    '-X',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-U',
+    user,
+    '-d',
+    'capital_tracker_e2e',
+    '-At',
+    '-c',
+    sql,
+  );
+const tables = (condition) =>
+  `(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND ${condition})`;
+// CASE keeps the sequence functions off other relations, which they reject.
+const sequences = (condition) =>
+  `(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND CASE WHEN c.relkind = 'S' THEN ${condition} ELSE false END)`;
+const has = (privilege) => `has_table_privilege('capital_e2e_app', c.oid, '${privilege}')`;
+assert.equal(
+  psql(
+    'capital_e2e',
+    `SELECT ${tables('true')} > 0, ${tables(
+      `c.relname <> 'migrations' AND NOT (${['SELECT', 'INSERT', 'UPDATE', 'DELETE'].map(has).join(' AND ')})`,
+    )}, ${tables(['TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'].map(has).join(' OR '))}, has_table_privilege('capital_e2e_app', 'public.migrations', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'), has_schema_privilege('capital_e2e_app', 'public', 'CREATE'), (SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = 'capital_e2e_app'), ${sequences("NOT (has_sequence_privilege('capital_e2e_app', c.oid, 'USAGE') AND has_sequence_privilege('capital_e2e_app', c.oid, 'SELECT'))")}, ${sequences("has_sequence_privilege('capital_e2e_app', c.oid, 'UPDATE')")}`,
+  ),
+  't|0|0|f|f|f|0|0',
+  'The runtime role reads and writes every application table, and holds nothing more',
+);
+for (const sql of [
+  'BEGIN; CREATE TABLE runtime_role_probe (id int); ROLLBACK',
+  'SELECT count(*) FROM migrations',
+]) {
+  assert.throws(() => psql('capital_e2e_app', sql), /permission denied/);
+}
 const imageHealth = inspect(backend.Image).Config.Healthcheck;
 for (const container of [backend, replica]) {
   assert.deepEqual(

@@ -31,6 +31,40 @@ describe('MVP-002: actual deployment policy', () => {
   it('MVP-002-D invokes the existing explicit migration CLI during release', () => {
     expect(commands).toMatch(/backend\/dist\/migrate\.js/);
   });
+  it('MVP-002-F gives the backend the runtime role and only the migration CLI the migration role', () => {
+    type Service = { profiles?: string[]; environment?: Record<string, unknown> };
+    const production = parse(readFileSync(resolve(root, 'docker-compose.yml'), 'utf8')) as {
+      services: Record<string, Service>;
+    };
+    const { backend, migrate, postgres } = production.services;
+    // Falls back to the migration role until the owner creates the runtime role (DBROLE-001).
+    expect(backend.environment?.DB_USERNAME).toBe(
+      ['$', '{DB_APP_USERNAME:-$', '{DB_USERNAME:-postgres}}'].join(''),
+    );
+    expect(backend.environment?.DB_PASSWORD).toBe(
+      ['$', '{DB_APP_PASSWORD:-$', '{DB_PASSWORD:?Set the existing database password}}'].join(''),
+    );
+    expect(migrate.profiles).toEqual(['release']);
+    expect(migrate.environment?.DB_USERNAME).toBe(postgres.environment?.POSTGRES_USER);
+    expect(migrate.environment?.DB_PASSWORD).toBe(postgres.environment?.POSTGRES_PASSWORD);
+    expect(migrate.environment?.DB_APP_USERNAME).toBe(['$', '{DB_APP_USERNAME:-}'].join(''));
+    // Only what migrate.js reads: no MFA key, provider keys or proxy settings.
+    expect(Object.keys(migrate.environment ?? {}).sort()).toEqual([
+      'DB_APP_USERNAME',
+      'DB_HOST',
+      'DB_NAME',
+      'DB_PASSWORD',
+      'DB_PORT',
+      'DB_USERNAME',
+      'NODE_ENV',
+    ]);
+    expect(readFileSync(serverScript, 'utf8')).toContain(
+      'dc run --rm --no-deps migrate node backend/dist/migrate.js',
+    );
+    expect(readFileSync(serverScript, 'utf8')).not.toMatch(
+      /run --rm --no-deps backend node backend\/dist\/migrate/,
+    );
+  });
   it('MVP-002-E checks only private routes the browser acceptance proves answer 401', () => {
     // A route the application removed answers 404 and fails the release after migration.
     const smoke = /for route in ([^;]+); do/.exec(readFileSync(serverScript, 'utf8'));
