@@ -40,7 +40,9 @@ jobs:
     # ubuntu-24.04 and ubuntu-26.04 (what ubuntu-latest became on 2026-11-05), so a candidate
     # built on one fails the identity check when loaded on the other.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # The server agent's path waits for one agent pass (docs/pull-release-agent.md); only a
+    # run the chooser step can hand to the agent gets the longer job.
+    timeout-minutes: ${{ vars.DEPLOY_PULL == 'true' && (github.event_name == 'workflow_run' || (inputs.mode == 'release' && inputs.installation == 'existing')) && 180 || 30 }}
     # Holds DEPLOY_DISPATCH_SSH_KEY. Its required reviewer is the release approval button;
     # without that protection rule an automatic release deploys without a click.
     environment: production
@@ -52,7 +54,9 @@ jobs:
       contents: read
       actions: read
       packages: write
-    # Set only after the dispatcher accepted a deploy request; the tag job reads it.
+      # Only to read the server agent's production-release status.
+      statuses: read
+    # Set only after the server accepted a deploy request; the tag job reads it.
     outputs:
       version: ${{ steps.deployed.outputs.version }}
     steps:
@@ -60,6 +64,19 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.1'
+      - name: Choose who releases on the server
+        env:
+          DEPLOY_PULL: ${{ vars.DEPLOY_PULL }}
+        run: |
+          set -euo pipefail
+          # The pull agent (docs/pull-release-agent.md) releases only an approved release of an
+          # existing installation; everything else still goes to the release dispatcher.
+          path=dispatch
+          if [[ ${DEPLOY_PULL:-} == true && $RELEASE_MODE == release && $RELEASE_INSTALLATION == existing ]]; then
+            path=pull
+          fi
+          echo "RELEASE_PATH=$path" >> "$GITHUB_ENV"
+          echo "Server release path: \`$path\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate trusted successful candidate provenance
         if: env.RELEASE_MODE != 'inventory'
         env:
@@ -167,8 +184,64 @@ jobs:
           path: receipt/
           if-no-files-found: error
           retention-days: 30
+      # The agent takes a request only from this job, which runs after the approval, and
+      # only from the run attempt that uploaded it.
+      - name: Hand the release to the server agent
+        if: env.RELEASE_PATH == 'pull'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-release-request
+          path: receipt/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Wait for the server agent's release
+        if: env.RELEASE_PATH == 'pull'
+        # Longer than one agent pass: its unit stops it after 2 hours, plus 15 for the rollback.
+        timeout-minutes: 150
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The agent names this exact attempt in its status and posts it with the owner's
+          # token, so another attempt's result or a status from a workflow never counts.
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          attempt_url="$run_url/attempts/$GITHUB_RUN_ATTEMPT"
+          echo "Waiting for the production-release status of $attempt_url"
+          polls=0
+          last=waiting
+          while :; do
+            result=waiting
+            if statuses=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/statuses?per_page=100"); then
+              # Newest first: the first match is the agent's latest word on this attempt. A
+              # status for this run without an attempt comes from an agent older than this job.
+              result=$(jq -r --arg url "$attempt_url" --arg run "$run_url" --arg owner "$GITHUB_REPOSITORY_OWNER" '
+                map(select(.context == "production-release" and .creator.login == $owner))
+                | (map(select(.target_url == $url)) | first) as $own
+                | if $own != null then $own.state + " " + ($own.description // "")
+                  elif any(.[]; .target_url == $run) then "outdated"
+                  else "waiting" end' <<<"$statuses") || result=waiting
+            fi
+            case $result in
+              success*) echo "Server release succeeded: ${result#success }"; exit 0 ;;
+              failure* | error*) echo "::error::Server release failed: ${result#* }"; exit 1 ;;
+              outdated)
+                echo "::error::The server agent is out of date: its status for this run names no attempt, so this job cannot tell its outcome. It may still be releasing; check journalctl -u capital-tracker-deploy-agent on the server, then run scripts/deploy-agent-install.sh update from this commit (docs/pull-release-agent.md)."
+                exit 1 ;;
+            esac
+            if [[ $result != waiting && $result != "$last" ]]; then
+              echo "Server release ${result%% *}: ${result#* }"
+              last=$result
+            fi
+            polls=$((polls + 1))
+            # The agent polls every minute and reports the start at once; its start report is
+            # best effort, so silence is only a warning.
+            if ((polls == 30)) && [[ $last == waiting ]]; then
+              echo "::warning::No status from the server agent after 10 minutes. Check that it is installed and active: scripts/deploy-agent-install.sh active (docs/pull-release-agent.md)."
+            fi
+            sleep 20
+          done
       - name: Configure restricted release SSH with pinned identity
-        if: env.RELEASE_MODE != 'promote'
+        if: env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'
         env:
           DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -181,7 +254,7 @@ jobs:
           printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
           chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
       - name: Send a data-only request to the root-owned release dispatcher
-        if: env.RELEASE_MODE != 'promote'
+        if: env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}

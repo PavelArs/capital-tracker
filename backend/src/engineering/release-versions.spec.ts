@@ -191,11 +191,13 @@ describe('RVR-002: Git tag for the deployed release', () => {
     expect(cd.jobs.deploy.outputs).toEqual({ version: '${{ steps.deployed.outputs.version }}' });
     expect(run(report?.run, { RELEASE_VERSION: version }).output).toBe(`version=${version}\n`);
     expect(run(report?.run, { RELEASE_VERSION: 'v1' }).result.status).not.toBe(0);
-    // The deploy job keeps its permissions; it never writes repository contents.
+    // The deploy job keeps its permissions; it never writes repository contents. It reads
+    // commit statuses only to wait for the server agent's result (RAP-005).
     expect(cd.jobs.deploy.permissions).toEqual({
       contents: 'read',
       actions: 'read',
       packages: 'write',
+      statuses: 'read',
     });
   });
 
