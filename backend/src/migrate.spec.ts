@@ -1,6 +1,9 @@
 // Source-level pin of the explicit migration CLI. Importing migrate.ts runs it, so each case
 // loads it in an isolated registry against a fake data source; no database is reached.
 // tests/e2e/migrations.cjs carries the real PostgreSQL evidence.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 const mockDatabase: { source: unknown; loads: number; Executor: unknown } = {
   source: undefined,
   loads: 0,
@@ -33,7 +36,7 @@ const REFUSED =
 const GENERIC =
   'Migration failed; database unchanged if the transaction rolled back. Inspect the isolated migration environment before retrying.';
 const ROLE_CHECK =
-  "SELECT r.rolcanlogin AS login, (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS admin, EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) AS member, (EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid)) AS owner, has_database_privilege(r.oid, current_database(), 'CREATE') AS creates FROM pg_roles r WHERE r.rolname = $1";
+  "SELECT r.rolcanlogin AS login, (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS admin, EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) AS member, (EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid) OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.proowner = r.oid) OR EXISTS (SELECT 1 FROM pg_type t WHERE t.typowner = r.oid)) AS owner, has_database_privilege(r.oid, current_database(), 'CREATE') AS creates, has_schema_privilege(r.oid, 'public', 'CREATE') AS schema_creates FROM pg_roles r WHERE r.rolname = $1";
 const GRANTS = [
   'REVOKE ALL ON SCHEMA public FROM "capital_app"',
   'GRANT USAGE ON SCHEMA public TO "capital_app"',
@@ -61,8 +64,22 @@ type Step =
   | 'unlock'
   | 'release'
   | 'destroy';
-type Role = { login: unknown; admin: unknown; member: unknown; owner: unknown; creates: unknown };
-const restricted: Role = { login: true, admin: false, member: false, owner: false, creates: false };
+type Role = {
+  login: unknown;
+  admin: unknown;
+  member: unknown;
+  owner: unknown;
+  creates: unknown;
+  schema_creates: unknown;
+};
+const restricted: Role = {
+  login: true,
+  admin: false,
+  member: false,
+  owner: false,
+  creates: false,
+  schema_creates: false,
+};
 interface Options {
   lock?: unknown;
   ledger?: boolean;
@@ -461,7 +478,7 @@ describe('MIGRATE-ROLE: the runtime role gets data access only', () => {
         ['execute', 'all'],
         ['stdout', 'Migrations applied: 2'],
         ['query', GRANTS],
-        ['stdout', 'Runtime role capital_app: data access granted'],
+        ['stdout', 'Runtime role DB_APP_USERNAME: data access granted'],
         ...closed,
       ],
       exitCode: undefined,
@@ -505,6 +522,8 @@ describe('MIGRATE-ROLE: the runtime role gets data access only', () => {
     ['is a member of another role', { ...restricted, member: true }],
     ['owns database objects', { ...restricted, owner: true }],
     ['may create schemas in the database', { ...restricted, creates: true }],
+    // CREATE on schema public granted to PUBLIC, which revoking from the role cannot remove.
+    ['may create objects in schema public', { ...restricted, schema_creates: true }],
     // A row the driver did not read as booleans never passes.
     ['cannot log in', { ...restricted, login: 't' }],
     [
@@ -520,7 +539,7 @@ describe('MIGRATE-ROLE: the runtime role gets data access only', () => {
         ['query', APPLIED],
         ['query', ROLE_CHECK, ['capital_app']],
         ...closed,
-        ['stderr', `Runtime role refused: capital_app ${reason}`],
+        ['stderr', `Runtime role refused: DB_APP_USERNAME ${reason}`],
       ],
       exitCode: 1,
     });
@@ -561,8 +580,17 @@ describe('MIGRATE-ROLE: the runtime role gets data access only', () => {
       ...closed,
       [
         'stderr',
-        'Migrations applied, but granting the runtime role capital_app data access failed; its access is unchanged. Inspect the role before retrying.',
+        'Migrations applied, but granting DB_APP_USERNAME data access failed; its access is unchanged. Inspect the role before retrying.',
       ],
     ]);
+  });
+
+  it("MIGRATE-ROLE-C the owner's install script grants the same data access when it creates the role", () => {
+    const install = readFileSync(
+      resolve(__dirname, '../../scripts/db-app-role-install.sh'),
+      'utf8',
+    );
+    for (const statement of GRANTS.split('; '))
+      expect(install).toContain(`${statement.replaceAll('"capital_app"', '"$role"')};\n`);
   });
 });

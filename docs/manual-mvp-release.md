@@ -358,7 +358,7 @@ schema, truncate tables, read the migration ledger or create roles, schemas or d
 
 Until the owner creates the role, the backend keeps the migration role as before. Each release
 says which role it uses: `Runtime database role: the migration role (DB_APP_USERNAME not set)` or
-`Runtime database role: capital_app (data access only)`.
+`Runtime database role: DB_APP_USERNAME (data access only)`. No release output names the role.
 
 **Owner step, once, on an activated installation.** As root, from a clean checkout of `main`:
 
@@ -368,22 +368,35 @@ bash scripts/db-app-role-install.sh
 ```
 
 It creates `capital_app`: a login role with no superuser, createdb, createrole, replication or
-bypassrls attribute, and no inherited membership. It appends `DB_APP_USERNAME` and a generated
-`DB_APP_PASSWORD` to the private runtime file. The default file is
+bypassrls attribute, and no inherited membership. In the same transaction it grants the role the
+data access `migrate.js` grants (below) on the current tables, so any backend start from then on
+works as it, including a release's recovery of the previous pair. It appends `DB_APP_USERNAME` and
+a generated `DB_APP_PASSWORD` to the private runtime file. The default file is
 `/var/snap/docker/common/capital-tracker/.env.release`; set `RELEASE_ROOT` or `RELEASE_RUNTIME_FILE`
 for another one. It prints no password and changes nothing when it refuses:
+- before the installation is activated (no `docker-compose.yml` in the release directory);
 - while a release or the daily backup holds the server lock;
 - when the runtime file already names a runtime role;
-- when the role already exists.
+- when the role already exists, or the roles cannot be inspected;
+- when every role may create objects in schema `public`. This is the default only on clusters
+  first created before PostgreSQL 15. Remove it first, as root:
+
+  ```sh
+  docker exec -i capital_tracker_db sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+  SQL
+  ```
 
 Then approve the next release as usual.
 
 **What every release does with it.**
 - Read-only preflight, before anything stops, refuses:
   - `DB_APP_USERNAME` without `DB_APP_PASSWORD`, or the reverse;
+  - a `DB_APP_USERNAME` that is not a plain lower-case name, or equals `DB_USERNAME`;
   - a role that does not exist or cannot log in;
   - a role with an administrative attribute;
-  - a role that is a member of another role, owns database objects or may create schemas.
+  - a role that is a member of another role, owns database objects, may create schemas, or may
+    create objects in schema `public` (also through `PUBLIC`).
 - `migrate.js` checks the role again before migrating. After migrating, it grants:
   - `USAGE` on schema `public`;
   - `SELECT`, `INSERT`, `UPDATE` and `DELETE` on every table except the `migrations` ledger;
@@ -393,7 +406,8 @@ Then approve the next release as usual.
   from new migrations are covered.
 - The backend then starts as the runtime role. If it fails its checks, the usual recovery
   applies: with the ledger unchanged, the previous pair returns with its previous Compose
-  configuration, which may still use the migration role.
+  configuration. Where that configuration already maps `DB_APP_USERNAME`, the pair runs as the
+  runtime role, with the data access it already holds on the unchanged schema.
 
 A fresh or resumed installation refuses `DB_APP_USERNAME` until it is activated.
 

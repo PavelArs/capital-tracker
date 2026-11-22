@@ -16,7 +16,7 @@ const destructiveLegacy = new Set([
 // it can be quoted into GRANT statements, which take no parameters.
 const APP_ROLE = /^[a-z_][a-z0-9_]{0,62}$/;
 const ROLE_CHECK =
-  "SELECT r.rolcanlogin AS login, (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS admin, EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) AS member, (EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid)) AS owner, has_database_privilege(r.oid, current_database(), 'CREATE') AS creates FROM pg_roles r WHERE r.rolname = $1";
+  "SELECT r.rolcanlogin AS login, (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS admin, EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) AS member, (EXISTS (SELECT 1 FROM pg_class c WHERE c.relowner = r.oid) OR EXISTS (SELECT 1 FROM pg_namespace n WHERE n.nspowner = r.oid) OR EXISTS (SELECT 1 FROM pg_database d WHERE d.datdba = r.oid) OR EXISTS (SELECT 1 FROM pg_proc p WHERE p.proowner = r.oid) OR EXISTS (SELECT 1 FROM pg_type t WHERE t.typowner = r.oid)) AS owner, has_database_privilege(r.oid, current_database(), 'CREATE') AS creates, has_schema_privilege(r.oid, 'public', 'CREATE') AS schema_creates FROM pg_roles r WHERE r.rolname = $1";
 
 // Why a role may not run the application, or undefined when it may. Anything but a plain
 // boolean counts against it.
@@ -28,11 +28,14 @@ function roleRefusal(row: Record<string, unknown> | undefined): string | undefin
   if (row.member !== false) return 'is a member of another role';
   if (row.owner !== false) return 'owns database objects';
   if (row.creates !== false) return 'may create schemas in the database';
+  // Also through PUBLIC, which the grants below cannot revoke from the role alone.
+  if (row.schema_creates !== false) return 'may create objects in schema public';
   return undefined;
 }
 
 // Exactly read and write access to the application's rows: no DDL, no TRUNCATE, no ledger.
 // One simple-protocol query, so PostgreSQL applies the statements as one transaction.
+// scripts/db-app-role-install.sh grants the same when it creates the role.
 const grants = (role: string) =>
   [
     `REVOKE ALL ON SCHEMA public FROM "${role}"`,
@@ -97,7 +100,8 @@ async function migrateLocked(
   if (appRole) {
     const [role] = await runner.query(ROLE_CHECK, [appRole]);
     const refusal = roleRefusal(role);
-    if (refusal) throw new MigrationSafetyError(`Runtime role refused: ${appRole} ${refusal}`);
+    // The role's name stays out of the output, like every other setting.
+    if (refusal) throw new MigrationSafetyError(`Runtime role refused: DB_APP_USERNAME ${refusal}`);
   }
   const tables: { tablename: string }[] = await runner.query(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('migrations', 'typeorm_metadata')",
@@ -124,11 +128,11 @@ async function migrateLocked(
       await runner.query(grants(appRole));
     } catch {
       throw new MigrationSafetyError(
-        `Migrations applied, but granting the runtime role ${appRole} data access failed; its access is unchanged. Inspect the role before retrying.`,
+        'Migrations applied, but granting DB_APP_USERNAME data access failed; its access is unchanged. Inspect the role before retrying.',
       );
     }
   }
-  if (appRole) console.log(`Runtime role ${appRole}: data access granted`);
+  if (appRole) console.log('Runtime role DB_APP_USERNAME: data access granted');
 }
 
 async function main(): Promise<void> {

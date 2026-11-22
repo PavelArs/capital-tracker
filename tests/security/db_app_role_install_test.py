@@ -28,12 +28,24 @@ with open(root / 'docker-calls', 'a') as output:
 if args[0] == 'inspect':
     print(os.environ.get('FIXTURE_RUNNING', 'true'))
 elif 'FROM pg_roles' in sql:
-    print(os.environ.get('FIXTURE_EXISTING', '0'))
+    if os.environ.get('FIXTURE_ROLES_EXIT'):
+        sys.exit(int(os.environ['FIXTURE_ROLES_EXIT']))
+    print('{}|{}'.format(os.environ.get('FIXTURE_EXISTING', '0'), os.environ.get('FIXTURE_PUBLIC_CREATE', 'false')))
 elif 'CREATE ROLE' in sql:
     sys.exit(int(os.environ.get('FIXTURE_CREATE_EXIT', '0')))
 '''
 
 RUNTIME = 'DB_USERNAME=capital\nDB_PASSWORD=synthetic-migration-password\nFRONTEND_URL=https://mvp.example.invalid\n'
+# The same data access as migrate.js grants (backend/src/migrate.spec.ts MIGRATE-ROLE-C).
+GRANTS = [
+    'REVOKE ALL ON SCHEMA public FROM "capital_app";',
+    'GRANT USAGE ON SCHEMA public TO "capital_app";',
+    'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "capital_app";',
+    'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "capital_app";',
+    'REVOKE ALL ON TABLE public.migrations FROM "capital_app";',
+    'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM "capital_app";',
+    'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "capital_app";',
+]
 
 
 class RuntimeRoleInstall(unittest.TestCase):
@@ -46,6 +58,8 @@ class RuntimeRoleInstall(unittest.TestCase):
         self.runtime = self.release / '.env.release'
         self.runtime.write_text(RUNTIME)
         self.runtime.chmod(0o600)
+        # An activated installation: the release runner's published Compose file.
+        (self.release / 'docker-compose.yml').write_text('# Synthetic activated release\n')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         (self.bin / 'docker-fixture.py').write_text(DOCKER_FIXTURE)
@@ -74,19 +88,23 @@ class RuntimeRoleInstall(unittest.TestCase):
 
     def assert_unchanged(self):
         self.assertEqual(self.runtime.read_text(), RUNTIME)
-        self.assertEqual([path.name for path in self.release.iterdir() if path.name != '.release.lock'],
-                         ['.env.release'])
+        self.assertEqual(sorted(path.name for path in self.release.iterdir() if path.name != '.release.lock'),
+                         ['.env.release', 'docker-compose.yml'])
 
-    def test_creates_a_login_role_without_administrative_attributes_and_names_it_in_the_runtime_file(self):
+    def test_creates_a_login_role_without_administrative_attributes_with_data_access_and_names_it(self):
         result, calls = self.install()
         self.assertEqual(result.returncode, 0, result.stderr)
         password = self.added_password()
         create = [call for call in calls if 'CREATE ROLE' in call['sql']]
         self.assertEqual(len(create), 1)
+        # One transaction: the role never exists without its data access.
         self.assertEqual(
-            create[0]['sql'].strip(),
-            "CREATE ROLE capital_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION "
-            "NOBYPASSRLS NOINHERIT PASSWORD '{}';".format(password))
+            create[0]['sql'].strip().split('\n'),
+            ['BEGIN;',
+             "CREATE ROLE capital_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION "
+             "NOBYPASSRLS NOINHERIT PASSWORD '{}';".format(password),
+             *GRANTS,
+             'COMMIT;'])
         # The existence check runs first and carries no password.
         self.assertLess(next(i for i, call in enumerate(calls) if 'FROM pg_roles' in call['sql']),
                         calls.index(create[0]))
@@ -132,6 +150,29 @@ class RuntimeRoleInstall(unittest.TestCase):
         result, _ = self.install(FIXTURE_CREATE_EXIT='3')
         self.assertNotEqual(result.returncode, 0)
         self.assert_unchanged()
+
+    def test_refuses_when_the_roles_cannot_be_inspected(self):
+        result, calls = self.install(FIXTURE_ROLES_EXIT='2')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('could not inspect the database roles', result.stderr)
+        self.assertNotIn('already exists', result.stderr)
+        self.assertFalse(any('CREATE ROLE' in call['sql'] for call in calls))
+        self.assert_unchanged()
+
+    def test_refuses_while_every_role_may_create_objects_in_schema_public(self):
+        result, calls = self.install(FIXTURE_PUBLIC_CREATE='true')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('every role may create objects in schema public', result.stderr)
+        self.assertFalse(any('CREATE ROLE' in call['sql'] for call in calls))
+        self.assert_unchanged()
+
+    def test_refuses_an_installation_that_is_not_activated(self):
+        (self.release / 'docker-compose.yml').unlink()
+        result, calls = self.install()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('no activated installation', result.stderr)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.runtime.read_text(), RUNTIME)
 
     def test_refuses_a_missing_or_linked_runtime_file(self):
         target = self.root / 'elsewhere'

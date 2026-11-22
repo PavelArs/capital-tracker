@@ -39,7 +39,8 @@ if(tool==='jq'){
  // Every fixture jq call uses stdin (a pipe or here-string); consume it before returning output.
  fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
- if(q==='.services.backend.environment.DB_USERNAME')v=mode.startsWith('app-role')?(mode==='app-role-invalid'?'Capital-App':'capital_app'):'true';
+ if(q==='.services.migrate.environment.DB_APP_USERNAME // ""')v=!mode.startsWith('app-role')?'':mode==='app-role-invalid'?'Capital-App':mode==='app-role-same'?'postgres':'capital_app';
+ else if(q==='.services.postgres.environment.POSTGRES_USER')v='postgres';
  else if(q.includes('POSTGRES_PASSWORD')&&mode==='app-role-unpaired'){process.stdout.write('false');process.exit(1);}
  else if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
  else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major')?'18':'16';
@@ -747,11 +748,27 @@ describe('DBROLE-001: the backend runs as a separate data-only role once the own
   it('DBROLE-001-A checks a runtime role read-only in preflight', () => {
     const { result, calls } = release('app-role-ok', 'existing', 'preflight');
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Runtime database role: capital_app (data access only)');
-    expect(calls.filter(roleCheck)).toHaveLength(1);
-    expect(readFileSync(join(directory, 'role-check.sql'), 'utf8')).toContain(
-      "r.rolname = 'capital_app'",
+    expect(result.stdout).toContain('Runtime database role: DB_APP_USERNAME (data access only)');
+    expect(result.stdout).not.toContain('capital_app');
+    // Only the release profile renders the migrate service, which names the runtime role.
+    expect(calls.find((call) => call.args.includes('config'))?.args).toEqual(
+      expect.arrayContaining(['--profile', 'release', 'config', '--format', 'json']),
     );
+    expect(calls.filter(roleCheck)).toHaveLength(1);
+    const sql = readFileSync(join(directory, 'role-check.sql'), 'utf8');
+    expect(sql).toContain("r.rolname = 'capital_app'");
+    // Every refusal migrate.js makes (MIGRATE-ROLE-B), checked before anything stops.
+    for (const reason of [
+      'does not exist',
+      'cannot log in',
+      'has administrative attributes (superuser, createdb, createrole, replication or bypassrls)',
+      'is a member of another role',
+      'owns database objects',
+      'may create schemas in the database',
+      'may create objects in schema public',
+    ])
+      expect(sql).toContain(`THEN '${reason}'`);
+    expect(sql).toContain("has_schema_privilege(r.oid, 'public', 'CREATE')");
     expect(calls.filter(stops)).toEqual([]);
   });
 
@@ -767,9 +784,10 @@ describe('DBROLE-001: the backend runs as a separate data-only role once the own
     [
       'app-role-admin',
       'existing',
-      'Runtime database role refused: capital_app has administrative attributes (superuser, createdb, createrole, replication or bypassrls)',
+      'Runtime database role refused: DB_APP_USERNAME has administrative attributes (superuser, createdb, createrole, replication or bypassrls)',
     ],
     ['app-role-unpaired', 'existing', 'Set DB_APP_USERNAME and DB_APP_PASSWORD together'],
+    ['app-role-same', 'existing', 'DB_APP_USERNAME must differ from DB_USERNAME'],
     ['app-role-invalid', 'existing', 'Invalid DB_APP_USERNAME'],
     [
       'app-role-ok',

@@ -88,15 +88,18 @@ const psql = (user, sql) =>
   );
 const tables = (condition) =>
   `(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND ${condition})`;
+// CASE keeps the sequence functions off other relations, which they reject.
+const sequences = (condition) =>
+  `(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND CASE WHEN c.relkind = 'S' THEN ${condition} ELSE false END)`;
 const has = (privilege) => `has_table_privilege('capital_e2e_app', c.oid, '${privilege}')`;
 assert.equal(
   psql(
     'capital_e2e',
     `SELECT ${tables('true')} > 0, ${tables(
       `c.relname <> 'migrations' AND NOT (${['SELECT', 'INSERT', 'UPDATE', 'DELETE'].map(has).join(' AND ')})`,
-    )}, ${tables(['TRUNCATE', 'REFERENCES', 'TRIGGER'].map(has).join(' OR '))}, has_table_privilege('capital_e2e_app', 'public.migrations', 'SELECT'), has_schema_privilege('capital_e2e_app', 'public', 'CREATE'), (SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = 'capital_e2e_app')`,
+    )}, ${tables(['TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'].map(has).join(' OR '))}, has_table_privilege('capital_e2e_app', 'public.migrations', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN'), has_schema_privilege('capital_e2e_app', 'public', 'CREATE'), (SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = 'capital_e2e_app'), ${sequences("NOT (has_sequence_privilege('capital_e2e_app', c.oid, 'USAGE') AND has_sequence_privilege('capital_e2e_app', c.oid, 'SELECT'))")}, ${sequences("has_sequence_privilege('capital_e2e_app', c.oid, 'UPDATE')")}`,
   ),
-  't|0|0|f|f|f',
+  't|0|0|f|f|f|0|0',
   'The runtime role reads and writes every application table, and holds nothing more',
 );
 for (const sql of [
