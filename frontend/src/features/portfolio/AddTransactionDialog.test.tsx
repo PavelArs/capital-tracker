@@ -1,6 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { assetRewardsApi, type RewardReceipt } from '@api/asset-rewards.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { type HiddenAsset, hiddenAssetsApi } from '@api/hidden-assets.api';
 import type { Operation } from '@api/operations.api';
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
@@ -318,6 +319,179 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       requestId: expect.any(String),
       expectedJournalRevision: 7,
     });
+  });
+
+  it('BYBIT-P2P a purchase started from a waiting Bybit trade opens in its account, of its coin, before it, in rubles', async () => {
+    const user = userEvent.setup();
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
+    const onSaved = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          preset={{
+            accountId: id(13),
+            accountName: 'Exchange',
+            symbol: 'usdt',
+            date: '2025-06-08',
+            time: '18:04',
+            currency: 'RUB',
+            note: 'Synthetic note on what the purchase pays for.',
+          }}
+        />
+      </MemoryRouter>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    const view = within(dialog);
+    await view.findByRole('group', { name: 'Asset' });
+    expect(view.getByText('Synthetic note on what the purchase pays for.')).toBeInTheDocument();
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    expect(view.getByLabelText('Date')).toHaveValue('2025-06-08');
+    expect(view.getByLabelText('Time, UTC (optional)')).toHaveValue('18:04');
+    expect(await view.findByDisplayValue('78.5')).toBe(view.getByLabelText('Exchange rate'));
+    // The account is the trade's, not the one holding the most of the first asset.
+    expect(available).not.toHaveBeenCalledWith(id(11), expect.anything());
+    await user.type(view.getByLabelText('Amount'), '1000');
+    await user.type(view.getByLabelText('Total paid'), '81000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(id(13), {
+      instrumentId: tether.id,
+      side: 'buy',
+      occurredAt: '2025-06-08T18:04:00.000Z',
+      quantity: '1000',
+      paid: { currency: 'RUB', gross: '81000', fee: '0' },
+      settlementCurrency: 'RUB',
+      requestId: expect.any(String),
+      expectedJournalRevision: 7,
+    });
+  });
+
+  const p2p = (accountId: string, accountName: string) => ({
+    accountId,
+    accountName,
+    symbol: 'USDT',
+    date: '2025-06-08',
+    time: '18:04',
+    currency: 'RUB' as const,
+    note: 'Synthetic note on what the purchase pays for.',
+  });
+
+  it('BYBIT-P2P the purchase is of the USDT the trades wait for: the oldest priced by the market, never one priced by hand', async () => {
+    const user = userEvent.setup();
+    const byHand = {
+      ...asset(5, 'Tether by hand', 'USDT', 'crypto'),
+      priceSource: 'manual' as const,
+      createdAt: '2024-01-01T00:00:00.000Z',
+    };
+    const later = {
+      ...asset(6, 'Tether again', 'USDT', 'crypto'),
+      createdAt: '2025-06-01T00:00:00.000Z',
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, byHand, later, tether]);
+    const onSaved = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={onSaved}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    await user.type(view.getByLabelText('Amount'), '1000');
+    await user.type(view.getByLabelText('Total paid'), '81000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(
+      id(13),
+      expect.objectContaining({ instrumentId: tether.id }),
+    );
+  });
+
+  it('BYBIT-P2P with no USDT priced by the market, no other coin is chosen for the purchase', async () => {
+    const byHand = {
+      ...asset(5, 'Tether by hand', 'USDT', 'crypto'),
+      priceSource: 'manual' as const,
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, byHand]);
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    const group = view.getByRole('group', { name: 'Asset' });
+    for (const chip of within(group).getAllByRole('button'))
+      expect(chip).not.toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('BYBIT-P2P an account whose records have not started says so instead of the purchase note', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, tether]);
+    vi.mocked(tradesApi.state).mockImplementation(async (account) =>
+      account === id(12)
+        ? ({
+            accountId: account,
+            eligible: false,
+            ineligibilityReason: null,
+            journal: null,
+          } as JournalState)
+        : journal(account, 7),
+    );
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(12), 'Old exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    expect(
+      await view.findByText(
+        "The records of Old exchange have not started: it was opened with balances, so start them on Manual accounts first. This purchase can't go there until then.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      view.queryByText('Synthetic note on what the purchase pays for.'),
+    ).not.toBeInTheDocument();
+    // Nor does it go into another account in its place.
+    expect(view.getByRole('button', { name: 'Save transaction' })).toBeDisabled();
+  });
+
+  it('BYBIT-P2P a hidden USDT the trades are paid from is not swapped for a newer one', async () => {
+    const later = {
+      ...asset(6, 'Tether again', 'USDT', 'crypto'),
+      createdAt: '2025-06-01T00:00:00.000Z',
+    };
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, tether, later]);
+    vi.spyOn(hiddenAssetsApi, 'list').mockResolvedValue([
+      { instrumentId: tether.id } as HiddenAsset,
+    ]);
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog
+          onClose={vi.fn()}
+          onSaved={vi.fn()}
+          preset={p2p(id(13), 'Exchange')}
+        />
+      </MemoryRouter>,
+    );
+    const view = within(screen.getByRole('dialog', { name: 'Add transaction' }));
+    await waitFor(() => expect(view.getByLabelText('Wallet or account')).toHaveValue(id(13)));
+    const group = view.getByRole('group', { name: 'Asset' });
+    await waitFor(() => expect(within(group).queryAllByText('USDT')).toHaveLength(1));
+    for (const chip of within(group).getAllByRole('button'))
+      expect(chip).not.toHaveAttribute('aria-pressed', 'true');
   });
 
   it('CASH-CONVERT does not swap in the Convert form while another type is being saved', async () => {

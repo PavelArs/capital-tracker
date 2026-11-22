@@ -14,12 +14,15 @@ import { Button } from '@/ui/Button';
 import Drawer, { DrawerFooter, DrawerHeader } from '@/ui/Drawer';
 import { KeyValue, KeyValueRow } from '@/ui/KeyValue';
 import Modal, { ModalBody, ModalFooter, ModalHeader } from '@/ui/Modal';
+import { dayText, utcClockText } from '@/utils/dates';
+import { sumDecimals } from '@/utils/decimal';
 import { newRequestId, useAttempt } from '../accounting/feedback';
-import { dependentOf } from '../portfolio/AddTransactionDialog';
+import { dependentOf, type PurchasePreset } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity, type Rounding } from '../portfolio/format';
 import CopyValue from '../shell/CopyValue';
 import { Icon } from '../shell/icons';
+import { useMainCurrency } from '../shell/main-currency';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import {
   amount,
@@ -45,6 +48,7 @@ import {
   typeLabel,
 } from './operation-format';
 import RemoveCounted from './RemoveCounted';
+import { minuteBefore, waitingBuys, waitingFill } from './waiting-fill';
 
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
@@ -813,6 +817,99 @@ const isStakeMove = (operation: Operation) =>
   operation.type === 'stake' || operation.type === 'unstake';
 
 /**
+ * BYBIT-P2P: a Bybit trade still waiting for what it spent. A buy offers to add the coin it paid
+ * with (USDT bought on P2P is never in Bybit's API), dated before the first buy waiting for it.
+ * Guidance, not a note of its own (role none): the drawer's one note stays the verdict.
+ */
+function WaitingFill({
+  operation,
+  operations,
+  periodOnly,
+  currency,
+  onAddPurchase,
+}: {
+  operation: Operation;
+  operations: readonly Operation[];
+  /** The list on screen is one period's; the buys waiting before it count too. */
+  periodOnly: boolean;
+  currency: AccountingCurrency;
+  onAddPurchase?: (preset: PurchasePreset) => void;
+}) {
+  const { main } = useMainCurrency();
+  const fill = waitingFill(operation);
+  const wholeNeeded = periodOnly && fill?.side === 'buy';
+  // Until the whole list arrives, or if it can't be read, the figures are this trade's alone and
+  // no purchase is offered.
+  const [whole, setWhole] = useState<readonly Operation[] | null>(null);
+  useEffect(() => {
+    if (!wholeNeeded) return;
+    let live = true;
+    cachedReads.operations
+      .load()
+      .then((list) => live && setWhole(list.operations))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [wholeNeeded]);
+  if (!fill || !operation.account) return null;
+  const coin = operation.asset.symbol ?? operation.asset.name;
+  const account = operation.account.name;
+  if (fill.side === 'sell')
+    return (
+      <Banner tone="info" role="none" title={`Waiting for ${coin}`}>
+        <p>
+          Bybit sold this {coin} for {quantity(sumDecimals([fill.amount, `-${fill.fee}`]))}{' '}
+          {fill.currency} after the fee, but your records of {account} don't hold that {coin} yet.
+          Classify the deposit or transfer that brought it there, and this trade becomes a Sell by
+          itself.
+        </p>
+      </Banner>
+    );
+  const known = periodOnly ? whole : operations;
+  const buys = waitingBuys(operation, known ?? [operation]);
+  if (!buys) return null;
+  const paid = fill.currency;
+  const others = buys.count - 1;
+  const first = `${dayText(buys.first)}, ${utcClockText(buys.first)} UTC`;
+  // What is still missing is rounded up: entering the amount shown is enough.
+  const total = quantity(buys.total, 'up');
+  const trades =
+    buys.count === 1
+      ? `this trade in ${account} waiting for ${total} ${paid} then becomes a Buy by itself.`
+      : `these ${buys.count} trades in ${account} waiting for ${total} ${paid} then become Buys by themselves.`;
+  const preset: PurchasePreset = {
+    accountId: buys.accountId,
+    accountName: account,
+    symbol: paid,
+    ...minuteBefore(buys.first),
+    // P2P is paid in the owner's own money, most likely their main currency.
+    currency: main ?? currency,
+    note: `Bybit doesn't report P2P purchases. Enter the ${paid} you bought there and what you paid for it, dated before ${first}: ${trades}`,
+  };
+  return (
+    <Banner tone="info" role="none" title={`Waiting for ${paid}`}>
+      <p>
+        Bybit bought this {coin} for {quantity(sumDecimals([fill.amount, fill.fee]), 'up')} {paid},
+        fee included, but your records of {account} don't hold that {paid} yet. Bybit doesn't report
+        P2P purchases: add the {paid} you bought there, and{' '}
+        {others === 0
+          ? 'this trade becomes a Buy by itself.'
+          : `this trade and ${others} more waiting for ${paid} (${total} ${paid} in all) become Buys by themselves.`}
+      </p>
+      {/* The purchase is dated before the first waiting buy, so it waits for the whole list. */}
+      {onAddPurchase && known && (
+        <p className="transactions-waiting__add">
+          <Button size="sm" variant="secondary" onClick={() => onAddPurchase(preset)}>
+            Add {paid} purchase
+          </Button>
+        </p>
+      )}
+    </Banner>
+  );
+}
+
+/**
  * Guidance on what the buttons below can do; not a note of its own (role none), so the drawer's
  * one note stays the verdict on this transaction.
  */
@@ -1024,11 +1121,15 @@ interface Props {
   currency?: AccountingCurrency;
   /** The whole list, to name the operation that depends on this one. */
   operations?: Operation[];
+  /** BYBIT-P2P: `operations` are one period's, not every operation. */
+  periodOnly?: boolean;
   /** CLS-DUST: the list's dust threshold, kept out of a swap's choices. Null: off. */
   dustThresholdUsd?: string | null;
   onClose: () => void;
   onEdit?: (operation: Operation) => void;
   onDeleted?: () => void;
+  /** BYBIT-P2P: add the purchase a waiting Bybit trade paid with. */
+  onAddPurchase?: (preset: PurchasePreset) => void;
   /** Blockchain transactions still to classify, this one included. */
   left?: number;
   /** A blockchain transaction got its answer: "Buy", "hidden" or "included". */
@@ -1042,10 +1143,12 @@ export default function OperationDrawer({
   operation,
   currency = 'USD',
   operations = [],
+  periodOnly = false,
   dustThresholdUsd = null,
   onClose,
   onEdit,
   onDeleted,
+  onAddPurchase,
   left = 0,
   onClassified,
   notice = null,
@@ -1186,6 +1289,13 @@ export default function OperationDrawer({
       {notice && <Banner tone="pos">{notice}</Banner>}
       <Hero operation={operation} currency={currency} />
       <Notes operation={operation} record={record} />
+      <WaitingFill
+        operation={operation}
+        operations={operations}
+        periodOnly={periodOnly}
+        currency={currency}
+        onAddPurchase={onAddPurchase}
+      />
       <Facts rows={facts(operation, currency, record)} compact={compact} />
     </>
   );

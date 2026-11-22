@@ -109,12 +109,16 @@ export function rateText(currency: string, rubPerUnit: string): string {
 
 const SMALLEST_QUANTITY = 0.00000001;
 
-/** Up to 8 decimals; a held amount too small to show is never displayed as 0. */
-export function quantity(value: string): string {
+/**
+ * Up to 8 decimals; a held amount too small to show is never displayed as 0. Rounded down, or
+ * up for what is still missing.
+ */
+export function quantity(value: string, rounding: 'down' | 'up' = 'down'): string {
   const amount = Number(value);
-  if (amount !== 0 && Math.abs(amount) < SMALLEST_QUANTITY) return '<0.00000001';
+  if (rounding === 'down' && amount !== 0 && Math.abs(amount) < SMALLEST_QUANTITY)
+    return '<0.00000001';
   // A negative quantity (more left than the history explains) keeps its minus.
-  const shown = number(value, 0, 8);
+  const shown = number(value, 0, 8, rounding === 'up' ? 'ceil' : 'floor');
   return `${sign(value, false, shown)}${shown}`;
 }
 

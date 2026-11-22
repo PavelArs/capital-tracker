@@ -16,7 +16,7 @@ import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { evmNetworks } from '../wallet-addresses/evm-chains';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { leftOutTokens } from '../wallet-addresses/token-left-out';
-import type { ChainType, Classification } from './chain-classification';
+import { type ChainType, type Classification, exchangeFill } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
 import {
@@ -132,6 +132,8 @@ interface ChainRow {
   callMethod: string | null;
   /** BYBIT-CHAIN-FACTS: the on-chain parts of a Bybit deposit or withdrawal record. */
   bybitRecord: unknown;
+  /** BYBIT-P2P: a Bybit spot fill's trade, on a leg that moves its base coin. */
+  bybitTrade: unknown;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -251,6 +253,8 @@ function chainOperation(row: ChainRow): ChainOperationInput {
     stakeUnits: row.stakeUnits,
     call: row.contractCall ? { method: row.callMethod } : null,
     exchange: chainFacts(row.bybitRecord),
+    // BYBIT-P2P: only a fill nobody answered is still recorded by itself (recognizeExchangeTrades).
+    fill: row.classificationVersion === null ? exchangeFill(row.bybitTrade) : null,
     classification: chainClassification(row),
   };
 }
@@ -431,6 +435,9 @@ export class OperationListService {
                 'toAddress', t.raw->'record'->'toAddress',
                 'fromAddress', t.raw->'record'->'fromAddress', 'txID', t.raw->'record'->'txID')
             END AS "bybitRecord",
+            CASE WHEN w.network='bybit' AND t.raw->>'kind'='trade' AND t.raw ? 'quoteAsset'
+              THEN json_build_object('trade', t.raw->'trade')
+            END AS "bybitTrade",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
