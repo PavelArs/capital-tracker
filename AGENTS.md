@@ -36,7 +36,7 @@ pnpm verify:baseline                          # lint + build + test, both packag
 **Ask the owner first**
 - Destructive schema or data changes, or anything that touches the production server, its database or the `production` environment.
 - New costs or paid services, private data leaving the device, or a change to an owner decision.
-- A release that changes the server runner, inventory, normalizer, Compose, pins or resume helper. The dispatcher refuses it until the owner runs `scripts/manual-mvp-dispatcher-install.sh update` as root from that commit and re-runs the release (`docs/manual-mvp-release.md`); say so in the PR.
+- A change to the server's pull agent (`scripts/deploy-agent.py` or `deploy/agent/`). The agent does not update itself: the owner runs `scripts/deploy-agent-install.sh update` as root from that commit (`docs/pull-release-agent.md`); say so in the PR. Other server files (runner, Compose, pins) come from the approved commit and need no server step.
 
 **Never**
 - Commit `openspec/`, `CONTINUITY.md`, `.env` files, secrets, keys, dumps or real owner data.

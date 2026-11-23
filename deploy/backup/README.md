@@ -11,8 +11,8 @@ the release lock (`.release.lock`) and waits up to an hour for a running release
 it exits non-zero with a message in the journal and leaves no partial dump behind.
 
 `/var/snap/docker/common/capital-tracker` is the managed release directory that
-`scripts/manual-mvp-server-bootstrap.sh` creates and `scripts/manual-mvp-dispatcher.py` releases
-into; the service unit sets `RELEASE_ROOT` to it. The script's own default is the runner's
+`scripts/manual-mvp-server-bootstrap.sh` creates and the server agent (`docs/pull-release-agent.md`)
+releases into; the service unit sets `RELEASE_ROOT` to it. The script's own default is the runner's
 unmanaged `/opt/capital-tracker`, so an installation that runs `scripts/manual-mvp-release.sh`
 directly from another directory sets `RELEASE_ROOT` in a `systemctl edit` drop-in instead.
 

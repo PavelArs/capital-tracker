@@ -8,17 +8,17 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: Successful main CI run for this exact commit (ignored for inventory)
+        description: Successful main CI run for this exact commit
         required: true
         type: string
       mode:
-        description: release (promote, preflight and deploy after environment approval), inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
+        description: release (promote, then the server agent releases after environment approval) or promote (publish the tested images and receipt only, for example for a new server)
         required: true
-        default: inventory
+        default: promote
         type: choice
-        options: [release, inventory, promote, preflight, deploy]
+        options: [release, promote]
       installation:
-        description: Recorded in the promoted receipt; existing upgrade, first install after verified absence of application data, or completion of an interrupted activation
+        description: Recorded in the promoted receipt. The server agent releases only existing; a fresh or resume receipt is for a new server (docs/manual-mvp-release.md)
         required: true
         default: existing
         type: choice
@@ -35,16 +35,16 @@ jobs:
     # for an approval that provenance would refuse anyway.
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main')
-      || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     # Pinned with ci.yml, which builds the candidate: image ids differ between the Docker of
     # ubuntu-24.04 and ubuntu-26.04 (what ubuntu-latest became on 2026-11-05), so a candidate
     # built on one fails the identity check when loaded on the other.
     runs-on: ubuntu-24.04
-    # The server agent's path waits for one agent pass (docs/pull-release-agent.md); only a
-    # run the chooser step can hand to the agent gets the longer job.
-    timeout-minutes: ${{ vars.DEPLOY_PULL == 'true' && (github.event_name == 'workflow_run' || (inputs.mode == 'release' && inputs.installation == 'existing')) && 180 || 30 }}
-    # Holds DEPLOY_DISPATCH_SSH_KEY. Its required reviewer is the release approval button;
-    # without that protection rule an automatic release deploys without a click.
+    # A release waits for one pass of the server agent (docs/pull-release-agent.md); a
+    # promotion alone keeps the short job.
+    timeout-minutes: ${{ (github.event_name == 'workflow_run' || inputs.mode == 'release') && 180 || 30 }}
+    # Its required reviewer is the release approval button: the server agent releases only a
+    # run the owner approved here. Without that protection rule a release deploys without a click.
     environment: production
     env:
       RELEASE_MODE: ${{ github.event_name == 'workflow_run' && 'release' || inputs.mode }}
@@ -56,7 +56,7 @@ jobs:
       packages: write
       # Only to read the server agent's production-release status.
       statuses: read
-    # Set only after the server accepted a deploy request; the tag job reads it.
+    # Set only after the server agent verified the release; the tag job reads it.
     outputs:
       version: ${{ steps.deployed.outputs.version }}
     steps:
@@ -64,21 +64,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.1'
-      - name: Choose who releases on the server
-        env:
-          DEPLOY_PULL: ${{ vars.DEPLOY_PULL }}
+      - name: Check the release request
         run: |
           set -euo pipefail
-          # The pull agent (docs/pull-release-agent.md) releases only an approved release of an
-          # existing installation; everything else still goes to the release dispatcher.
-          path=dispatch
-          if [[ ${DEPLOY_PULL:-} == true && $RELEASE_MODE == release && $RELEASE_INSTALLATION == existing ]]; then
-            path=pull
+          [[ $RELEASE_MODE == release || $RELEASE_MODE == promote ]]
+          # The server agent (docs/pull-release-agent.md) releases only an existing
+          # installation. A receipt for a new server is promoted, then installed by hand.
+          if [[ $RELEASE_MODE == release && $RELEASE_INSTALLATION != existing ]]; then
+            echo '::error::The server agent releases only an existing installation; promote this receipt instead and install it on the new server (docs/manual-mvp-release.md).'
+            exit 1
           fi
-          echo "RELEASE_PATH=$path" >> "$GITHUB_ENV"
-          echo "Server release path: \`$path\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate trusted successful candidate provenance
-        if: env.RELEASE_MODE != 'inventory'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -102,7 +98,6 @@ jobs:
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
       - name: Name the release version
-        if: env.RELEASE_MODE != 'inventory'
         run: |
           set -euo pipefail
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -112,7 +107,6 @@ jobs:
           echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
           echo "Release version: \`$version\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Download and verify the tested candidate
-        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -121,7 +115,6 @@ jobs:
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
-        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -169,7 +162,6 @@ jobs:
           fi
           docker logout ghcr.io
       - name: Write the release receipt for owner approval
-        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         run: |
           set -euo pipefail
           mkdir receipt
@@ -177,7 +169,6 @@ jobs:
           # The receipt holds only public commit/run/digest/hash identities for owner review.
           { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the release receipt
-        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: manual-mvp-release-receipt
@@ -187,7 +178,7 @@ jobs:
       # The agent takes a request only from this job, which runs after the approval, and
       # only from the run attempt that uploaded it.
       - name: Hand the release to the server agent
-        if: env.RELEASE_PATH == 'pull'
+        if: env.RELEASE_MODE == 'release'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-release-request
@@ -195,7 +186,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Wait for the server agent's release
-        if: env.RELEASE_PATH == 'pull'
+        if: env.RELEASE_MODE == 'release'
         # Longer than one agent pass: its unit stops it after 2 hours, plus 15 for the rollback.
         timeout-minutes: 150
         env:
@@ -240,62 +231,15 @@ jobs:
             fi
             sleep 20
           done
-      - name: Configure restricted release SSH with pinned identity
-        if: env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'
-        env:
-          DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          test -n "$DEPLOY_KNOWN_HOSTS"
-          test -n "$DEPLOY_DISPATCH_SSH_KEY"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
-          chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
-      - name: Send a data-only request to the root-owned release dispatcher
-        if: env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}
-          DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_DISPATCH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          [[ "$RELEASE_MODE" =~ ^(inventory|preflight|deploy|release)$ ]]
-          # Inventory is not bound to a candidate; it only names this workflow run.
-          if [[ "$RELEASE_MODE" == inventory ]]; then RUN_ID=$GITHUB_RUN_ID; fi
-          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
-          port=${DEPLOY_SSH_PORT:-22}
-          [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
-          # The forced command ignores any remote command; the request is data on stdin.
-          dispatch() {
-            ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-              "$DEPLOY_DISPATCH_USER@$DEPLOY_HOST"
-          }
-          if [[ "$RELEASE_MODE" == release ]]; then
-            # The environment approval authorizes the receipt promoted above; deploy follows a passed preflight.
-            receipt="receipt/$GITHUB_SHA-$RUN_ID.json"
-            for operation in preflight deploy; do
-              jq -c --arg operation "$operation" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
-                '{version: 2, operation: $operation, commit: $commit, runId: $runId, receipt: .}' "$receipt" | dispatch
-            done
-          else
-            jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
-              '{version: 1, operation: $operation, commit: $commit, runId: $runId}' | dispatch
-          fi
       - name: Report the deployed release version
         id: deployed
-        if: env.RELEASE_MODE == 'release' || env.RELEASE_MODE == 'deploy'
+        if: env.RELEASE_MODE == 'release'
         run: |
           set -euo pipefail
           [[ "$RELEASE_VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ ]]
           echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
-      - name: Remove runner credentials
-        if: always()
-        run: rm -f ~/.ssh/release-key
-  # Marks the release now running. Separate from deploy so the job holding the
-  # dispatcher key never gets contents: write; this one holds no secret.
+  # Marks the release now running. Separate from deploy so the job that publishes images
+  # and hands the release to the server never gets contents: write.
   tag:
     needs: deploy
     if: needs.deploy.outputs.version != ''

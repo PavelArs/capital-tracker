@@ -452,7 +452,8 @@ function provenanceStep(): WorkflowStep {
   const validation = workflow('cd').jobs.deploy.steps?.find(
     (step) => step.name === 'Validate trusted successful candidate provenance',
   );
-  expect(validation?.if).toBe("env.RELEASE_MODE != 'inventory'");
+  // Every mode is bound to a tested candidate.
+  expect(validation?.if).toBeUndefined();
   return validation as WorkflowStep;
 }
 
@@ -1130,58 +1131,43 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     expect(Object.keys(cd.on).sort()).toEqual(['workflow_dispatch', 'workflow_run']);
     expect(cd.on).not.toHaveProperty('push');
     expect(Object.keys(cd.jobs)).toEqual(['deploy', 'tag']);
-    expect(inputs.mode.options).toEqual(['release', 'inventory', 'promote', 'preflight', 'deploy']);
-    // Deployment credentials live in an owner-protectable environment.
+    expect(inputs.mode.options).toEqual(['release', 'promote']);
+    // The release approval lives in an owner-protectable environment.
     const deploy = cd.jobs.deploy as WorkflowJob & { environment?: string };
     expect(deploy.environment).toBe('production');
     for (const step of cd.jobs.deploy.steps ?? []) expect(step.run ?? '').not.toContain('${{');
   });
 
-  it('ENG-002-A allows only read-only inventory of one pinned commit outside main', () => {
+  it('ENG-002-A runs only on main', () => {
     // Exact expression: an OR/always() escape must not pass string-presence checks.
     expect(expression(cd.jobs.deploy.if).replace(/\s+/g, ' ')).toBe(
-      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))",
+      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
     );
   });
 
-  it('ENG-002-B reaches the server only through the restricted data-only dispatcher', () => {
+  it('ENG-002-B never reaches the server: the server agent pulls the approved release', () => {
     const commands = steps.map((step) => step.run ?? '').join('\n');
-    const serverSteps = steps.filter((step) => /(?:^|[\s|])ssh\s+-/m.test(step.run ?? ''));
-    expect(serverSteps.map((step) => step.name)).toEqual([
-      'Send a data-only request to the root-owned release dispatcher',
-    ]);
-    // With DEPLOY_PULL the server agent pulls an approved release instead (RAP-005).
-    expect(serverSteps[0].if).toBe(
-      "env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'",
+    // No SSH, file upload or remote shell, and no deployment credential (RAP-005-E).
+    expect(commands).not.toMatch(/\bssh\b|\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
+    expect(JSON.stringify(cd)).not.toMatch(
+      /\bsecrets\b|DEPLOY_SSH_KEY\b|DEPLOY_USER\b|DEPLOY_DISPATCH|DEPLOY_HOST\b/,
     );
-    // The Docker-capable shared deployment key, uploads and remote shell execution are gone.
-    expect(JSON.stringify(cd)).not.toMatch(/DEPLOY_SSH_KEY\b|DEPLOY_USER\b/);
-    expect(commands).not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
-    expect(serverSteps[0].run).toMatch(
-      /jq -cn [^|]*'\{version: 1, operation: \$operation, commit: \$commit, runId: \$runId\}' \| dispatch$/m,
-    );
-    expect(serverSteps[0].run).toMatch(
-      /'\{version: 2, operation: \$operation, commit: \$commit, runId: \$runId, receipt: \.\}' "\$receipt" \| dispatch$/m,
-    );
-    // The only ssh invocation is the fixed dispatcher principal with a pinned identity.
-    expect(serverSteps[0].run?.match(/(?:^|\s)ssh\s/gm)).toHaveLength(1);
-    expect(serverSteps[0].run).toMatch(/^\s*"\$DEPLOY_DISPATCH_USER@\$DEPLOY_HOST"$/m);
   });
 
   it('ENG-002-B publishes images and an approval receipt only from validated promotion', () => {
-    const promote = steps.filter(
-      (step) => step.if === "env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'",
-    );
-    expect(promote.map((step) => step.name)).toEqual([
+    const names = [
       'Download and verify the tested candidate',
       'Promote the identical tested images',
       'Write the release receipt for owner approval',
       'Upload the release receipt',
-    ]);
+    ];
+    const promote = names.map((name) => steps.find((step) => step.name === name) as WorkflowStep);
+    // Both modes promote the tested candidate.
+    for (const step of promote) expect(step?.if).toBeUndefined();
     const validation = steps.find(
       (step) => step.name === 'Validate trusted successful candidate provenance',
     );
-    expect(validation?.if).toBe("env.RELEASE_MODE != 'inventory'");
+    expect(validation?.if).toBeUndefined();
     expect(steps.indexOf(validation as never)).toBeLessThan(steps.indexOf(promote[0] as never));
     expect(promote[2].run).toMatch(/python3 scripts\/manual-mvp-receipt\.py /);
   });

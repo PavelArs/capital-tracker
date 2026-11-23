@@ -8,24 +8,19 @@ Actions. The release itself stays the same runner, `scripts/manual-mvp-release.s
 encrypted backup, isolated restore check, migrations, health and privacy checks, and the
 rollback to the previous pair.
 
-The change lands in small steps, and production keeps deploying through the dispatcher
-until the owner switches:
+The change landed in small steps:
 
 1. **Agent in observe mode (#452).** The owner installs the agent next to the dispatcher.
    It checks every approved release and logs what it would release; it releases nothing.
-2. **Deploy job waits for the server (in place, off until the owner switches).** With the
-   repository variable `DEPLOY_PULL=true`, an approved `release` of an `existing`
-   installation in `cd.yml` uploads its promoted receipt as the `server-release-request`
-   artifact instead of calling the dispatcher, then waits for the agent's commit status
-   (see "Switching releases to the agent"). The manual `inventory`, `preflight` and
-   `deploy` modes and every other installation still use the dispatcher; `promote` only
-   publishes images and never reaches the server.
+2. **Deploy job waits for the server (#455, switched on 2026-11-22).** An approved
+   `release` of an `existing` installation in `cd.yml` uploads its promoted receipt as the
+   `server-release-request` artifact, then waits for the agent's commit status.
    - Only the job in the `production` environment uploads the request. The approvals API
      names no attempt, so the approval is bound to an attempt only because that job
      cannot start without one.
    - The job waits up to 150 minutes, longer than one agent pass can take (the unit stops
-     it after two hours, plus 15 minutes for the rollback). Only a run the agent can take
-     gets the 180-minute job; every other run keeps 30 minutes.
+     it after two hours, plus 15 minutes for the rollback). Only a release gets the
+     180-minute job; a promotion keeps 30 minutes.
    - The wait prints the agent's progress. It warns once when the agent has posted nothing
      for 10 minutes (not installed, or not in active mode), and fails at once when an agent
      older than this step reports the run (its status names no attempt): that agent may
@@ -33,11 +28,18 @@ until the owner switches:
    - It accepts only a `production-release` status that names its own run attempt and was
      posted with the owner's token, so an earlier attempt's result on the same commit or a
      status written by a workflow never counts.
-3. **Retire the dispatcher** after two releases through the agent: remove its workflow
-   steps, scripts and tests, then the owner removes the `capital-release` account, its
-   sudo rule and the `DEPLOY_DISPATCH_SSH_KEY` secret. Before that, the modes it still
-   serves (`inventory`, `preflight`, `deploy` and the `fresh` and `resume-activation`
-   installations) need a replacement, or the owner drops them.
+3. **Retire the dispatcher.** First (in place): `cd.yml` has no dispatcher path and no
+   server credential. Every approved release goes to the agent, the repository variable
+   `DEPLOY_PULL` is no longer read, and the manual modes are `release` (an `existing`
+   installation only) and `promote`. The owner then deletes the SSH secrets in GitHub
+   (`docs/manual-mvp-release.md`); the `capital-release` account goes with the dispatcher's
+   code. Next: remove the
+   dispatcher's code, once the modes it alone serves (`inventory`, `preflight`, `deploy`,
+   and the `fresh` and `resume-activation` installations) have a replacement or the owner
+   drops them. `scripts/manual-mvp-receipt.py`, which writes every release receipt, and
+   `scripts/manual-mvp-server-bootstrap.sh` import the dispatcher module, so its shared
+   checks move first. Until then root can run the installed dispatcher locally for those
+   modes.
 
 ## What the agent trusts
 
@@ -144,33 +146,19 @@ runtime directory or the containers.
    read a release makes (the head of `main`, the newest deploy run with its approvals and
    artifacts, downloading its receipt when there is one, and commit statuses) and enables
    the timer. Writing the status is first tried by the first active release.
-3. Approve the next release as usual. The dispatcher deploys it; the journal
-   (`journalctl -u capital-tracker-deploy-agent`) should show
-   `Observe mode: would release commit …` with the same digests as the deploy run's receipt.
+3. Let it release: `bash scripts/deploy-agent-install.sh active`. Every approved release
+   now goes to the agent; in observe mode the deploy job warns after 10 minutes and fails
+   after 150, and nothing is released.
 
-## Switching releases to the agent (step 2)
+## Releases through the agent
 
-Do it in this order, so a release never waits for an agent that does not release:
+Approve a release as usual. The deploy job's step "Wait for the server agent's release"
+shows the agent's result, and the journal on the server
+(`journalctl -u capital-tracker-deploy-agent`) shows the runner's output.
 
-1. As root on the server, from a clean checkout of the `main` commit that has this step,
-   refresh the agent (this step changed it) and let it release:
-
-   ```sh
-   cd /root/capital-tracker && git fetch origin && git checkout --detach origin/main
-   bash scripts/deploy-agent-install.sh update
-   bash scripts/deploy-agent-install.sh active
-   ```
-
-   Until the variable below is set, an active agent finds no request and changes nothing;
-   the dispatcher keeps releasing.
-2. In GitHub: Settings → Secrets and variables → Actions → Variables → New repository
-   variable `DEPLOY_PULL` with the value `true`.
-3. Approve the next release as usual. The deploy job's step "Wait for the server agent's
-   release" shows the agent's result, and the journal on the server shows the runner's
-   output.
-
-To go back: delete the variable (or set it to anything but `true`), then run
-`bash scripts/deploy-agent-install.sh observe`. The dispatcher is untouched until step 3.
+There is no switch back to the dispatcher in Actions. If the agent cannot release, read
+its journal, then `update` it from the approved commit or set it `active` again; in an
+emergency root can run the installed dispatcher locally (`docs/manual-mvp-release.md`).
 
 ## Other commands
 
@@ -178,7 +166,7 @@ Each runs as root from a clean checkout:
 
 ```sh
 bash scripts/deploy-agent-install.sh token     # replace the token (from standard input)
-bash scripts/deploy-agent-install.sh active    # release approved runs (step 2 only)
+bash scripts/deploy-agent-install.sh active    # release approved runs
 bash scripts/deploy-agent-install.sh observe   # back to logging only
 bash scripts/deploy-agent-install.sh update    # a commit changed scripts/deploy-agent.py or deploy/agent/
 systemctl disable --now capital-tracker-deploy-agent.timer   # stop the agent
