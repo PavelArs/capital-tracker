@@ -1147,10 +1147,10 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
 
   it('ENG-002-B never reaches the server: the server agent pulls the approved release', () => {
     const commands = steps.map((step) => step.run ?? '').join('\n');
-    // No SSH, file upload or remote shell, and no deployment credential (RAP-005-B).
+    // No SSH, file upload or remote shell, and no deployment credential (RAP-005-E).
     expect(commands).not.toMatch(/\bssh\b|\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
     expect(JSON.stringify(cd)).not.toMatch(
-      /secrets\.|DEPLOY_SSH_KEY\b|DEPLOY_USER\b|DEPLOY_DISPATCH|DEPLOY_HOST\b/,
+      /\bsecrets\b|DEPLOY_SSH_KEY\b|DEPLOY_USER\b|DEPLOY_DISPATCH|DEPLOY_HOST\b/,
     );
   });
 

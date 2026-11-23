@@ -31,11 +31,15 @@ The change landed in small steps:
 3. **Retire the dispatcher.** First (in place): `cd.yml` has no dispatcher path and no
    server credential. Every approved release goes to the agent, the repository variable
    `DEPLOY_PULL` is no longer read, and the manual modes are `release` (an `existing`
-   installation only) and `promote`. The owner then removes the `capital-release` account,
-   its sudo rule and the SSH secrets (`docs/manual-mvp-release.md`). Next: remove the
-   dispatcher's code. Until then root can run the installed dispatcher locally for the
-   modes it alone served (`inventory`, `preflight`, `deploy`, and the `fresh` and
-   `resume-activation` installations).
+   installation only) and `promote`. The owner then deletes the SSH secrets in GitHub
+   (`docs/manual-mvp-release.md`); the `capital-release` account goes with the dispatcher's
+   code. Next: remove the
+   dispatcher's code, once the modes it alone serves (`inventory`, `preflight`, `deploy`,
+   and the `fresh` and `resume-activation` installations) have a replacement or the owner
+   drops them. `scripts/manual-mvp-receipt.py`, which writes every release receipt, and
+   `scripts/manual-mvp-server-bootstrap.sh` import the dispatcher module, so its shared
+   checks move first. Until then root can run the installed dispatcher locally for those
+   modes.
 
 ## What the agent trusts
 

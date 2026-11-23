@@ -164,7 +164,7 @@ describe('RAP-005: the server pull agent releases every approved release', () =>
 
   it('RAP-005-E no step reaches the server or holds a secret: the agent pulls the release', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/cd.yml'), 'utf8');
-    expect(workflow).not.toMatch(/secrets\.|\bssh\b|DEPLOY_HOST|DEPLOY_KNOWN_HOSTS|DEPLOY_PULL/);
+    expect(workflow).not.toMatch(/\bsecrets\b|\bssh\b|DEPLOY_HOST|DEPLOY_KNOWN_HOSTS|DEPLOY_PULL/);
     for (const candidate of steps)
       expect(candidate.run ?? '').not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
   });

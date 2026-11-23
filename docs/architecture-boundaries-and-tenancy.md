@@ -24,7 +24,7 @@ Multi-user is out of scope today. The brief says "One owner, no public registrat
 | Frontend | about 37,000 lines in `frontend/src` without tests, 14 feature folders | React and Vite, served by nginx in its own container. |
 | Database | 77 migrations, PostgreSQL 16 | Single schema. |
 | Tests | 54 containerized PostgreSQL probes (`tests/e2e/*-db.cjs`), 36 Playwright specs | Critical profile on every PR, full suite nightly (`.github/workflows/full-acceptance.yml`). |
-| Deployment | Three Compose services (`postgres`, `backend`, `frontend`) behind the owner's host nginx | Release through `cd.yml` after the owner's approval, then the dispatcher on the server (`docs/manual-mvp-release.md`). Redis was removed in #370 (ADR-001 item 2). Daily encrypted backups with a backup-age alert landed in #369 and a dashboard panel in #387 (ADR-001 item 1); installing the host timer is the owner's step, which the repository cannot show. ADR-001's checklist is not ticked for either. |
+| Deployment | Three Compose services (`postgres`, `backend`, `frontend`) behind the owner's host nginx | Release through `cd.yml` after the owner's approval, then the pull agent on the server (`docs/pull-release-agent.md`). Redis was removed in #370 (ADR-001 item 2). Daily encrypted backups with a backup-age alert landed in #369 and a dashboard panel in #387 (ADR-001 item 1); installing the host timer is the owner's step, which the repository cannot show. ADR-001's checklist is not ticked for either. |
 
 Backend module sizes (lines without specs):
 
@@ -114,7 +114,7 @@ Nothing has measured whether a job slows the owner's clicks. Node runs JavaScrip
 
 ### 4. Deployment cost of every extra deployable
 
-Each new runtime component adds an image or a Compose service with its own healthcheck, an entry in the release scripts and pins, a dispatcher reinstall on the server (`scripts/manual-mvp-dispatcher-install.sh update`, run by the owner as root), acceptance shards in `ci.yml` and the nightly suite, and its own logs and alerts. This is the operational price of a split, on a host the owner runs alone. A worker that reuses the backend image pays it once, and only for Compose, release and pins; a set of microservices pays it per service.
+Each new runtime component adds an image or a Compose service with its own healthcheck, an entry in the release scripts and pins (the server agent runs them from the approved commit), acceptance shards in `ci.yml` and the nightly suite, and its own logs and alerts. This is the operational price of a split, on a host the owner runs alone. A worker that reuses the backend image pays it once, and only for Compose, release and pins; a set of microservices pays it per service.
 
 ### 5. Readiness for more than one owner
 
@@ -159,7 +159,7 @@ Nothing in this list needs a destructive migration.
 | Dimension | Assessment |
 |---|---|
 | Complexity | High. FIFO, valuation and snapshots read the ledger, prices and rates in one transaction; a split needs either a shared database (a distributed monolith) or copies of data kept in sync by events. |
-| Cost | Several images, healthchecks, release pins, acceptance shards and dispatcher updates; a message broker or HTTP between services. |
+| Cost | Several images, healthchecks, release pins and acceptance shards; a message broker or HTTP between services. |
 | Correctness | New failure modes for money figures: partial writes across services, stale copies of prices or rates. Idempotent single commands (one action, one backend command) become sagas. |
 | Benefit | Independent deployment and scaling. One owner and a coordinated set of agent threads need neither. |
 
@@ -201,7 +201,7 @@ Each step is one small PR. Refactors keep the existing tests unchanged as the ba
 **Phase 3: worker (only on a trigger)**
 
 9. `backend/src/worker.ts`: `NestFactory.createApplicationContext` with `ScheduleModule` and the six job modules, no HTTP listener, metrics on its own loopback port. The HTTP process stops registering the schedule. Decide how the two processes share provider pacing (for example, route "Sync now" through the worker, step 11). S–M.
-10. A Compose `worker` service from the same image, plus release scripts and pins. Needs the owner's server step (`manual-mvp-dispatcher-install.sh update`), stated in the PR. M.
+10. A Compose `worker` service from the same image, plus release scripts and pins. No server step: the agent runs the approved commit's release files. M.
 11. If manual "Sync now" or broker import becomes slow, or pacing must be shared: a PostgreSQL table of requested runs that the worker takes with `FOR UPDATE SKIP LOCKED`. No Redis or broker. It is a migration (one open migration PR at a time; the table goes in `notBackedUp`, and the migration counts in `tests/e2e` go up). M.
 
 **Phase 4: more than one owner**

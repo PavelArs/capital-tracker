@@ -54,21 +54,25 @@ jq -cn --arg commit "$(git -C /root/capital-tracker rev-parse HEAD)" --arg runId
 `preflight` and `deploy` take the commit and CI run of a receipt installed with `approve`,
 as below; that is how a promoted `fresh` receipt reaches a new server until the next step.
 
-**Owner cleanup, once the first release after this change has succeeded.** Nothing reaches
-the `capital-release` account any more. As root on the server, as separate commands:
+**Owner cleanup in GitHub, once the first release after this change has succeeded.** No
+workflow reads these any more. Delete them wherever they are set, in the repository or in
+the `production` environment:
 
-```sh
-rm /etc/sudoers.d/capital-release
-userdel capital-release
-rm -r /var/lib/capital-release
-```
+- the secrets `DEPLOY_DISPATCH_SSH_KEY`, `DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS`;
+- the old `DEPLOY_SSH_KEY` and `DEPLOY_USER`, if they are still there: any workflow of the
+  repository can read a repository secret, and that key is root-equivalent on the server;
+- the variables `DEPLOY_SSH_PORT`, `DEPLOY_DISPATCH_USER`, `DEPLOY_PULL` and
+  `MVP_PREFLIGHT_COMMIT`.
 
-If `sshd_config` names `capital-release` in `AllowUsers` or `AllowGroups`, remove it there
-too and reload sshd. In GitHub, delete the `production` environment secret
-`DEPLOY_DISPATCH_SSH_KEY`, the repository secrets `DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS`,
-and the variables `DEPLOY_SSH_PORT`, `DEPLOY_DISPATCH_USER`, `DEPLOY_PULL` and
-`MVP_PREFLIGHT_COMMIT`. Keep `/etc/capital-tracker/docker-config`: the agent pulls images
-with it.
+Deleting a secret changes nothing on the server: leave the shared deploy account and the
+keys other services use as they are.
+
+On the server, the `capital-release` account, `/etc/sudoers.d/capital-release` and
+`/var/lib/capital-release` stay until the dispatcher's code is removed: the installer's
+`update`, the only way to refresh the local dispatcher, refuses without them. Once the
+GitHub secret is deleted, Actions holds no key for that account. The change that removes
+the dispatcher gives the commands to remove the account. Keep
+`/etc/capital-tracker/docker-config` in any case: the agent pulls images with it.
 
 The rest of this section describes the dispatcher as it was built, when Actions reached
 the server over SSH only as the Capital-only `capital-release` principal, which is not in
@@ -142,8 +146,10 @@ the volume holds no application data. The `REDIS_IMAGE` line in the server's `.e
 
 Interrupted first activation (production run 37001810387, 2026-10-02): migrations,
 owner and MFA succeeded, the frontend health check failed and both applications were
-stopped without activation metadata. Complete it once with manual `release` and
-`installation=resume-activation` after `update`. It requires `operator/recovery.json`,
+stopped without activation metadata. Such a server is completed once with a
+`resume-activation` receipt: promote it, approve it with the installer and send the local
+dispatcher its preflight and deploy (the steps below); the agent releases only `existing`.
+It requires `operator/recovery.json`,
 a provisioned owner and no `docker-compose.yml`, `.env.images` or
 `.release-managed-env`; it backs up, rehearses restore, migrates, starts the pair and
 activates without provisioning the owner again. Later releases use `existing`.
@@ -155,10 +161,10 @@ server in that interrupted state.
 Release versions (`tag-release-versions`): every candidate-bound run names the version
 `v<YYYY.MM.DD>-<short SHA>` from the commit date in UTC (for example
 `v2026.10.04-74604d9`). Promotion pushes each image to GHCR under that tag as well as
-the commit SHA, before preflight. After a successful `deploy` or `release`, a separate
-job with only `contents: write` creates the Git tag of the same name on the commit, so
-the newest `v…` tag under GitHub → Tags is the release running on the server; failed
-releases create none. The server still pins digests: the digests in the runtime
+the commit SHA, before preflight. After a successful `release`, a separate job with only
+`contents: write` creates the Git tag of the same name on the commit, so the newest `v…`
+tag under GitHub → Tags is the release running on the server; failed releases create
+none, and neither does a deploy through the local dispatcher. The server still pins digests: the digests in the runtime
 `.env.images` match the GHCR version tag of that release.
 
 Owner-installed receipts (version 1) still work for manual `preflight`/`deploy`:
@@ -176,9 +182,9 @@ Owner-installed receipts (version 1) still work for manual `preflight`/`deploy`:
    bootstrap/approval checkout identity checks.
 4. As root on the server, send the installed dispatcher the `inventory`, then the
    `preflight` and `deploy` requests on standard input, with that commit and the CI run
-   id as `runId` (the example in "Restricted release dispatcher" above). Keep main at the
-   candidate commit throughout; obsolete candidates are refused. Preflight preserves
-   approval; deploy consumes it before starting.
+   id as `runId` (the example in "Restricted release dispatcher" above). Check that main is
+   still at that commit: unlike the deploy job, this local path does not refuse an
+   obsolete candidate. Preflight preserves approval; deploy consumes it before starting.
 
 After fresh bootstrap, run the one-time operator setup as root from the reviewed
 Git checkout of the release commit:
@@ -214,8 +220,8 @@ was writable by the shared deploy user on 2026-09-27; it must become root-owned 
 preflight/deploy.
 
 Evidence: `pnpm test:security` (Python request/receipt/file/runtime/entry-point cases)
-and ENG-002 gates. Not yet evidenced: installation on the real host, sshd/sudo behaviour
-there, and an actual Actions inventory/deploy through the dispatcher.
+and ENG-002 gates. Actions released through the dispatcher until the agent took over on
+2026-11-22 (`docs/pull-release-agent.md`).
 
 ## Pipeline and trusted promotion
 
