@@ -18,7 +18,7 @@ on:
         type: choice
         options: [release, promote]
       installation:
-        description: Recorded in the promoted receipt. The server agent releases only existing; a fresh or resume-activation receipt is for a new server (docs/manual-mvp-release.md)
+        description: Recorded in the promoted receipt. The server agent releases only existing; a fresh or resume receipt is for a new server (docs/manual-mvp-release.md)
         required: true
         default: existing
         type: choice
