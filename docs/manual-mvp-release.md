@@ -38,14 +38,41 @@ Do not expose an arbitrary shell/script/upload through that dispatcher.
 
 ### Restricted release dispatcher (MVP-007)
 
-Being replaced by the pull release agent (`docs/pull-release-agent.md`, owner decision
-2026-11-19). Until the owner switches to it (repository variable `DEPLOY_PULL=true`), the
-dispatcher below remains the release path; after the switch it still serves the manual
-`inventory`, `preflight` and `deploy` modes and non-`existing` installations.
+Retired from Actions (owner decisions 2026-11-19 and 2026-11-23, `docs/pull-release-agent.md`
+step 3). The deploy job no longer opens SSH and holds no server credential: every approved
+release goes to the pull agent, and the manual modes are `release` and `promote`. The
+installed dispatcher stays until its code is removed. Root can still run it on the server for
+the rare modes it served, with the same JSON request on standard input. For example, the
+read-only inventory:
 
-Implemented, not yet installed on the host. Actions no longer uses the shared
-Docker-capable key. It reaches the server only as the Capital-only `capital-release`
-principal, which is not in the docker group. Its root-owned `authorized_keys` entry is
+```sh
+jq -cn --arg commit "$(git -C /root/capital-tracker rev-parse HEAD)" --arg runId 1 \
+  '{version: 1, operation: "inventory", commit: $commit, runId: $runId}' \
+  | /usr/local/libexec/capital-tracker/manual-mvp-dispatcher
+```
+
+`preflight` and `deploy` take the commit and CI run of a receipt installed with `approve`,
+as below; that is how a promoted `fresh` receipt reaches a new server until the next step.
+
+**Owner cleanup, once the first release after this change has succeeded.** Nothing reaches
+the `capital-release` account any more. As root on the server, as separate commands:
+
+```sh
+rm /etc/sudoers.d/capital-release
+userdel capital-release
+rm -r /var/lib/capital-release
+```
+
+If `sshd_config` names `capital-release` in `AllowUsers` or `AllowGroups`, remove it there
+too and reload sshd. In GitHub, delete the `production` environment secret
+`DEPLOY_DISPATCH_SSH_KEY`, the repository secrets `DEPLOY_HOST` and `DEPLOY_KNOWN_HOSTS`,
+and the variables `DEPLOY_SSH_PORT`, `DEPLOY_DISPATCH_USER`, `DEPLOY_PULL` and
+`MVP_PREFLIGHT_COMMIT`. Keep `/etc/capital-tracker/docker-config`: the agent pulls images
+with it.
+
+The rest of this section describes the dispatcher as it was built, when Actions reached
+the server over SSH only as the Capital-only `capital-release` principal, which is not in
+the docker group, instead of the shared Docker-capable key. Its root-owned `authorized_keys` entry is
 `restrict,command="sudo -n /usr/local/libexec/capital-tracker/manual-mvp-dispatcher"`,
 and `/etc/sudoers.d/capital-release` allows exactly that dispatcher with no arguments.
 Shared deployment rights of other hosted services are unchanged.
@@ -84,20 +111,21 @@ Approved release (`deploy-on-approval`, default after 2026-10-04): every success
 `CI` run for a push to main starts `Deploy Manual MVP` in `release` mode. The job
 waits for the `production` environment; the owner presses "Review deployments" →
 "Approve and deploy" in GitHub. The approved job validates the exact CI run and main
-commit, promotes the tested images, writes the receipt and sends it inside version 2
-`preflight` and then `deploy` requests; deploy runs only after preflight passes. No
-root step is needed per release. Keep a required reviewer on `production`: without it
-the release runs without a click. Manual dispatch offers the same `release` mode with
-an explicit installation. A green CI run whose commit is no longer the main head (for
+commit, promotes the tested images, writes the receipt and hands it to the server's pull
+agent, then waits for the agent's result (`docs/pull-release-agent.md`). No root step is
+needed per release: the agent runs the runner, Compose file and other server files of the
+approved commit. Keep a required reviewer on `production`: without it the release runs
+without a click. Manual dispatch offers the same `release` mode for an `existing`
+installation; `promote` alone publishes the images and receipt, for example a `fresh`
+receipt for a new server. A green CI run whose commit is no longer the main head (for
 example one that finished after a newer push) skips its deploy run, so only the current
 head asks for approval (`skip-obsolete-deploy-runs`).
 
-Root remains the only source of server files. Whenever a release changes the runner,
-inventory, normalizer, Compose, pins or resume helper (the dispatcher refuses with
-"installed … differs from the reviewed receipt"), run as root from a clean checkout of
-that commit `scripts/manual-mvp-dispatcher-install.sh update`, then re-run the
-release. `update` never touches the SSH principal, its key, the sudo rule, the
-registry login or receipts.
+The agent does not update itself: when a release changes `scripts/deploy-agent.py` or
+`deploy/agent/`, run `scripts/deploy-agent-install.sh update` as root from that commit.
+The installed dispatcher's copies of the server files are only for local use (above);
+after a change to them, refresh them with `scripts/manual-mvp-dispatcher-install.sh update`
+before using it.
 
 Cache service removal (owner decision, 2026-10-28): no backend code read or wrote the
 Redis cache, so Compose, the pins, the receipt, the runner, the resume helper and the
@@ -146,9 +174,11 @@ Owner-installed receipts (version 1) still work for manual `preflight`/`deploy`:
    private copy and warns when installed server files differ; re-run `install` first
    for changed server files. Keep `.git`: a source archive alone cannot satisfy the
    bootstrap/approval checkout identity checks.
-4. Run main `mode=inventory`, then `mode=preflight` and `mode=deploy` with the same
-   `ci_run_id`. Keep main at the candidate commit throughout; obsolete candidates are
-   refused. Preflight preserves approval; deploy consumes it before starting.
+4. As root on the server, send the installed dispatcher the `inventory`, then the
+   `preflight` and `deploy` requests on standard input, with that commit and the CI run
+   id as `runId` (the example in "Restricted release dispatcher" above). Keep main at the
+   candidate commit throughout; obsolete candidates are refused. Preflight preserves
+   approval; deploy consumes it before starting.
 
 After fresh bootstrap, run the one-time operator setup as root from the reviewed
 Git checkout of the release commit:
@@ -176,19 +206,12 @@ no repository/write/delete scope is requested here.
 Re-run `install` whenever a release changes a server file listed in the receipt;
 otherwise the dispatcher refuses the mismatch. The install step reports existing
 `AllowUsers`/`AllowGroups` rules and any runtime path that the dispatcher will refuse.
-In GitHub, create environment `production` (recommended: required reviewer and main-only
-deployment branch), add its secret `DEPLOY_DISPATCH_SSH_KEY` (new ED25519 private key)
-and variable `DEPLOY_DISPATCH_USER=capital-release`. The key must be an environment
-secret, not a repository secret, for the environment protection to matter. After
-the restricted principal works, retire the obsolete repository-level
-`DEPLOY_SSH_KEY` from this repository’s Actions access through an owner-coordinated
-cutover. Its retained root-equivalent authority would bypass the new boundary.
-Do not revoke shared host keys or change unrelated services’ deployment access;
-least-privilege operational completion requires evidence of this credential cutover. A main-only
-branch rule also blocks `mode=inventory` from `release/manual-mvp`; run inventory
-from main with the configured production protection; keep `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` and
-`DEPLOY_SSH_PORT=2211`. `/opt/capital-tracker` was writable by the shared deploy user
-on 2026-09-27; it must become root-owned before preflight/deploy.
+In GitHub, keep environment `production` with a required reviewer and a main-only
+deployment branch: its approval is what the agent releases. It holds no secret. `install`
+still creates the `capital-release` SSH principal, which nothing uses since the deploy
+job stopped opening SSH; remove it with the owner cleanup above. `/opt/capital-tracker`
+was writable by the shared deploy user on 2026-09-27; it must become root-owned before
+preflight/deploy.
 
 Evidence: `pnpm test:security` (Python request/receipt/file/runtime/entry-point cases)
 and ENG-002 gates. Not yet evidenced: installation on the real host, sshd/sudo behaviour
@@ -198,11 +221,8 @@ there, and an actual Actions inventory/deploy through the dispatcher.
 
 Keep old upstream automatic CD disabled until replacement is reviewed. Publish through
 an explicit GitHub remote, preserving the local repository's existing origin.
-Set `DEPLOY_KNOWN_HOSTS` from the verified existing known-host entry, never connection
-key discovery; set `DEPLOY_SSH_PORT=2211`. Reuse existing `DEPLOY_HOST`; the release no longer
-uses `DEPLOY_USER`/`DEPLOY_SSH_KEY` (see MVP-007 above). The workflow's optional
-`MVP_PREFLIGHT_COMMIT` release-branch inventory route remains blocked by the configured
-main-only production environment; no branch-policy relaxation is needed. Production
+The deploy workflow holds no secret and reaches no server: the server agent pulls the
+approved release (`docs/pull-release-agent.md`). It runs only on main. Production
 promotion requires a successful main-push CI run, not a pull-request CI result.
 
 Since 2026-10-05 real acceptance and the image scans run on pull requests; a push to
@@ -280,9 +300,9 @@ The owner login name is privately configured `OWNER_EMAIL` in `.env.release`; th
 is `owner@capital.pavelars.ru`, which is only the application login identifier.
 
 After bootstrap, install the root-owned dispatcher/server files, then approve the
-same receipt through the installer’s `approve` operation. Run main inventory/preflight,
-then dispatch `mode=deploy` with
-the same commit/CI run. This order avoids requiring the runtime directory before
+same receipt through the installer’s `approve` operation. As root, send the installed
+dispatcher the inventory and preflight requests, then the deploy request, with the same
+commit and CI run (step 4 above). This order avoids requiring the runtime directory before
 bootstrap; bootstrap metadata alone does not authorize a dispatcher deployment.
 Fresh mode proves absence again; unexplained volumes prevent installation. It creates
 only its dedicated database/cache, observes the actual host-to-container socket peer using

@@ -79,7 +79,7 @@ function run(script: string | undefined, env: Record<string, string>, cwd = dire
 describe('RVR-001: readable version on promoted images', () => {
   it('RVR-001-A names the version from the commit date in UTC after provenance validation', () => {
     const step = deployStep('Name the release version');
-    expect(step?.if).toBe("env.RELEASE_MODE != 'inventory'");
+    expect(step?.if).toBeUndefined();
     expect(stepIndex('Validate trusted successful candidate provenance')).toBeLessThan(
       stepIndex('Name the release version'),
     );
@@ -181,11 +181,11 @@ esac`,
 });
 
 describe('RVR-002: Git tag for the deployed release', () => {
-  it('RVR-002-A reports the version only after a successful deploy or release request', () => {
+  it('RVR-002-A reports the version only after the server agent verified the release', () => {
     const report = deployStep('Report the deployed release version');
     expect(report?.id).toBe('deployed');
-    expect(report?.if).toBe("env.RELEASE_MODE == 'release' || env.RELEASE_MODE == 'deploy'");
-    expect(stepIndex('Send a data-only request to the root-owned release dispatcher')).toBeLessThan(
+    expect(report?.if).toBe("env.RELEASE_MODE == 'release'");
+    expect(stepIndex("Wait for the server agent's release")).toBeLessThan(
       stepIndex('Report the deployed release version'),
     );
     expect(cd.jobs.deploy.outputs).toEqual({ version: '${{ steps.deployed.outputs.version }}' });

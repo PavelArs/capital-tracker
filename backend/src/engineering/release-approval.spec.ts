@@ -46,16 +46,6 @@ const releaseSteps = [
   'Upload the release receipt',
 ];
 const commit = 'a'.repeat(40);
-const receipt = {
-  version: 1,
-  commit,
-  runId: '123',
-  installation: 'existing',
-  backend: `ghcr.io/pavelars/capital-tracker-backend@sha256:${'b'.repeat(64)}`,
-  frontend: `ghcr.io/pavelars/capital-tracker-frontend@sha256:${'c'.repeat(64)}`,
-  postgres: `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
-  files: { runner: 'f'.repeat(64) },
-};
 
 describe('RAP-001: approved release after green main CI', () => {
   it('RAP-001-A starts only from completed CI on main and waits for the production environment', () => {
@@ -69,7 +59,7 @@ describe('RAP-001: approved release after green main CI', () => {
     expect(job.environment).toBe('production');
     // Exact expression: an OR/always() escape must not pass string-presence checks.
     expect(expression(job.if)).toBe(
-      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))",
+      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
     );
     expect(job.env).toEqual({
       RELEASE_MODE: "${{ github.event_name == 'workflow_run' && 'release' || inputs.mode }}",
@@ -87,19 +77,16 @@ describe('RAP-001: approved release after green main CI', () => {
     expect(automatic).toContain('github.event.workflow_run.head_sha == github.sha');
   });
 
-  it('RAP-001-A promotes, then sends preflight and deploy in one approved job', () => {
-    expect(step('Validate trusted successful candidate provenance')?.if).toBe(
-      "env.RELEASE_MODE != 'inventory'",
-    );
-    for (const name of releaseSteps)
-      expect(step(name)?.if).toBe("env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'");
-    const send = step('Send a data-only request to the root-owned release dispatcher');
-    expect(send?.if).toBe("env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'");
+  it('RAP-001-A promotes, then hands the release to the server agent in one approved job', () => {
+    // Every mode is bound to a tested candidate and promotes it.
+    for (const name of ['Validate trusted successful candidate provenance', ...releaseSteps])
+      expect(step(name)?.if).toBeUndefined();
     const order = [
       'Validate trusted successful candidate provenance',
       ...releaseSteps,
-      'Configure restricted release SSH with pinned identity',
-      'Send a data-only request to the root-owned release dispatcher',
+      'Hand the release to the server agent',
+      "Wait for the server agent's release",
+      'Report the deployed release version',
     ].map((name) => steps.findIndex((candidate) => candidate.name === name));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -107,10 +94,11 @@ describe('RAP-001: approved release after green main CI', () => {
     for (const candidate of steps) expect(candidate.run ?? '').not.toContain('${{');
   });
 
-  it('RAP-001-C manual dispatch offers release and the recovery installation', () => {
+  it('RAP-001-C manual dispatch offers release, and promotion of a receipt for a new server', () => {
     const inputs = cd.on.workflow_dispatch?.inputs ?? {};
-    expect(inputs.mode.options).toEqual(['release', 'inventory', 'promote', 'preflight', 'deploy']);
-    expect(inputs.mode.default).toBe('inventory');
+    expect(inputs.mode.options).toEqual(['release', 'promote']);
+    // The default reaches no server.
+    expect(inputs.mode.default).toBe('promote');
     expect(inputs.installation.options).toEqual([
       'existing',
       'fresh',
@@ -120,123 +108,12 @@ describe('RAP-001: approved release after green main CI', () => {
   });
 });
 
-describe('RAP-001/RAP-002: the release step sends only generated data requests', () => {
-  let directory: string;
-  beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'capital-release-step-'));
-    mkdirSync(join(directory, 'bin'));
-    mkdirSync(join(directory, 'receipt'));
-    writeFileSync(
-      join(directory, 'receipt', `${commit}-123.json`),
-      `${JSON.stringify(receipt, null, 2)}\n`,
-    );
-    // Synthetic ssh: records argv and the request on stdin; never contacts a host.
-    writeFileSync(
-      join(directory, 'bin', 'ssh'),
-      `#!/usr/bin/env node
-const fs=require('node:fs');
-const request=fs.readFileSync(0,'utf8');
-fs.appendFileSync(process.env.FIXTURE_LOG,JSON.stringify({args:process.argv.slice(2),request})+'\\n');
-process.exit(process.env.FIXTURE_FAIL_PREFLIGHT==='1'&&request.includes('"preflight"')?2:0);
-`,
-      { mode: 0o700 },
-    );
-  });
-  afterEach(() => rmSync(directory, { recursive: true, force: true }));
-
-  function send(mode: string, failPreflight = false) {
-    const script = step('Send a data-only request to the root-owned release dispatcher')?.run ?? '';
-    const log = join(directory, 'ssh.jsonl');
-    const result = spawnSync('bash', ['-e', '-c', script], {
-      cwd: directory,
-      env: {
-        ...process.env,
-        PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
-        HOME: directory,
-        DEPLOY_HOST: 'capital.example.invalid',
-        DEPLOY_DISPATCH_USER: 'capital-release',
-        DEPLOY_SSH_PORT: '2211',
-        RELEASE_MODE: mode,
-        RUN_ID: '123',
-        GITHUB_SHA: commit,
-        GITHUB_RUN_ID: '999',
-        FIXTURE_LOG: log,
-        FIXTURE_FAIL_PREFLIGHT: failPreflight ? '1' : '0',
-      },
-      encoding: 'utf8',
-      timeout: 10_000,
-    });
-    let calls: { args: string[]; request: string }[] = [];
-    try {
-      calls = readFileSync(log, 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line));
-    } catch {
-      calls = [];
-    }
-    return { result, calls };
-  }
-
-  it('RAP-002-A release sends preflight then deploy, each carrying the promoted receipt', () => {
-    const { result, calls } = send('release');
-    expect(result.status).toBe(0);
-    expect(calls.map((call) => JSON.parse(call.request))).toEqual([
-      { version: 2, operation: 'preflight', commit, runId: '123', receipt },
-      { version: 2, operation: 'deploy', commit, runId: '123', receipt },
-    ]);
-    for (const call of calls) {
-      expect(call.args).toEqual([
-        '-T',
-        '-p',
-        '2211',
-        '-i',
-        join(directory, '.ssh/release-key'),
-        '-o',
-        'BatchMode=yes',
-        '-o',
-        'StrictHostKeyChecking=yes',
-        '-o',
-        'IdentitiesOnly=yes',
-        'capital-release@capital.example.invalid',
-      ]);
-      expect(Buffer.byteLength(call.request)).toBeLessThan(4096);
-    }
-  });
-
-  it('RAP-001-A a refused preflight never sends deploy', () => {
-    const { result, calls } = send('release', true);
-    expect(result.status).not.toBe(0);
-    expect(calls.map((call) => JSON.parse(call.request).operation)).toEqual(['preflight']);
-  });
-
-  it('ENG-002-B manual operations keep the version 1 request without a receipt', () => {
-    const { result, calls } = send('deploy');
-    expect(result.status).toBe(0);
-    expect(calls.map((call) => JSON.parse(call.request))).toEqual([
-      { version: 1, operation: 'deploy', commit, runId: '123' },
-    ]);
-    const inventory = send('inventory');
-    expect(inventory.result.status).toBe(0);
-    expect(JSON.parse(inventory.calls.at(-1)?.request ?? '{}')).toEqual({
-      version: 1,
-      operation: 'inventory',
-      commit,
-      runId: '999',
-    });
-  });
-});
-
-describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
+describe('RAP-005: the server pull agent releases every approved release', () => {
   // A GitHub Actions expression as the workflow file spells it.
   const actions = (body: string) => `\${{ ${body} }}`;
-  const chooser = 'Choose who releases on the server';
+  const check = 'Check the release request';
   const request = 'Hand the release to the server agent';
   const wait = "Wait for the server agent's release";
-  const sshSteps = [
-    'Configure restricted release SSH with pinned identity',
-    'Send a data-only request to the root-owned release dispatcher',
-  ];
   let directory: string;
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), 'capital-pull-release-'));
@@ -253,45 +130,48 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
     });
   }
 
-  function releasePath(env: Record<string, string>) {
-    const file = join(directory, 'github-env');
-    writeFileSync(file, '');
-    const result = runStep(chooser, {
-      GITHUB_STEP_SUMMARY: join(directory, 'summary'),
-      ...env,
-      GITHUB_ENV: file,
-    });
-    expect(result.status).toBe(0);
-    return readFileSync(file, 'utf8');
-  }
-
-  it('RAP-005-A hands only an approved release of an existing installation to the agent, and only with DEPLOY_PULL', () => {
-    expect(step(chooser)?.if).toBeUndefined();
-    expect(step(chooser)?.env).toEqual({ DEPLOY_PULL: actions('vars.DEPLOY_PULL') });
-    const release = { RELEASE_MODE: 'release', RELEASE_INSTALLATION: 'existing' };
-    expect(releasePath({ ...release, DEPLOY_PULL: 'true' })).toBe('RELEASE_PATH=pull\n');
+  it('RAP-005-A refuses to release anything but an existing installation, before promoting', () => {
+    expect(step(check)?.if).toBeUndefined();
+    expect(step(check)?.env).toBeUndefined();
     for (const env of [
-      { ...release, DEPLOY_PULL: '' },
-      { ...release, DEPLOY_PULL: 'TRUE' },
-      { ...release, DEPLOY_PULL: 'false' },
-      { ...release, DEPLOY_PULL: 'true', RELEASE_INSTALLATION: 'fresh' },
-      { ...release, DEPLOY_PULL: 'true', RELEASE_INSTALLATION: 'resume-activation' },
-      { ...release, DEPLOY_PULL: 'true', RELEASE_MODE: 'deploy' },
-      { ...release, DEPLOY_PULL: 'true', RELEASE_MODE: 'preflight' },
-      { ...release, DEPLOY_PULL: 'true', RELEASE_MODE: 'inventory' },
+      { RELEASE_MODE: 'release', RELEASE_INSTALLATION: 'existing' },
+      // A receipt for a new server is promoted, then installed by hand (docs/manual-mvp-release.md).
+      { RELEASE_MODE: 'promote', RELEASE_INSTALLATION: 'existing' },
+      { RELEASE_MODE: 'promote', RELEASE_INSTALLATION: 'fresh' },
+      { RELEASE_MODE: 'promote', RELEASE_INSTALLATION: 'resume-activation' },
     ])
-      expect(releasePath(env)).toBe('RELEASE_PATH=dispatch\n');
-    // Chosen before any step that depends on it.
-    const chosen = steps.findIndex((candidate) => candidate.name === chooser);
-    expect(chosen).toBeGreaterThanOrEqual(0);
-    steps.forEach((candidate, index) => {
-      if ((candidate.if ?? '').includes('RELEASE_PATH')) expect(index).toBeGreaterThan(chosen);
-    });
+      expect(runStep(check, env).status).toBe(0);
+    for (const installation of ['fresh', 'resume-fresh', 'resume-activation']) {
+      const refused = runStep(check, {
+        RELEASE_MODE: 'release',
+        RELEASE_INSTALLATION: installation,
+      });
+      expect(refused.status).toBe(1);
+      expect(refused.stdout).toContain(
+        '::error::The server agent releases only an existing installation',
+      );
+    }
+    for (const mode of ['inventory', 'preflight', 'deploy', ''])
+      expect(runStep(check, { RELEASE_MODE: mode, RELEASE_INSTALLATION: 'existing' }).status).toBe(
+        1,
+      );
+    expect(steps.findIndex((candidate) => candidate.name === check)).toBeLessThan(
+      steps.findIndex(
+        (candidate) => candidate.name === 'Validate trusted successful candidate provenance',
+      ),
+    );
   });
 
-  it('RAP-005-B the agent path uploads the promoted receipt as the request and never opens SSH', () => {
+  it('RAP-005-B no step reaches the server or holds a secret: the agent pulls the release', () => {
+    const workflow = readFileSync(resolve(root, '.github/workflows/cd.yml'), 'utf8');
+    expect(workflow).not.toMatch(/secrets\.|\bssh\b|DEPLOY_HOST|DEPLOY_KNOWN_HOSTS|DEPLOY_PULL/);
+    for (const candidate of steps)
+      expect(candidate.run ?? '').not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
+  });
+
+  it('RAP-005-B a release uploads the promoted receipt as the request and waits for the agent', () => {
     const upload = step(request);
-    expect(upload?.if).toBe("env.RELEASE_PATH == 'pull'");
+    expect(upload?.if).toBe("env.RELEASE_MODE == 'release'");
     expect(upload?.uses).toBe(step('Upload the release receipt')?.uses);
     expect(upload?.with).toEqual({
       name: 'server-release-request',
@@ -299,11 +179,8 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
       'if-no-files-found': 'error',
       'retention-days': 1,
     });
-    expect(step(wait)?.if).toBe("env.RELEASE_PATH == 'pull'");
-    for (const name of sshSteps)
-      expect(step(name)?.if).toBe(
-        "env.RELEASE_MODE != 'promote' && env.RELEASE_PATH == 'dispatch'",
-      );
+    expect(step(wait)?.if).toBe("env.RELEASE_MODE == 'release'");
+    expect(step('Report the deployed release version')?.if).toBe("env.RELEASE_MODE == 'release'");
     const order = [
       'Write the release receipt for owner approval',
       'Upload the release receipt',
@@ -318,7 +195,7 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
     expect(step(wait)?.env).toEqual({ GH_TOKEN: actions('github.token') });
   });
 
-  it('RAP-005-D waits longer than one agent pass can take, and only on the agent path', () => {
+  it('RAP-005-D waits longer than one agent pass can take, and only for a release', () => {
     const unit = readFileSync(
       resolve(root, 'deploy/agent/capital-tracker-deploy-agent.service'),
       'utf8',
@@ -328,12 +205,10 @@ describe('RAP-005: the server pull agent releases behind DEPLOY_PULL', () => {
     // A pass starts within a minute of the upload and is stopped (with its rollback) by then.
     expect(step(wait)?.['timeout-minutes']).toBe(150);
     expect(150).toBeGreaterThan(1 + start + stop);
-    // The steps before the wait (candidate download, promotion) get the rest of the job. Only
-    // a run the chooser can hand to the agent (RAP-005-A) gets the longer job.
+    // The steps before the wait (candidate download, promotion) get the rest of the job. A
+    // promotion alone keeps the short job.
     expect(job['timeout-minutes']).toBe(
-      actions(
-        "vars.DEPLOY_PULL == 'true' && (github.event_name == 'workflow_run' || (inputs.mode == 'release' && inputs.installation == 'existing')) && 180 || 30",
-      ),
+      actions("(github.event_name == 'workflow_run' || inputs.mode == 'release') && 180 || 30"),
     );
   });
 

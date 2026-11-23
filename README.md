@@ -149,7 +149,8 @@ The app runs on a personal server with:
 Releases run through `.github/workflows/cd.yml`: a green CI run on `main` deploys
 after the owner approves it in GitHub. The [release guide](docs/manual-mvp-release.md)
 covers fresh server setup (`scripts/manual-mvp-server-bootstrap.sh`), existing
-deployments, recovery and the dispatcher secrets. `deploy/nginx.conf` is the host
+deployments and recovery; the [pull agent guide](docs/pull-release-agent.md) covers the
+server agent that runs approved releases. `deploy/nginx.conf` is the host
 nginx template.
 
 ### CI/CD Pipeline
